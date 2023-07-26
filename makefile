@@ -81,7 +81,8 @@ isort:
 	@isort test
 
 isort-check:
-	@isort . --check --diff
+	@isort sparse_ngd --check --diff
+	@isort test --check --diff
 
 .PHONY: flake8
 
