@@ -12,6 +12,11 @@ make conda-env
 conda activate sparse_ngd
 ```
 
+If you don't use `conda`, set up your preferred environment and run
+```
+pip install -e .[lint,test]
+```
+
 # Continuous integration
 
 In order to standardize the code style and enforce high quality, certain quality
