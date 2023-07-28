@@ -1,3 +1,18 @@
+models/Compact-Transformers/examples/optimizers
+models/Compact-Transformers/examples/cifar100
+models/Convolutional-MLPs/optimizers
+models/Convolutional-MLPs/cifar100
+models/Convolutional-MLPs/output/
+models/SPT_LSA_ViT/dataset/*
+models/SPT_LSA_ViT/tensorboard/*
+models/SPT_LSA_ViT/save/*
+models/SPT_LSA_ViT/optimizers
+models/pytorch-image-models/datasets/*
+models/pytorch-image-models/optimizers
+models/pytorch-image-models/output/
+
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
