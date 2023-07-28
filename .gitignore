@@ -10,6 +10,7 @@ models/SPT_LSA_ViT/optimizers
 models/pytorch-image-models/datasets/*
 models/pytorch-image-models/optimizers
 models/pytorch-image-models/output/
+models/standalone_optimizers/standalone_optimizers
 
 
 
