@@ -118,5 +118,5 @@ class StructuredMatrix:
             The structured matrix extracted from ``self.T @ X @ X^T @ self``.
         """
         self._warn_naive_implementation("from_inner")
-        S_dense = self.to_dense() if X is None else self.to_dense().T @ X
+        S_dense = self.to_dense().T if X is None else self.to_dense().T @ X
         return self.from_dense(S_dense @ S_dense.T)
