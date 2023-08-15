@@ -1,36 +1,42 @@
 """Test ``sparse_ngd.structures.dense``."""
 
-from torch import Tensor, allclose, manual_seed, rand
+from test.structures.utils import _test_from_inner, _test_matmul
+
+from torch import Tensor, manual_seed, rand
 
 from sparse_ngd.structures.dense import DenseMatrix
 
 
-def project(mat: Tensor) -> Tensor:
+def project_dense(mat: Tensor) -> Tensor:
+    """Project a dense matrix onto a dense matrix.
+
+    This is just a no-op.
+
+    Args:
+        mat: A dense matrix.
+
+    Returns:
+        The same matrix.
+    """
     return mat
 
 
 def test_matmul():
+    """Test matrix multiplication of two dense matrices."""
     manual_seed(0)
-
     mat1 = rand((10, 10))
     mat2 = rand((10, 10))
-    truth = project(mat1) @ project(mat2)
-    mat1_mat2 = DenseMatrix.from_dense(mat1) @ DenseMatrix.from_dense(mat2)
-    assert allclose(truth, mat1_mat2.to_dense())
+    _test_matmul(mat1, mat2, DenseMatrix, project_dense)
 
 
 def test_from_inner():
+    """Test structure extraction after self-inner product w/o intermediate term."""
     manual_seed(0)
 
-    # X = None
     mat = rand((10, 10))
-    truth = project(mat.T) @ project(mat)
-    mat_T_mat = DenseMatrix.from_dense(mat).from_inner()
-    assert allclose(truth, mat_T_mat.to_dense())
+    X = None
+    _test_from_inner(mat, DenseMatrix, project_dense, X)
 
-    # X != None
     mat = rand((10, 10))
     X = rand((10, 20))
-    truth = project(mat).T @ X @ X.T @ project(mat)
-    mat_T_X_X_T_mat = DenseMatrix.from_dense(mat).from_inner(X=X)
-    assert allclose(truth, mat_T_X_X_T_mat.to_dense())
+    _test_from_inner(mat, DenseMatrix, project_dense, X)

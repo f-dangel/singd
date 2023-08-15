@@ -1,36 +1,40 @@
 """Test ``sparse_ngd.structures.diagonal``."""
 
-from torch import Tensor, allclose, manual_seed, rand
+from test.structures.utils import _test_from_inner, _test_matmul
+
+from torch import Tensor, manual_seed, rand
 
 from sparse_ngd.structures.diagonal import DiagonalMatrix
 
 
-def project(mat: Tensor) -> Tensor:
+def project_diagonal(mat: Tensor) -> Tensor:
+    """Project a matrix onto its diagonal.
+
+    Args:
+        mat: A square matrix.
+
+    Returns:
+        A matrix containing the diagonal of ``mat`` on its diagonal.
+    """
     return mat.diag().diag()
 
 
 def test_matmul():
+    """Test matrix multiplication of two diagonal matrices."""
     manual_seed(0)
-
     mat1 = rand((10, 10))
     mat2 = rand((10, 10))
-    truth = project(mat1) @ project(mat2)
-    diag1_diag2 = DiagonalMatrix.from_dense(mat1) @ DiagonalMatrix.from_dense(mat2)
-    assert allclose(truth, diag1_diag2.to_dense())
+    _test_matmul(mat1, mat2, DiagonalMatrix, project_diagonal)
 
 
 def test_from_inner():
+    """Test diagonal extraction after self-inner product w/o intermediate term."""
     manual_seed(0)
 
-    # X = None
     mat = rand((10, 10))
-    truth = project(mat.T) @ project(mat)
-    diagmat_T_diagmat = DiagonalMatrix.from_dense(mat).from_inner()
-    assert allclose(truth, diagmat_T_diagmat.to_dense())
+    X = None
+    _test_from_inner(mat, DiagonalMatrix, project_diagonal, X)
 
-    # X != None
     mat = rand((10, 10))
     X = rand((10, 20))
-    truth = project(project(mat).T @ X @ X.T @ project(mat))
-    diagmat_T_X_X_T_diagmat = DiagonalMatrix.from_dense(mat).from_inner(X=X)
-    assert allclose(truth, diagmat_T_X_X_T_diagmat.to_dense())
+    _test_from_inner(mat, DiagonalMatrix, project_diagonal, X)
