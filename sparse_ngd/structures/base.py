@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from typing import Union
 from warnings import warn
 
 from torch import Tensor
 
 
-class StructuredMatrix:
+class StructuredMatrix(ABC):
     """Base class for structured matrices closed under addition and multiplication.
 
     This base class defines the functions that need to be implemented to support
     a new structured matrix class with inverse-free KFAC.
+
+    The minimum amount of work to add a new structured matrix class requires
+    implementing the ``to_dense`` and ``from_dense`` methods. The other operations
+    will then use a naive implementation which internally re-constructs unstructured
+    dense matrices. By default, these operations will trigger a warning which can be
+    used to identify functions that can be implemented more efficiently using structure.
 
     Attributes:
         WARN_NAIVE: Warn the user if a method falls back to a naive implementation
@@ -38,6 +45,7 @@ class StructuredMatrix:
         return self.from_dense(self.to_dense() @ other.to_dense())
 
     @classmethod
+    @abstractmethod
     def from_dense(cls, mat: Tensor) -> StructuredMatrix:
         """Extract the represented structure from a dense matrix.
 
@@ -57,6 +65,7 @@ class StructuredMatrix:
         """
         raise NotImplementedError
 
+    @abstractmethod
     def to_dense(self) -> Tensor:
         """Return a dense tensor representing the structured matrix.
 
