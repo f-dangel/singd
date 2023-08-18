@@ -52,6 +52,28 @@ def _test_add(
     assert allclose(truth, (mat1_structured + mat2_structured).to_dense())
 
 
+def _test_sub(
+    mat1: Tensor,
+    mat2: Tensor,
+    structured_matrix_cls: Type[StructuredMatrix],
+    project: Callable[[Tensor], Tensor],
+):
+    """Test ``-`` operation of any child of ``StructuredMatrix``.
+
+    Args:
+        mat1: A dense matrix which will be converted into a structured matrix.
+        mat2: Another dense matrix which be converted into a structured matrix.
+        structured_matrix_cls: The class of the structured matrix into which ``mat1``
+            and ``mat2`` will be converted.
+        project: A function which converts an arbitrary dense matrix into a dense
+            matrix of the tested structure. Used to establish the ground truth.
+    """
+    truth = project(mat1) - project(mat2)
+    mat1_structured = structured_matrix_cls.from_dense(mat1)
+    mat2_structured = structured_matrix_cls.from_dense(mat2)
+    assert allclose(truth, (mat1_structured - mat2_structured).to_dense())
+
+
 def _test_mul(
     mat: Tensor,
     factor: float,

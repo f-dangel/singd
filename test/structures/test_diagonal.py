@@ -7,6 +7,7 @@ from test.structures.utils import (
     _test_from_inner2,
     _test_matmul,
     _test_mul,
+    _test_sub,
     _test_trace,
     _test_zeros,
 )
@@ -50,6 +51,14 @@ def test_add():
     mat1 = rand((10, 10))
     mat2 = rand((10, 10))
     _test_add(mat1, mat2, DiagonalMatrix, project_diagonal)
+
+
+def test_sub():
+    """Test matrix subtractionof two diagonal matrices."""
+    manual_seed(0)
+    mat1 = rand((10, 10))
+    mat2 = rand((10, 10))
+    _test_sub(mat1, mat2, DiagonalMatrix, project_diagonal)
 
 
 def test_from_inner():

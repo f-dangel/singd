@@ -104,6 +104,17 @@ class StructuredMatrix(ABC):
         self._warn_naive_implementation("__add__")
         return self.from_dense(self.to_dense() + other.to_dense())
 
+    def __sub__(self, other: StructuredMatrix) -> StructuredMatrix:
+        """Subtract another matrix of same structure.
+
+        Args:
+            other: Another structured matrix which will be subtracted.
+
+        Returns:
+            A structured matrix resulting from the subtraction.
+        """
+        return self + (other * (-1.0))
+
     @classmethod
     def _warn_naive_implementation(cls, fn_name: str):
         """Warn the user that a naive implementation is called.
