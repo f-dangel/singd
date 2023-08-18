@@ -1,6 +1,7 @@
 """Test ``sparse_ngd.structures.dense``."""
 
 from test.structures.utils import (
+    _test_add,
     _test_eye,
     _test_from_inner,
     _test_from_inner2,
@@ -26,6 +27,14 @@ def project_dense(mat: Tensor) -> Tensor:
         The same matrix.
     """
     return mat
+
+
+def test_add():
+    """Test matrix addition of two dense matrices."""
+    manual_seed(0)
+    mat1 = rand((10, 10))
+    mat2 = rand((10, 10))
+    _test_add(mat1, mat2, DenseMatrix, project_dense)
 
 
 def test_matmul():

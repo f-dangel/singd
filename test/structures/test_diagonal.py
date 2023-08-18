@@ -1,6 +1,7 @@
 """Test ``sparse_ngd.structures.diagonal``."""
 
 from test.structures.utils import (
+    _test_add,
     _test_eye,
     _test_from_inner,
     _test_from_inner2,
@@ -32,6 +33,14 @@ def test_matmul():
     mat1 = rand((10, 10))
     mat2 = rand((10, 10))
     _test_matmul(mat1, mat2, DiagonalMatrix, project_diagonal)
+
+
+def test_add():
+    """Test matrix addition of two diagonal matrices."""
+    manual_seed(0)
+    mat1 = rand((10, 10))
+    mat2 = rand((10, 10))
+    _test_add(mat1, mat2, DiagonalMatrix, project_diagonal)
 
 
 def test_from_inner():
