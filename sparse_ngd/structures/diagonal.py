@@ -32,6 +32,28 @@ class DiagonalMatrix(StructuredMatrix):
         """
         return DiagonalMatrix(self._mat_diag * other._mat_diag)
 
+    def __add__(self, other: DiagonalMatrix) -> DiagonalMatrix:
+        """Add with another diagonal matrix.
+
+        Args:
+            other: Another diagonal matrix which will be added.
+
+        Returns:
+            A diagonal matrix resulting from the addition.
+        """
+        return DiagonalMatrix(self._mat_diag + other._mat_diag)
+
+    def __mul__(self, other: float) -> DiagonalMatrix:
+        """Multiply with a scalar.
+
+        Args:
+            other: A scalar that will be multiplied onto the diagonal matrix.
+
+        Returns:
+            A diagonal matrix resulting from the multiplication.
+        """
+        return DiagonalMatrix(self._mat_diag * other)
+
     @classmethod
     def from_dense(cls, mat: Tensor) -> DiagonalMatrix:
         """Construct a diagonal matrix from a PyTorch tensor.
@@ -54,6 +76,14 @@ class DiagonalMatrix(StructuredMatrix):
             The represented matrix as PyTorch tensor.
         """
         return self._mat_diag.diag()
+
+    def transpose(self) -> DiagonalMatrix:
+        """Create a structured matrix representing the transpose.
+
+        Returns:
+            The transpose of the represented matrix.
+        """
+        return DiagonalMatrix(self._mat_diag)
 
     ###############################################################################
     #                        Special operations for IF-KFAC                       #

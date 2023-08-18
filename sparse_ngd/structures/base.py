@@ -80,6 +80,18 @@ class StructuredMatrix(ABC):
         """
         raise NotImplementedError
 
+    def __mul__(self, other: float) -> StructuredMatrix:
+        """Multiply with a scalar.
+
+        Args:
+            other: A scalar that will be multiplied onto the structured matrix.
+
+        Returns:
+            The structured matrix, multiplied by the scalar.
+        """
+        self._warn_naive_implementation("__mul__")
+        return self.from_dense(self.to_dense() * other)
+
     def __add__(self, other: StructuredMatrix) -> StructuredMatrix:
         """Add another matrix of same structure.
 
@@ -91,6 +103,31 @@ class StructuredMatrix(ABC):
         """
         self._warn_naive_implementation("__add__")
         return self.from_dense(self.to_dense() + other.to_dense())
+
+    def __sub__(self, other: StructuredMatrix) -> StructuredMatrix:
+        """Subtract another matrix of same structure.
+
+        Args:
+            other: Another structured matrix which will be subtracted.
+
+        Returns:
+            A structured matrix resulting from the subtraction.
+        """
+        return self + (other * (-1.0))
+
+    @abstractmethod
+    def transpose(self) -> StructuredMatrix:
+        """Create a structured matrix representing the transpose.
+
+        Returns:
+            A structured matrix representing the transpose.
+
+        # noqa: DAR202
+
+        Raises:
+            NotImplementedError: Must be implemented by a child class.
+        """
+        raise NotImplementedError
 
     @classmethod
     def _warn_naive_implementation(cls, fn_name: str):
