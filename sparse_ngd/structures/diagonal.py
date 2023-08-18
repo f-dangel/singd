@@ -70,9 +70,22 @@ class DiagonalMatrix(StructuredMatrix):
             X: Optional arbitrary 2d tensor. If ``None``, ``X = I`` will be used.
 
         Returns:
-            The matrix diagonal of ``self.T @ X @ X^T @ self``.
+            A ``DiagonalMatrix`` representing matrix diagonal of
+            ``self.T @ X @ X^T @ self``.
         """
         mat_diag = self._mat_diag**2
         if X is not None:
             mat_diag *= (X**2).sum(1)
         return DiagonalMatrix(mat_diag)
+
+    def from_inner2(self, XXT: Tensor) -> StructuredMatrix:
+        """Represent the matrix diagonal of ``self.T @ XXT @ self``.
+
+        Args:
+            XXT: 2d square symmetric matrix.
+
+        Returns:
+            A ``DiagonalMatrix`` representing matrix diagonal of
+            ``self.T @ XXT @ self``.
+        """
+        return DiagonalMatrix(self._mat_diag**2 * XXT.diag())

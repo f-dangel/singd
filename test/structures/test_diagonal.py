@@ -1,6 +1,6 @@
 """Test ``sparse_ngd.structures.diagonal``."""
 
-from test.structures.utils import _test_from_inner, _test_matmul
+from test.structures.utils import _test_from_inner, _test_from_inner2, _test_matmul
 
 from torch import Tensor, manual_seed, rand
 
@@ -38,3 +38,13 @@ def test_from_inner():
     mat = rand((10, 10))
     X = rand((10, 20))
     _test_from_inner(mat, DiagonalMatrix, project_diagonal, X)
+
+
+def test_from_inner2():
+    """Test diagonal extraction after self-inner product w/ intermediate matrix."""
+    manual_seed(0)
+
+    mat = rand((10, 10))
+    X = rand((10, 20))
+    XXT = X @ X.T
+    _test_from_inner2(mat, DiagonalMatrix, project_diagonal, XXT)

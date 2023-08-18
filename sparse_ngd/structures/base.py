@@ -129,3 +129,20 @@ class StructuredMatrix(ABC):
         self._warn_naive_implementation("from_inner")
         S_dense = self.to_dense().T if X is None else self.to_dense().T @ X
         return self.from_dense(S_dense @ S_dense.T)
+
+    # NOTE This operation should be removed long-term as implementing IF-KFAC
+    # with `from_inner` is more efficient. For now, it will exist as it makes
+    # integrating this interface into existing implementations of sparse IF-KFAC
+    # easier, as they have access to the input/gradient covariance matrices.
+    def from_inner2(self, XXT: Tensor) -> StructuredMatrix:
+        """Extract the represented structure from ``self.T @ XXT @ self``.
+
+        Args:
+            XXT: 2d square symmetric matrix.
+
+        Returns:
+            The structured matrix extracted from ``self.T @ XXT @ self``.
+        """
+        self._warn_naive_implementation("from_inner2")
+        self_dense = self.to_dense()
+        return self.from_dense(self_dense.T @ XXT @ self_dense)
