@@ -9,6 +9,7 @@ from test.structures.utils import (
     _test_mul,
     _test_sub,
     _test_trace,
+    _test_transpose,
     _test_zeros,
 )
 
@@ -43,6 +44,13 @@ def test_mul():
     mat = rand((10, 10))
     scale = 0.3
     _test_mul(mat, scale, DiagonalMatrix, project_diagonal)
+
+
+def test_transpose():
+    """Test transpose of a diagonal matrix."""
+    manual_seed(0)
+    mat = rand((10, 10))
+    _test_transpose(mat, DiagonalMatrix, project_diagonal)
 
 
 def test_add():

@@ -115,6 +115,20 @@ class StructuredMatrix(ABC):
         """
         return self + (other * (-1.0))
 
+    @abstractmethod
+    def transpose(self) -> StructuredMatrix:
+        """Create a structured matrix representing the transpose.
+
+        Returns:
+            A structured matrix representing the transpose.
+
+        # noqa: DAR202
+
+        Raises:
+            NotImplementedError: Must be implemented by a child class.
+        """
+        raise NotImplementedError
+
     @classmethod
     def _warn_naive_implementation(cls, fn_name: str):
         """Warn the user that a naive implementation is called.

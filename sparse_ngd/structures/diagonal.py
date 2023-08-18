@@ -77,6 +77,14 @@ class DiagonalMatrix(StructuredMatrix):
         """
         return self._mat_diag.diag()
 
+    def transpose(self) -> DiagonalMatrix:
+        """Create a structured matrix representing the transpose.
+
+        Returns:
+            The transpose of the represented matrix.
+        """
+        return DiagonalMatrix(self._mat_diag)
+
     ###############################################################################
     #                        Special operations for IF-KFAC                       #
     ###############################################################################

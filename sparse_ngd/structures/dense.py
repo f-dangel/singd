@@ -39,3 +39,11 @@ class DenseMatrix(StructuredMatrix):
             The represented matrix as PyTorch tensor.
         """
         return self._mat
+
+    def transpose(self) -> DenseMatrix:
+        """Create a structured matrix representing the transpose.
+
+        Returns:
+            The transpose of the represented matrix.
+        """
+        return DenseMatrix(self._mat.T)

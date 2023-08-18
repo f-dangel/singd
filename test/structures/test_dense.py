@@ -9,6 +9,7 @@ from test.structures.utils import (
     _test_mul,
     _test_sub,
     _test_trace,
+    _test_transpose,
     _test_zeros,
 )
 
@@ -61,6 +62,13 @@ def test_mul():
     mat = rand((10, 10))
     factor = 0.3
     _test_mul(mat, factor, DenseMatrix, project_dense)
+
+
+def test_transpose():
+    """Test transpose of a dense matrix."""
+    manual_seed(0)
+    mat = rand((10, 10))
+    _test_transpose(mat, DenseMatrix, project_dense)
 
 
 def test_from_inner():

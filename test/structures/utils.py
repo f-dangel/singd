@@ -95,6 +95,25 @@ def _test_mul(
     assert allclose(truth, (mat_structured * factor).to_dense())
 
 
+def _test_transpose(
+    mat: Tensor,
+    structured_matrix_cls: Type[StructuredMatrix],
+    project: Callable[[Tensor], Tensor],
+):
+    """Test transpose operation of any child of ``StructuredMatrix``.
+
+    Args:
+        mat: A dense matrix which will be converted into a structured matrix.
+        structured_matrix_cls: The class of the structured matrix into which ``mat``
+            will be converted.
+        project: A function which converts an arbitrary dense matrix into a dense
+            matrix of the tested structure. Used to establish the ground truth.
+    """
+    truth = project(mat).T
+    mat_structured = structured_matrix_cls.from_dense(mat)
+    assert allclose(truth, mat_structured.transpose().to_dense())
+
+
 def _test_from_inner(
     mat: Tensor,
     structured_matrix_cls: Type[StructuredMatrix],
