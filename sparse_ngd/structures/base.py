@@ -80,6 +80,18 @@ class StructuredMatrix(ABC):
         """
         raise NotImplementedError
 
+    def __mul__(self, other: float) -> StructuredMatrix:
+        """Multiply with a scalar.
+
+        Args:
+            other: A scalar that will be multiplied onto the structured matrix.
+
+        Returns:
+            The structured matrix, multiplied by the scalar.
+        """
+        self._warn_naive_implementation("__mul__")
+        return self.from_dense(self.to_dense() * other)
+
     def __add__(self, other: StructuredMatrix) -> StructuredMatrix:
         """Add another matrix of same structure.
 

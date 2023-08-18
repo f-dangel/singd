@@ -6,6 +6,7 @@ from test.structures.utils import (
     _test_from_inner,
     _test_from_inner2,
     _test_matmul,
+    _test_mul,
     _test_trace,
     _test_zeros,
 )
@@ -33,6 +34,14 @@ def test_matmul():
     mat1 = rand((10, 10))
     mat2 = rand((10, 10))
     _test_matmul(mat1, mat2, DiagonalMatrix, project_diagonal)
+
+
+def test_mul():
+    """Test multiplication of a diagonal matrix with a scalar."""
+    manual_seed(0)
+    mat = rand((10, 10))
+    scale = 0.3
+    _test_mul(mat, scale, DiagonalMatrix, project_diagonal)
 
 
 def test_add():

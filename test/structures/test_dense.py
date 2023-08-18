@@ -6,6 +6,7 @@ from test.structures.utils import (
     _test_from_inner,
     _test_from_inner2,
     _test_matmul,
+    _test_mul,
     _test_trace,
     _test_zeros,
 )
@@ -43,6 +44,14 @@ def test_matmul():
     mat1 = rand((10, 10))
     mat2 = rand((10, 10))
     _test_matmul(mat1, mat2, DenseMatrix, project_dense)
+
+
+def test_mul():
+    """Test multiplication of a dense matrices with a scalar."""
+    manual_seed(0)
+    mat = rand((10, 10))
+    factor = 0.3
+    _test_mul(mat, factor, DenseMatrix, project_dense)
 
 
 def test_from_inner():
