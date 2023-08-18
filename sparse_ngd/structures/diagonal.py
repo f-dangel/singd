@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Union
 
-from torch import Tensor
+import torch
+from torch import Tensor, ones, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
 
@@ -89,3 +90,48 @@ class DiagonalMatrix(StructuredMatrix):
             ``self.T @ XXT @ self``.
         """
         return DiagonalMatrix(self._mat_diag**2 * XXT.diag())
+
+    ###############################################################################
+    #                      Special initialization operations                      #
+    ###############################################################################
+    @classmethod
+    def zeros(
+        cls,
+        dim: int,
+        dtype: Union[torch.dtype, None] = None,
+        device: Union[torch.device, None] = None,
+    ) -> StructuredMatrix:
+        """Create a structured matrix representing the zero matrix.
+
+        Args:
+            dim: Dimension of the (square) matrix.
+            dtype: Optional data type of the matrix. If not specified, uses the default
+                tensor type.
+            device: Optional device of the matrix. If not specified, uses the default
+                tensor type.
+
+        Returns:
+            A structured matrix representing the zero matrix.
+        """
+        return DiagonalMatrix(zeros(dim, dtype=dtype, device=device))
+
+    @classmethod
+    def eye(
+        cls,
+        dim: int,
+        dtype: Union[torch.dtype, None] = None,
+        device: Union[torch.device, None] = None,
+    ) -> DiagonalMatrix:
+        """Create a diagonal matrix representing the identity matrix.
+
+        Args:
+            dim: Dimension of the (square) matrix.
+            dtype: Optional data type of the matrix. If not specified, uses the default
+                tensor type.
+            device: Optional device of the matrix. If not specified, uses the default
+                tensor type.
+
+        Returns:
+            A diagonal matrix representing the identity matrix.
+        """
+        return DiagonalMatrix(ones(dim, dtype=dtype, device=device))

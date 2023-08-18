@@ -2,7 +2,8 @@
 
 from typing import Callable, Type, Union
 
-from torch import Tensor, allclose
+import torch
+from torch import Tensor, allclose, eye, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
 
@@ -73,3 +74,55 @@ def _test_from_inner2(
     truth = project(project(mat).T @ XXT @ project(mat))
     mat_structured = structured_matrix_cls.from_dense(mat)
     assert allclose(truth, mat_structured.from_inner2(XXT).to_dense())
+
+
+def _test_zeros(
+    structured_matrix_cls: Type[StructuredMatrix],
+    dim: int,
+    dtype: Union[torch.dtype, None] = None,
+    device: Union[torch.device, None] = None,
+):
+    """Test initializing a structured matrix representing the zero matrix.
+
+    Args:
+        structured_matrix_cls: The class of the structured matrix to be tested.
+        dim: Dimension of the (square) zero matrix.
+        dtype: Optional data type of the matrix. If not specified, uses the default
+            tensor type.
+        device: Optional device of the matrix. If not specified, uses the default
+            tensor type.
+    """
+    truth = zeros((dim, dim), dtype=dtype, device=device)
+    structured_zero_matrix = structured_matrix_cls.zeros(
+        dim, dtype=dtype, device=device
+    )
+    zero_matrix = structured_zero_matrix.to_dense()
+    assert truth.dtype == zero_matrix.dtype
+    assert truth.device == zero_matrix.device
+    assert allclose(truth, zero_matrix)
+
+
+def _test_eye(
+    structured_matrix_cls: Type[StructuredMatrix],
+    dim: int,
+    dtype: Union[torch.dtype, None] = None,
+    device: Union[torch.device, None] = None,
+):
+    """Test initializing a structured matrix representing the identity matrix.
+
+    Args:
+        structured_matrix_cls: The class of the structured matrix to be tested.
+        dim: Dimension of the (square) zero matrix.
+        dtype: Optional data type of the matrix. If not specified, uses the default
+            tensor type.
+        device: Optional device of the matrix. If not specified, uses the default
+            tensor type.
+    """
+    truth = eye(dim, dtype=dtype, device=device)
+    structured_identity_matrix = structured_matrix_cls.eye(
+        dim, dtype=dtype, device=device
+    )
+    identity_matrix = structured_identity_matrix.to_dense()
+    assert truth.dtype == identity_matrix.dtype
+    assert truth.device == identity_matrix.device
+    assert allclose(truth, identity_matrix)

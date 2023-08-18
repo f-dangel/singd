@@ -1,8 +1,14 @@
 """Test ``sparse_ngd.structures.diagonal``."""
 
-from test.structures.utils import _test_from_inner, _test_from_inner2, _test_matmul
+from test.structures.utils import (
+    _test_eye,
+    _test_from_inner,
+    _test_from_inner2,
+    _test_matmul,
+    _test_zeros,
+)
 
-from torch import Tensor, manual_seed, rand
+from torch import Tensor, device, float16, float32, manual_seed, rand
 
 from sparse_ngd.structures.diagonal import DiagonalMatrix
 
@@ -48,3 +54,15 @@ def test_from_inner2():
     X = rand((10, 20))
     XXT = X @ X.T
     _test_from_inner2(mat, DiagonalMatrix, project_diagonal, XXT)
+
+
+def test_eye():
+    """Test initializing a diagonal matrix representing the identity matrix."""
+    _test_eye(DiagonalMatrix, 10, float32, device("cpu"))
+    _test_eye(DiagonalMatrix, 10, float16, device("cpu"))
+
+
+def test_zeros():
+    """Test initializing a diagonal matrix representing the zero matrix."""
+    _test_zeros(DiagonalMatrix, 10, float32, device("cpu"))
+    _test_zeros(DiagonalMatrix, 10, float16, device("cpu"))

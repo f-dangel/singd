@@ -6,7 +6,8 @@ from abc import ABC, abstractmethod
 from typing import Union
 from warnings import warn
 
-from torch import Tensor
+import torch
+from torch import Tensor, eye, zeros
 
 
 class StructuredMatrix(ABC):
@@ -146,3 +147,50 @@ class StructuredMatrix(ABC):
         self._warn_naive_implementation("from_inner2")
         self_dense = self.to_dense()
         return self.from_dense(self_dense.T @ XXT @ self_dense)
+
+    ###############################################################################
+    #                      Special initialization operations                      #
+    ###############################################################################
+    @classmethod
+    def zeros(
+        cls,
+        dim: int,
+        dtype: Union[torch.dtype, None] = None,
+        device: Union[torch.device, None] = None,
+    ) -> StructuredMatrix:
+        """Create a structured matrix representing the zero matrix.
+
+        Args:
+            dim: Dimension of the (square) matrix.
+            dtype: Optional data type of the matrix. If not specified, uses the default
+                tensor type.
+            device: Optional device of the matrix. If not specified, uses the default
+                tensor type.
+
+        Returns:
+            A structured matrix representing the zero matrix.
+        """
+        cls._warn_naive_implementation("zero")
+        return cls.from_dense(zeros((dim, dim), dtype=dtype, device=device))
+
+    @classmethod
+    def eye(
+        cls,
+        dim: int,
+        dtype: Union[torch.dtype, None] = None,
+        device: Union[torch.device, None] = None,
+    ) -> StructuredMatrix:
+        """Create a structured matrix representing the identity matrix.
+
+        Args:
+            dim: Dimension of the (square) matrix.
+            dtype: Optional data type of the matrix. If not specified, uses the default
+                tensor type.
+            device: Optional device of the matrix. If not specified, uses the default
+                tensor type.
+
+        Returns:
+            A structured matrix representing the identity matrix.
+        """
+        cls._warn_naive_implementation("eye")
+        return cls.from_dense(eye(dim, dtype=dtype, device=device))

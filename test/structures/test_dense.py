@@ -1,8 +1,14 @@
 """Test ``sparse_ngd.structures.dense``."""
 
-from test.structures.utils import _test_from_inner, _test_from_inner2, _test_matmul
+from test.structures.utils import (
+    _test_eye,
+    _test_from_inner,
+    _test_from_inner2,
+    _test_matmul,
+    _test_zeros,
+)
 
-from torch import Tensor, manual_seed, rand
+from torch import Tensor, device, float16, float32, manual_seed, rand
 
 from sparse_ngd.structures.dense import DenseMatrix
 
@@ -50,3 +56,15 @@ def test_from_inner2():
     X = rand((10, 20))
     XXT = X @ X.T
     _test_from_inner2(mat, DenseMatrix, project_dense, XXT)
+
+
+def test_eye():
+    """Test initializing a structured matrix representing the identity matrix."""
+    _test_eye(DenseMatrix, 10, float32, device("cpu"))
+    _test_eye(DenseMatrix, 10, float16, device("cpu"))
+
+
+def test_zeros():
+    """Test initializing a structured matrix representing the zero matrix."""
+    _test_zeros(DenseMatrix, 10, float32, device("cpu"))
+    _test_zeros(DenseMatrix, 10, float16, device("cpu"))
