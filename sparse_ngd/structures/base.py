@@ -148,6 +148,15 @@ class StructuredMatrix(ABC):
         self_dense = self.to_dense()
         return self.from_dense(self_dense.T @ XXT @ self_dense)
 
+    def trace(self) -> Tensor:
+        """Compute the trace of the represented matrix.
+
+        Returns:
+            The trace of the represented matrix.
+        """
+        self._warn_naive_implementation("trace")
+        return self.to_dense().trace()
+
     ###############################################################################
     #                      Special initialization operations                      #
     ###############################################################################

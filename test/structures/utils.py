@@ -126,3 +126,19 @@ def _test_eye(
     assert truth.dtype == identity_matrix.dtype
     assert truth.device == identity_matrix.device
     assert allclose(truth, identity_matrix)
+
+
+def _test_trace(
+    mat: Tensor,
+    structured_matrix_cls: Type[StructuredMatrix],
+):
+    """Test ``trace`` operation of any child of ``StructuredMatrix``.
+
+    Args:
+        mat: A dense matrix which will be converted into a structured matrix.
+        structured_matrix_cls: The class of the structured matrix into which ``mat``
+            will be converted.
+    """
+    truth = mat.trace()
+    mat_structured = structured_matrix_cls.from_dense(mat)
+    assert allclose(truth, mat_structured.trace())

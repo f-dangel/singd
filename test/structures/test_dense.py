@@ -5,6 +5,7 @@ from test.structures.utils import (
     _test_from_inner,
     _test_from_inner2,
     _test_matmul,
+    _test_trace,
     _test_zeros,
 )
 
@@ -68,3 +69,11 @@ def test_zeros():
     """Test initializing a structured matrix representing the zero matrix."""
     _test_zeros(DenseMatrix, 10, float32, device("cpu"))
     _test_zeros(DenseMatrix, 10, float16, device("cpu"))
+
+
+def test_trace():
+    """Test trace of a structured dense matrix."""
+    manual_seed(0)
+
+    mat = rand((10, 10))
+    _test_trace(mat, DenseMatrix)

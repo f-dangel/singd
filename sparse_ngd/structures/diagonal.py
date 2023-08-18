@@ -91,6 +91,14 @@ class DiagonalMatrix(StructuredMatrix):
         """
         return DiagonalMatrix(self._mat_diag**2 * XXT.diag())
 
+    def trace(self) -> Tensor:
+        """Compute the trace of the represented matrix.
+
+        Returns:
+            The trace of the represented matrix.
+        """
+        return self._mat_diag.sum()
+
     ###############################################################################
     #                      Special initialization operations                      #
     ###############################################################################
