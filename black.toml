@@ -14,6 +14,7 @@ exclude = '''
     | dist
     | asdl
     | models
+    | low_numerical
   )/
 )
 '''

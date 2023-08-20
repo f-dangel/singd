@@ -6,7 +6,8 @@ from abc import ABC, abstractmethod
 from typing import Union
 from warnings import warn
 
-from torch import Tensor
+import torch
+from torch import Tensor, eye, zeros
 
 
 class StructuredMatrix(ABC):
@@ -79,6 +80,18 @@ class StructuredMatrix(ABC):
         """
         raise NotImplementedError
 
+    def __mul__(self, other: float) -> StructuredMatrix:
+        """Multiply with a scalar.
+
+        Args:
+            other: A scalar that will be multiplied onto the structured matrix.
+
+        Returns:
+            The structured matrix, multiplied by the scalar.
+        """
+        self._warn_naive_implementation("__mul__")
+        return self.from_dense(self.to_dense() * other)
+
     def __add__(self, other: StructuredMatrix) -> StructuredMatrix:
         """Add another matrix of same structure.
 
@@ -90,6 +103,31 @@ class StructuredMatrix(ABC):
         """
         self._warn_naive_implementation("__add__")
         return self.from_dense(self.to_dense() + other.to_dense())
+
+    def __sub__(self, other: StructuredMatrix) -> StructuredMatrix:
+        """Subtract another matrix of same structure.
+
+        Args:
+            other: Another structured matrix which will be subtracted.
+
+        Returns:
+            A structured matrix resulting from the subtraction.
+        """
+        return self + (other * (-1.0))
+
+    @abstractmethod
+    def transpose(self) -> StructuredMatrix:
+        """Create a structured matrix representing the transpose.
+
+        Returns:
+            A structured matrix representing the transpose.
+
+        # noqa: DAR202
+
+        Raises:
+            NotImplementedError: Must be implemented by a child class.
+        """
+        raise NotImplementedError
 
     @classmethod
     def _warn_naive_implementation(cls, fn_name: str):
@@ -129,3 +167,76 @@ class StructuredMatrix(ABC):
         self._warn_naive_implementation("from_inner")
         S_dense = self.to_dense().T if X is None else self.to_dense().T @ X
         return self.from_dense(S_dense @ S_dense.T)
+
+    # NOTE This operation should be removed long-term as implementing IF-KFAC
+    # with `from_inner` is more efficient. For now, it will exist as it makes
+    # integrating this interface into existing implementations of sparse IF-KFAC
+    # easier, as they have access to the input/gradient covariance matrices.
+    def from_inner2(self, XXT: Tensor) -> StructuredMatrix:
+        """Extract the represented structure from ``self.T @ XXT @ self``.
+
+        Args:
+            XXT: 2d square symmetric matrix.
+
+        Returns:
+            The structured matrix extracted from ``self.T @ XXT @ self``.
+        """
+        self._warn_naive_implementation("from_inner2")
+        self_dense = self.to_dense()
+        return self.from_dense(self_dense.T @ XXT @ self_dense)
+
+    def trace(self) -> Tensor:
+        """Compute the trace of the represented matrix.
+
+        Returns:
+            The trace of the represented matrix.
+        """
+        self._warn_naive_implementation("trace")
+        return self.to_dense().trace()
+
+    ###############################################################################
+    #                      Special initialization operations                      #
+    ###############################################################################
+    @classmethod
+    def zeros(
+        cls,
+        dim: int,
+        dtype: Union[torch.dtype, None] = None,
+        device: Union[torch.device, None] = None,
+    ) -> StructuredMatrix:
+        """Create a structured matrix representing the zero matrix.
+
+        Args:
+            dim: Dimension of the (square) matrix.
+            dtype: Optional data type of the matrix. If not specified, uses the default
+                tensor type.
+            device: Optional device of the matrix. If not specified, uses the default
+                tensor type.
+
+        Returns:
+            A structured matrix representing the zero matrix.
+        """
+        cls._warn_naive_implementation("zero")
+        return cls.from_dense(zeros((dim, dim), dtype=dtype, device=device))
+
+    @classmethod
+    def eye(
+        cls,
+        dim: int,
+        dtype: Union[torch.dtype, None] = None,
+        device: Union[torch.device, None] = None,
+    ) -> StructuredMatrix:
+        """Create a structured matrix representing the identity matrix.
+
+        Args:
+            dim: Dimension of the (square) matrix.
+            dtype: Optional data type of the matrix. If not specified, uses the default
+                tensor type.
+            device: Optional device of the matrix. If not specified, uses the default
+                tensor type.
+
+        Returns:
+            A structured matrix representing the identity matrix.
+        """
+        cls._warn_naive_implementation("eye")
+        return cls.from_dense(eye(dim, dtype=dtype, device=device))

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Union
 
-from torch import Tensor
+import torch
+from torch import Tensor, ones, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
 
@@ -31,6 +32,28 @@ class DiagonalMatrix(StructuredMatrix):
         """
         return DiagonalMatrix(self._mat_diag * other._mat_diag)
 
+    def __add__(self, other: DiagonalMatrix) -> DiagonalMatrix:
+        """Add with another diagonal matrix.
+
+        Args:
+            other: Another diagonal matrix which will be added.
+
+        Returns:
+            A diagonal matrix resulting from the addition.
+        """
+        return DiagonalMatrix(self._mat_diag + other._mat_diag)
+
+    def __mul__(self, other: float) -> DiagonalMatrix:
+        """Multiply with a scalar.
+
+        Args:
+            other: A scalar that will be multiplied onto the diagonal matrix.
+
+        Returns:
+            A diagonal matrix resulting from the multiplication.
+        """
+        return DiagonalMatrix(self._mat_diag * other)
+
     @classmethod
     def from_dense(cls, mat: Tensor) -> DiagonalMatrix:
         """Construct a diagonal matrix from a PyTorch tensor.
@@ -54,6 +77,14 @@ class DiagonalMatrix(StructuredMatrix):
         """
         return self._mat_diag.diag()
 
+    def transpose(self) -> DiagonalMatrix:
+        """Create a structured matrix representing the transpose.
+
+        Returns:
+            The transpose of the represented matrix.
+        """
+        return DiagonalMatrix(self._mat_diag)
+
     ###############################################################################
     #                        Special operations for IF-KFAC                       #
     ###############################################################################
@@ -70,9 +101,75 @@ class DiagonalMatrix(StructuredMatrix):
             X: Optional arbitrary 2d tensor. If ``None``, ``X = I`` will be used.
 
         Returns:
-            The matrix diagonal of ``self.T @ X @ X^T @ self``.
+            A ``DiagonalMatrix`` representing matrix diagonal of
+            ``self.T @ X @ X^T @ self``.
         """
         mat_diag = self._mat_diag**2
         if X is not None:
             mat_diag *= (X**2).sum(1)
         return DiagonalMatrix(mat_diag)
+
+    def from_inner2(self, XXT: Tensor) -> StructuredMatrix:
+        """Represent the matrix diagonal of ``self.T @ XXT @ self``.
+
+        Args:
+            XXT: 2d square symmetric matrix.
+
+        Returns:
+            A ``DiagonalMatrix`` representing matrix diagonal of
+            ``self.T @ XXT @ self``.
+        """
+        return DiagonalMatrix(self._mat_diag**2 * XXT.diag())
+
+    def trace(self) -> Tensor:
+        """Compute the trace of the represented matrix.
+
+        Returns:
+            The trace of the represented matrix.
+        """
+        return self._mat_diag.sum()
+
+    ###############################################################################
+    #                      Special initialization operations                      #
+    ###############################################################################
+    @classmethod
+    def zeros(
+        cls,
+        dim: int,
+        dtype: Union[torch.dtype, None] = None,
+        device: Union[torch.device, None] = None,
+    ) -> StructuredMatrix:
+        """Create a structured matrix representing the zero matrix.
+
+        Args:
+            dim: Dimension of the (square) matrix.
+            dtype: Optional data type of the matrix. If not specified, uses the default
+                tensor type.
+            device: Optional device of the matrix. If not specified, uses the default
+                tensor type.
+
+        Returns:
+            A structured matrix representing the zero matrix.
+        """
+        return DiagonalMatrix(zeros(dim, dtype=dtype, device=device))
+
+    @classmethod
+    def eye(
+        cls,
+        dim: int,
+        dtype: Union[torch.dtype, None] = None,
+        device: Union[torch.device, None] = None,
+    ) -> DiagonalMatrix:
+        """Create a diagonal matrix representing the identity matrix.
+
+        Args:
+            dim: Dimension of the (square) matrix.
+            dtype: Optional data type of the matrix. If not specified, uses the default
+                tensor type.
+            device: Optional device of the matrix. If not specified, uses the default
+                tensor type.
+
+        Returns:
+            A diagonal matrix representing the identity matrix.
+        """
+        return DiagonalMatrix(ones(dim, dtype=dtype, device=device))

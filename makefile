@@ -5,6 +5,8 @@ help:
 	@echo "        Install sparse_ngd and dependencies"
 	@echo "uninstall"
 	@echo "        Unstall sparse_ngd"
+	@echo "lint"
+	@echo "        Run all linting actions"
 	@echo "install-dev"
 	@echo "        Install all development tools"
 	@echo "install-test"
@@ -103,3 +105,12 @@ pydocstyle-check:
 
 conda-env:
 	@conda env create --file .conda_env.yml
+
+.PHONY: lint
+
+lint:
+	make black-check
+	make isort-check
+	make flake8
+	make darglint-check
+	make pydocstyle-check
