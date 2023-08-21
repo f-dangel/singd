@@ -7,9 +7,9 @@ from test.structures.utils import (
     _test_from_inner2,
     _test_matmul,
     _test_mul,
+    _test_rmatmat,
     _test_sub,
     _test_trace,
-    _test_transpose,
     _test_zeros,
 )
 
@@ -46,11 +46,12 @@ def test_mul():
     _test_mul(mat, scale, DiagonalMatrix, project_diagonal)
 
 
-def test_transpose():
-    """Test transpose of a diagonal matrix."""
+def test_rmatmat():
+    """Test multiplication with the transpose of a diagonal matrix."""
     manual_seed(0)
-    mat = rand((10, 10))
-    _test_transpose(mat, DiagonalMatrix, project_diagonal)
+    mat1 = rand((10, 10))
+    mat2 = rand((10, 20))
+    _test_rmatmat(mat1, mat2, DiagonalMatrix, project_diagonal)
 
 
 def test_add():

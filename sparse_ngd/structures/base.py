@@ -31,19 +31,27 @@ class StructuredMatrix(ABC):
 
     WARN_NAIVE: bool = True
 
-    def __matmul__(self, other: StructuredMatrix) -> StructuredMatrix:
-        """Multiply with another matrix that has identical structure (@ operator).
+    def __matmul__(
+        self, other: Union[StructuredMatrix, Tensor]
+    ) -> Union[StructuredMatrix, Tensor]:
+        """Multiply onto a matrix (@ operator).
 
         (https://peps.python.org/pep-0465/)
 
         Args:
-            other: Another matrix with same structure which will be multiplied onto.
+            other: Another matrix which will be multiplied onto. Can be represented
+                by a PyTorch tensor or a structured matrix.
 
         Returns:
-            A structured matrix resulting from the multiplication.
+            Result of the multiplication. If a PyTorch tensor was passed as argument,
+            the result will be a PyTorch tensor. Otherwise, it will be a a structured
+            matrix.
         """
         self._warn_naive_implementation("__matmul__")
-        return self.from_dense(self.to_dense() @ other.to_dense())
+        if isinstance(other, Tensor):
+            return self.to_dense() @ other
+        else:
+            return self.from_dense(self.to_dense() @ other.to_dense())
 
     @classmethod
     @abstractmethod
@@ -115,19 +123,17 @@ class StructuredMatrix(ABC):
         """
         return self + (other * (-1.0))
 
-    @abstractmethod
-    def transpose(self) -> StructuredMatrix:
-        """Create a structured matrix representing the transpose.
+    def rmatmat(self, mat: Tensor) -> Tensor:
+        """Multiply the structured matrix's transpose onto a matrix (``self.T @ mat``).
+
+        Args:
+            mat: A dense matrix that will be multiplied onto.
 
         Returns:
-            A structured matrix representing the transpose.
-
-        # noqa: DAR202
-
-        Raises:
-            NotImplementedError: Must be implemented by a child class.
+            A dense PyTorch tensor resulting from the multiplication.
         """
-        raise NotImplementedError
+        self._warn_naive_implementation("rmatmat")
+        return self.to_dense().T @ mat
 
     @classmethod
     def _warn_naive_implementation(cls, fn_name: str):
