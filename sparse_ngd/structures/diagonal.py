@@ -88,6 +88,10 @@ class DiagonalMatrix(StructuredMatrix):
     def rmatmat(self, mat: Tensor) -> Tensor:
         """Multiply ``mat`` with the transpose of the structured matrix.
 
+        Args:
+            mat: A matrix which will be multiplied by the transpose of the represented
+                diagonal matrix.
+
         Returns:
             The transpose of the represented matrix.
         """
