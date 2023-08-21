@@ -115,19 +115,17 @@ class StructuredMatrix(ABC):
         """
         return self + (other * (-1.0))
 
-    @abstractmethod
-    def transpose(self) -> StructuredMatrix:
-        """Create a structured matrix representing the transpose.
+    def rmatmat(self, mat: Tensor) -> Tensor:
+        """Multiply the structured matrix's transpose onto a matrix (``self.T @ mat``).
+
+        Args:
+            mat: A dense matrix that will be multiplied onto.
 
         Returns:
-            A structured matrix representing the transpose.
-
-        # noqa: DAR202
-
-        Raises:
-            NotImplementedError: Must be implemented by a child class.
+            A dense PyTorch tensor resulting from the multiplication.
         """
-        raise NotImplementedError
+        self._warn_naive_implementation("rmatmat")
+        return self.to_dense().T @ mat
 
     @classmethod
     def _warn_naive_implementation(cls, fn_name: str):

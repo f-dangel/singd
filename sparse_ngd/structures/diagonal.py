@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Union
 
 import torch
-from torch import Tensor, ones, zeros
+from torch import Tensor, einsum, ones, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
 
@@ -77,13 +77,13 @@ class DiagonalMatrix(StructuredMatrix):
         """
         return self._mat_diag.diag()
 
-    def transpose(self) -> DiagonalMatrix:
-        """Create a structured matrix representing the transpose.
+    def rmatmat(self, mat: Tensor) -> Tensor:
+        """Multiply ``mat`` with the transpose of the structured matrix.
 
         Returns:
             The transpose of the represented matrix.
         """
-        return DiagonalMatrix(self._mat_diag)
+        return einsum("i,i...->i...", self._mat_diag, mat)
 
     ###############################################################################
     #                        Special operations for IF-KFAC                       #
