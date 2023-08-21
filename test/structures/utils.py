@@ -24,10 +24,16 @@ def _test_matmul(
         project: A function which converts an arbitrary dense matrix into a dense
             matrix of the tested structure. Used to establish the ground truth.
     """
-    truth = project(mat1) @ project(mat2)
     mat1_structured = structured_matrix_cls.from_dense(mat1)
     mat2_structured = structured_matrix_cls.from_dense(mat2)
+
+    # multiplication with a structured matrix
+    truth = project(mat1) @ project(mat2)
     assert allclose(truth, (mat1_structured @ mat2_structured).to_dense())
+
+    # multiplication with a PyTorch tensor
+    truth = project(mat1) @ mat2
+    assert allclose(truth, mat1_structured @ mat2)
 
 
 def _test_add(

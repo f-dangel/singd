@@ -31,19 +31,27 @@ class StructuredMatrix(ABC):
 
     WARN_NAIVE: bool = True
 
-    def __matmul__(self, other: StructuredMatrix) -> StructuredMatrix:
-        """Multiply with another matrix that has identical structure (@ operator).
+    def __matmul__(
+        self, other: Union[StructuredMatrix, Tensor]
+    ) -> Union[StructuredMatrix, Tensor]:
+        """Multiply onto a matrix (@ operator).
 
         (https://peps.python.org/pep-0465/)
 
         Args:
-            other: Another matrix with same structure which will be multiplied onto.
+            other: Another matrix which will be multiplied onto. Can be represented
+                by a PyTorch tensor or a structured matrix.
 
         Returns:
-            A structured matrix resulting from the multiplication.
+            Result of the multiplication. If a PyTorch tensor was passed as argument,
+            the result will be a PyTorch tensor. Otherwise, it will be a a structured
+            matrix.
         """
         self._warn_naive_implementation("__matmul__")
-        return self.from_dense(self.to_dense() @ other.to_dense())
+        if isinstance(other, Tensor):
+            return self.to_dense() @ other
+        else:
+            return self.from_dense(self.to_dense() @ other.to_dense())
 
     @classmethod
     @abstractmethod

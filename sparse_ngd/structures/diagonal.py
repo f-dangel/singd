@@ -21,16 +21,24 @@ class DiagonalMatrix(StructuredMatrix):
         """
         self._mat_diag = mat_diag
 
-    def __matmul__(self, other: DiagonalMatrix) -> DiagonalMatrix:
-        """Multiply with another diagonal matrix (@ operator).
+    def __matmul__(
+        self, other: Union[DiagonalMatrix, Tensor]
+    ) -> Union[DiagonalMatrix, Tensor]:
+        """Multiply the diagonal matrix onto a (@ operator).
 
         Args:
-            other: Another diagonal matrix which will be multiplied onto.
+            other: A matrix which will be multiplied onto. Can be represented by a
+                PyTorch tensor or a structured matrix.
 
         Returns:
-            A diagonal matrix resulting from the multiplication.
+            Result of the multiplication. If a PyTorch tensor was passed as argument,
+            the result will be a PyTorch tensor. If a diagonal matrix was passed, the
+            result will be returned as a ``DiagonalMatrix``.
         """
-        return DiagonalMatrix(self._mat_diag * other._mat_diag)
+        if isinstance(other, Tensor):
+            return einsum("i,i...->i...", self._mat_diag, other)
+        else:
+            return DiagonalMatrix(self._mat_diag * other._mat_diag)
 
     def __add__(self, other: DiagonalMatrix) -> DiagonalMatrix:
         """Add with another diagonal matrix.
@@ -83,7 +91,7 @@ class DiagonalMatrix(StructuredMatrix):
         Returns:
             The transpose of the represented matrix.
         """
-        return einsum("i,i...->i...", self._mat_diag, mat)
+        return self @ mat
 
     ###############################################################################
     #                        Special operations for IF-KFAC                       #
