@@ -100,7 +100,9 @@ class SNGD(Optimizer):
             model.parameters() if model_params is None else model_params, defaults
         )
         self.lr = lr
+        self.momentum = momentum
         self.lr_cov = lr_cov
+        self.weight_decay = weight_decay
         self.damping = damping
         self.batch_averaged = batch_averaged
         self.alpha1 = alpha1
@@ -137,7 +139,7 @@ class SNGD(Optimizer):
         Raises:
             NotImplementedError: If the initialization is not implemented for a module.
         """
-        for module in self.active_modules:
+        for module in self.modules:
             if isinstance(module, Linear):
                 dim_C, dim_K = module.weight.shape
                 if module.bias is not None:
@@ -256,7 +258,7 @@ class SNGD(Optimizer):
             handles.extend(
                 (
                     module.register_forward_pre_hook(self._save_input),
-                    module.register_backward_hook(self._update_preconditioner),
+                    module.register_full_backward_hook(self._update_preconditioner),
                 )
             )
         return modules, handles
@@ -344,7 +346,7 @@ class SNGD(Optimizer):
                 if self.weight_decay != 0.0:
                     # NOTE Not in-place as this would contaminate the natural gradient
                     # momentum buffer
-                    p_step = p_step.add(p_grad, scale=self.weight_decay)
+                    p_step = p_step.add(p_grad, alpha=self.weight_decay)
 
                 p.data.add_(p_step, alpha=-self.lr)
 
