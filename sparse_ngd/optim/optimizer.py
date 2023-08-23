@@ -327,26 +327,22 @@ class SNGD(Optimizer):
             parameters = (
                 [module.weight] if module.bias is None else [module.weight, module.bias]
             )
-            gradients = [p.grad.data for p in parameters]
+            for p, p_nat_grad in zip(parameters, natural_gradients):
+                p_step = p_nat_grad
 
-            for p, p_nat_grad, p_grad in zip(parameters, natural_gradients, gradients):
-                param_state = self.state[p]
-
-                # update natural gradient momentum
-                if self.momentum != 0.0:
-                    if "natural_gradient_buffer" not in param_state:
-                        param_state["natural_gradient_buffer"] = zeros_like(p.data)
-
-                    ng_buffer = param_state["natural_gradient_buffer"]
-                    ng_buffer.mul_(self.momentum).add_(p_nat_grad)
-                    p_step = ng_buffer
-                else:
-                    p_step = p_nat_grad
-
+                # add weight decay
                 if self.weight_decay != 0.0:
-                    # NOTE Not in-place as this would contaminate the natural gradient
-                    # momentum buffer
-                    p_step = p_step.add(p_grad, alpha=self.weight_decay)
+                    p_step.add_(p.data, alpha=self.weight_decay)
+
+                # momentum on previous updates
+                if self.momentum != 0.0:
+                    param_state = self.state[p]
+                    if "momentum_buffer" not in param_state:
+                        param_state["momentum_buffer"] = zeros_like(p.data)
+
+                    p_momentum = param_state["momentum_buffer"]
+                    p_momentum.mul_(self.momentum).add_(p_nat_grad)
+                    p_step = p_momentum
 
                 p.data.add_(p_step, alpha=-self.lr)
 
