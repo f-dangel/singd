@@ -126,6 +126,10 @@ class SNGD(Optimizer):
         self.m_Ks: Dict[Module, StructuredMatrix] = {}
         self.m_Cs: Dict[Module, StructuredMatrix] = {}
 
+        # accumulators for H_K and H_C
+        self.H_Ks: Dict[Module, StructuredMatrix] = {}
+        self.H_Cs: Dict[Module, StructuredMatrix] = {}
+
         self._initialize_buffers()
 
     def _initialize_buffers(self):
@@ -135,25 +139,9 @@ class SNGD(Optimizer):
 
         ``K, C`` are initialized to identity matrices, their momentum terms
         ``m_K, m_C`` to zero.
-
-        Raises:
-            NotImplementedError: If the initialization is not implemented for a module.
         """
         for module in self.modules:
-            if isinstance(module, Linear):
-                dim_C, dim_K = module.weight.shape
-                if module.bias is not None:
-                    dim_K += 1
-            elif isinstance(module, Conv2d):
-                dim_K = module.weight.shape[1:].numel()
-                if module.bias is not None:
-                    dim_K += 1
-                dim_C = module.weight.shape[0]
-            else:
-                raise NotImplementedError(
-                    f"Initialization not implemented for {module}."
-                )
-
+            dim_K, dim_C = self.preconditioner_dims(module)
             kwargs = {"dtype": module.weight.dtype, "device": module.weight.device}
 
             self.Ks[module] = self.K_cls.eye(dim_K, **kwargs)
@@ -161,6 +149,32 @@ class SNGD(Optimizer):
 
             self.m_Ks[module] = self.K_cls.zeros(dim_K, **kwargs)
             self.m_Cs[module] = self.C_cls.zeros(dim_C, **kwargs)
+
+    @staticmethod
+    def preconditioner_dims(module: Module) -> Tuple[int, int]:
+        """Return the dimensions of the pre-conditioner matrices for a layer.
+
+        Args:
+            module: Layer whose pre-conditioner dimensions are returned.
+
+        Returns:
+            Tuple of the form ``(dim_K, dim_C)``.
+
+        Raises:
+            NotImplementedError: If the module is not supported.
+        """
+        if isinstance(module, Linear):
+            dim_C, dim_K = module.weight.shape
+            if module.bias is not None:
+                dim_K += 1
+        elif isinstance(module, Conv2d):
+            dim_K = module.weight.shape[1:].numel()
+            if module.bias is not None:
+                dim_K += 1
+            dim_C = module.weight.shape[0]
+        else:
+            raise NotImplementedError(f"Initialization not implemented for {module}.")
+        return dim_K, dim_C
 
     def _save_input(self, module: Module, inputs: Tuple[Tensor]):
         """Internally store input of a layer if triggered by update frequency.
@@ -174,12 +188,58 @@ class SNGD(Optimizer):
         if is_grad_enabled() and self.steps % self.T == 0:
             self.inputs[module] = inputs[0].data
 
-    def _update_preconditioner(
+    def _update_preconditioner(self, module: Module):
+        """Update the pre-conditioner matrices and their momenta for a layer.
+
+        Flushes the accumulated quantities ``H_K, H_C``.
+        Updates internal quantities ``K, C, m_K, m_C``.
+
+        Args:
+            module: Layer whose pre-conditioner matrices are updated.
+        """
+        K, C = self.Ks[module], self.Cs[module]
+        m_K, m_C = self.m_Ks[module], self.m_Cs[module]
+        # NOTE: Pop such that they will be freed after
+        H_K, H_C = self.H_Ks.pop(module), self.H_Cs.pop(module)
+
+        # 1) COMPUTE UPDATE
+        K_tK = K.from_inner()
+        C_tC = C.from_inner()
+
+        p, d = self.preconditioner_dims(module)
+
+        tr_H_C = H_C.trace()
+        tr_H_K = H_K.trace()
+
+        c_squared = self.damping * C_tC.trace()
+        step_m_K = (
+            H_K * (tr_H_C / d)
+            + K_tK * (c_squared / d)
+            - self.K_cls.eye(p, dtype=tr_H_K.dtype, device=tr_H_K.device)
+        ) * 0.5
+
+        kappa_squared = self.damping * K_tK.trace()
+        step_m_C = (
+            H_C * (tr_H_K / p)
+            + C_tC * (kappa_squared / p)
+            - self.C_cls.eye(d, dtype=tr_H_C.dtype, device=tr_H_C.device)
+        ) * 0.5
+
+        # 2) APPLY UPDATE
+        beta1 = self.lr_cov
+
+        self.m_Ks[module] = m_K * self.alpha1 + step_m_K
+        self.Ks[module] = K - (K @ self.m_Ks[module]) * beta1
+
+        self.m_Cs[module] = m_C * self.alpha1 + step_m_C
+        self.Cs[module] = C - (C @ self.m_Cs[module]) * beta1
+
+    def _accumulate_H_terms(
         self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]
     ):
-        """Maybe update the pre-conditioner for a layer.
+        """Accumulate the current mini-batch's contribution to ``H_K, H_C`` for a layer.
 
-        Updates the ``K, C, m_K, m_C`` buffers for the module.
+        Updates the ``H_K, H_C`` buffers for the module.
 
         Only updates for steps matched by the specified update frequency.
         Requires that the layer inputs have been stored in ``self.inputs``.
@@ -201,44 +261,18 @@ class SNGD(Optimizer):
         # Flatten into matrix, add scaling from batch average
         g = process_grad_output(g, module, self.batch_averaged)
 
-        # 2) COMPUTE UPDATE
+        # 2) Update H_K, H_C
         K, C = self.Ks[module], self.Cs[module]
-        m_K, m_C = self.m_Ks[module], self.m_Cs[module]
-
         H_K = K.from_inner(X=a.T)
         H_C = C.from_inner(X=g.T)
-        K_tK = K.from_inner()
-        C_tC = C.from_inner()
-
-        d, p = g.shape[1], a.shape[1]
-
-        c_squared = self.damping * C_tC.trace()
-        step_m_K = (
-            H_K * (H_C.trace() / d)
-            + K_tK * (c_squared / d)
-            - self.K_cls.eye(p, dtype=a.dtype, device=a.device)
-        ) * 0.5
-
-        kappa_squared = self.damping * K_tK.trace()
-        step_m_C = (
-            H_C * (H_K.trace() / p)
-            + C_tC * (kappa_squared / p)
-            - self.C_cls.eye(d, dtype=g.dtype, device=g.device)
-        ) * 0.5
-
-        # 3) APPLY UPDATE
-        beta1 = self.lr_cov
-
-        self.m_Ks[module] = m_K * self.alpha1 + step_m_K
-        self.Ks[module] = K - (K @ self.m_Ks[module]) * beta1
-
-        self.m_Cs[module] = m_C * self.alpha1 + step_m_C
-        self.Cs[module] = C - (C @ self.m_Cs[module]) * beta1
+        # TODO Figure out correct scale
+        self.H_Ks[module] = H_K
+        self.H_Cs[module] = H_C
 
     def _install_hooks(
         self, model: Module
     ) -> Tuple[List[Module], List[RemovableHandle]]:
-        """Install hooks on supported modules to update the pre-conditioner.
+        """Install hooks on supported modules to accumulate pre-conditioner quantities.
 
         Args:
             model: Model whose modules are hooked.
@@ -258,7 +292,7 @@ class SNGD(Optimizer):
             handles.extend(
                 (
                     module.register_forward_pre_hook(self._save_input),
-                    module.register_full_backward_hook(self._update_preconditioner),
+                    module.register_full_backward_hook(self._accumulate_H_terms),
                 )
             )
         return modules, handles
@@ -323,6 +357,7 @@ class SNGD(Optimizer):
             raise NotImplementedError("Closure not supported.")
 
         for module in self.modules:
+            self._update_preconditioner(module)
             natural_gradients = self._compute_natural_gradient(module)
             parameters = (
                 [module.weight] if module.bias is None else [module.weight, module.bias]
