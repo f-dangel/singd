@@ -15,6 +15,7 @@ exclude = '''
     | asdl
     | models
     | low_numerical
+    | lin2023simplifying
   )/
 )
 '''
