@@ -5,7 +5,7 @@ from copy import deepcopy
 from os import path
 
 from torch import allclose, manual_seed
-from torch.nn import CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
+from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
@@ -41,10 +41,11 @@ def test_compare_lin2023simplifying():
     # NOTE All parameters of this network will be updated with KFAC, no other
     # optimizer involved
     model_original = Sequential(
-        Flatten(),
-        Linear(784, 50),
+        Conv2d(1, 3, kernel_size=5, stride=2),
         ReLU(),
-        Linear(50, 50),
+        Flatten(),
+        ReLU(),
+        Linear(432, 50),
         ReLU(),
         Linear(50, 10),
     )
