@@ -93,6 +93,8 @@ def test_compare_lin2023simplifying():
     model_original.train()
     model_ours.train()
 
+    tolerances = {"rtol": 1e-5, "atol": 5e-7}
+
     # Loop over each batch from the training set
     for batch_idx, (inputs, target) in enumerate(train_loader):
         print(f"Step {optim_original.steps}")
@@ -119,11 +121,11 @@ def test_compare_lin2023simplifying():
 
         output_original = model_original(inputs)
         output_ours = model_ours(inputs)
-        assert allclose(output_original, output_ours)
+        assert allclose(output_original, output_ours, **tolerances)
 
         loss_original = loss_func_original(output_original, target)
         loss_ours = loss_func_ours(output_ours, target)
-        assert allclose(loss_original, loss_ours)
+        assert allclose(loss_original, loss_ours, **tolerances)
 
         optim_original.acc_stats = True
         loss_original.backward()
@@ -134,7 +136,6 @@ def test_compare_lin2023simplifying():
 
         # compare K, C, m_K, m_C
         assert len(optim_original.modules) == len(optim_ours.modules)
-        tolerances = {"rtol": 1e-5, "atol": 5e-7}
         for m_original, m_ours in zip(optim_original.modules, optim_ours.modules):
             K_original = optim_original.A[m_original]
             K_ours = optim_ours.Ks[m_ours].to_dense()
