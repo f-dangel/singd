@@ -168,7 +168,3 @@ def test_compare_lin2023simplifying():
 
         if batch_idx >= MAX_STEPS:
             break
-
-
-if __name__ == "__main__":
-    test_compare_lin2023simplifying()
