@@ -7,6 +7,7 @@ from torch.nn import Conv2d, Linear, Module, Parameter
 from torch.optim import Optimizer
 from torch.utils.hooks import RemovableHandle
 
+from sparse_ngd.optim.accumulator import BatchAccumulator
 from sparse_ngd.optim.utils import process_grad_output, process_input
 from sparse_ngd.structures.base import StructuredMatrix
 from sparse_ngd.structures.dense import DenseMatrix
@@ -25,8 +26,10 @@ class SNGD(Optimizer):
 
     Note:
         The optimizer installs forward and backward hooks on known modules.
-        These hooks compute the approximate natural gradient and store it in the
-        ``.grad`` field of their parameters.
+        These hooks compute quantities required for the pre-conditioner and are
+        compatible with gradient accumulation. During `.step`, these quantities
+        will be flushed to update the pre-conditioner, compute the approximate
+        natural gradient, and update the neural network parameters.
 
     Attributes:
         SUPPORTED_STRUCTURES: A string-to-class mapping of supported structures.
@@ -127,8 +130,8 @@ class SNGD(Optimizer):
         self.m_Cs: Dict[Module, StructuredMatrix] = {}
 
         # accumulators for H_K and H_C
-        self.H_Ks: Dict[Module, StructuredMatrix] = {}
-        self.H_Cs: Dict[Module, StructuredMatrix] = {}
+        self.H_Ks: Dict[Module, BatchAccumulator] = {}
+        self.H_Cs: Dict[Module, BatchAccumulator] = {}
 
         self._initialize_buffers()
 
@@ -191,16 +194,20 @@ class SNGD(Optimizer):
     def _update_preconditioner(self, module: Module):
         """Update the pre-conditioner matrices and their momenta for a layer.
 
+        Only updates for steps matched by the specified update frequency.
         Flushes the accumulated quantities ``H_K, H_C``.
         Updates internal quantities ``K, C, m_K, m_C``.
 
         Args:
             module: Layer whose pre-conditioner matrices are updated.
         """
+        if self.steps % self.T != 0:
+            return
+
         K, C = self.Ks[module], self.Cs[module]
         m_K, m_C = self.m_Ks[module], self.m_Cs[module]
         # NOTE: Pop such that they will be freed after
-        H_K, H_C = self.H_Ks.pop(module), self.H_Cs.pop(module)
+        H_K, H_C = self.H_Ks.pop(module).value, self.H_Cs.pop(module).value
 
         # 1) COMPUTE UPDATE
         K_tK = K.from_inner()
@@ -254,6 +261,7 @@ class SNGD(Optimizer):
 
         # 1) PROCESS INPUTS AND GRAD_OUTPUTS
         a = self.inputs.pop(module)
+        batch_size = a.shape[0]
         # For convolutions, unfold the input, for modules with bias terms, append a 1
         a = process_input(a, module)
 
@@ -265,9 +273,15 @@ class SNGD(Optimizer):
         K, C = self.Ks[module], self.Cs[module]
         H_K = K.from_inner(X=a.T)
         H_C = C.from_inner(X=g.T)
-        # TODO Figure out correct scale
-        self.H_Ks[module] = H_K
-        self.H_Cs[module] = H_C
+
+        # maybe set up fresh accumulators (they get flushed in `.step`)
+        if module not in self.H_Ks:
+            self.H_Ks[module] = BatchAccumulator(batch_averaged=self.batch_averaged)
+        if module not in self.H_Cs:
+            self.H_Cs[module] = BatchAccumulator(batch_averaged=self.batch_averaged)
+
+        self.H_Ks[module].update(H_K, batch_size)
+        self.H_Cs[module].update(H_C, batch_size)
 
     def _install_hooks(
         self, model: Module
