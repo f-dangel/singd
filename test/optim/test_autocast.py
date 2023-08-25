@@ -1,7 +1,7 @@
 """Test mixed-precision training with float16."""
 
 from copy import deepcopy
-from test.utils import compare_optimizers, report_nonclose
+from test.utils import compare_optimizers
 
 from torch import autocast, bfloat16, manual_seed
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
