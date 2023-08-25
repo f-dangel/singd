@@ -7,7 +7,7 @@ from typing import Union
 from warnings import warn
 
 import torch
-from torch import Tensor, eye, zeros
+from torch import Tensor, bfloat16, eye, zeros
 
 
 class StructuredMatrix(ABC):
@@ -198,7 +198,13 @@ class StructuredMatrix(ABC):
             The trace of the represented matrix.
         """
         self._warn_naive_implementation("trace")
-        return self.to_dense().trace()
+        dense = self.to_dense()
+
+        # trace not implemented in bfloat16
+        if dense.dtype == bfloat16:
+            dense = dense.float()
+
+        return dense.trace()
 
     ###############################################################################
     #                      Special initialization operations                      #
