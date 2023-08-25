@@ -1,7 +1,7 @@
 """Test training with gradient scaling."""
 
 from copy import deepcopy
-from test.utils import report_nonclose
+from test.utils import compare_optimizers
 
 from torch import manual_seed
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
@@ -59,8 +59,6 @@ def test_scaler():
     model.train()
     model_scale.train()
 
-    tolerances = {"rtol": 1e-2, "atol": 5e-5}
-
     losses = []
 
     # Loop over each batch from the training set
@@ -88,35 +86,7 @@ def test_scaler():
         (GRAD_SCALE * loss_scale).backward()
         optim_scale.step()
 
-        # compare K, C, m_K, m_C
-        assert len(optim.modules) == len(optim_scale.modules)
-        for m, m_scale in zip(optim.modules, optim_scale.modules):
-            K = optim.Ks[m].to_dense()
-            K_scale = optim_scale.Ks[m_scale].to_dense()
-            report_nonclose(K, K_scale, **tolerances, name="K")
-
-            m_K = optim.m_Ks[m].to_dense()
-            m_K_scale = optim_scale.m_Ks[m_scale].to_dense()
-            report_nonclose(m_K, m_K_scale, **tolerances, name="m_K")
-
-            C = optim.Cs[m].to_dense()
-            C_scale = optim_scale.Cs[m_scale].to_dense()
-            report_nonclose(C, C_scale, **tolerances, name="C")
-
-            m_C = optim.m_Cs[m].to_dense()
-            m_C_scale = optim_scale.m_Cs[m_scale].to_dense()
-            report_nonclose(m_C, m_C_scale, **tolerances, name="m_C")
-
-        # compare momentum buffers
-        if optim_hyperparams["momentum"] != 0:
-            for p, p_scale in zip(model.parameters(), model_scale.parameters()):
-                mom = optim.state[p]["momentum_buffer"]
-                mom_scale = optim_scale.state[p_scale]["momentum_buffer"]
-                report_nonclose(mom, mom_scale, **tolerances, name="momentum")
-
-        # compare model parameters
-        for p, p_scale in zip(model.parameters(), model_scale.parameters()):
-            report_nonclose(p, p_scale, **tolerances, name="parameters")
+        compare_optimizers(optim, optim_scale, rtol=1e-2, atol=5e-5)
 
         if batch_idx >= MAX_STEPS:
             break

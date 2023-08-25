@@ -1,7 +1,7 @@
 """Test mixed-precision training with float16."""
 
 from copy import deepcopy
-from test.utils import report_nonclose
+from test.utils import compare_optimizers, report_nonclose
 
 from torch import autocast, bfloat16, manual_seed
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
@@ -60,10 +60,6 @@ def test_autocast():
     model_single.train()
     model_mixed.train()
 
-    tolerances = {"rtol": 1e-2, "atol": 5e-5}
-    # momentum requires larger tolerance
-    tolerances_momentum = {"rtol": 1e-1, "atol": 5e-3}
-
     # Loop over each batch from the training set
     for batch_idx, (inputs, target) in enumerate(train_loader):
         print(f"Step {optim_single.steps}")
@@ -89,41 +85,15 @@ def test_autocast():
             (GRAD_SCALE * loss_mixed).backward()
         optim_mixed.step()
 
-        # compare K, C, m_K, m_C
-        assert len(optim_single.modules) == len(optim_mixed.modules)
-        for m_single, m_mixed in zip(optim_single.modules, optim_mixed.modules):
-            K_single = optim_single.Ks[m_single].to_dense()
-            K_mixed = optim_mixed.Ks[m_mixed].to_dense()
-            report_nonclose(K_single, K_mixed, **tolerances, name="K")
-
-            m_K_single = optim_single.m_Ks[m_single].to_dense()
-            m_K_mixed = optim_mixed.m_Ks[m_mixed].to_dense()
-            report_nonclose(m_K_single, m_K_mixed, **tolerances, name="m_K")
-
-            C_single = optim_single.Cs[m_single].to_dense()
-            C_mixed = optim_mixed.Cs[m_mixed].to_dense()
-            report_nonclose(C_single, C_mixed, **tolerances, name="C")
-
-            m_C_single = optim_single.m_Cs[m_single].to_dense()
-            m_C_mixed = optim_mixed.m_Cs[m_mixed].to_dense()
-            report_nonclose(m_C_single, m_C_mixed, **tolerances, name="m_C")
-
-        # compare momentum buffers
-        if optim_hyperparams["momentum"] != 0:
-            for p_single, p_mixed in zip(
-                model_single.parameters(), model_mixed.parameters()
-            ):
-                mom_single = optim_single.state[p_single]["momentum_buffer"]
-                mom_mixed = optim_mixed.state[p_mixed]["momentum_buffer"]
-                report_nonclose(
-                    mom_single, mom_mixed, **tolerances_momentum, name="momentum"
-                )
-
-        # compare model parameters
-        for p_single, p_mixed in zip(
-            model_single.parameters(), model_mixed.parameters()
-        ):
-            report_nonclose(p_single, p_mixed, **tolerances, name="parameters")
+        compare_optimizers(
+            optim_single,
+            optim_mixed,
+            atol=5e-5,
+            rtol=1e-2,
+            # momentum requires larger tolerance
+            atol_momentum=5e-3,
+            rtol_momentum=1e-1,
+        )
 
         if batch_idx >= MAX_STEPS:
             break

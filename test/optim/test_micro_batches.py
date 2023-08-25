@@ -1,6 +1,7 @@
 """Check micro-batch support (optimizer can be used with gradient accumulation)."""
 
 from copy import deepcopy
+from test.utils import compare_optimizers
 
 from torch import allclose, manual_seed
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
@@ -60,8 +61,6 @@ def test_micro_batches():
     model_mini.train()
     model_micro.train()
 
-    tolerances = {"rtol": 1e-5, "atol": 5e-7}
-
     # Loop over each batch from the training set
     for batch_idx, (inputs, target) in enumerate(train_loader):
         print(f"Step {optim_mini.steps}")
@@ -84,34 +83,7 @@ def test_micro_batches():
             p.grad *= micro_batch_size / mini_batch_size
         optim_micro.step()
 
-        # compare K, C, m_K, m_C
-        assert len(optim_mini.modules) == len(optim_micro.modules)
-        for m_mini, m_micro in zip(optim_mini.modules, optim_micro.modules):
-            K_mini = optim_mini.Ks[m_mini].to_dense()
-            K_micro = optim_micro.Ks[m_micro].to_dense()
-            assert allclose(K_mini, K_micro, **tolerances)
-
-            m_K_mini = optim_mini.m_Ks[m_mini].to_dense()
-            m_K_micro = optim_micro.m_Ks[m_micro].to_dense()
-            assert allclose(m_K_mini, m_K_micro, **tolerances)
-
-            C_mini = optim_mini.Cs[m_mini].to_dense()
-            C_micro = optim_micro.Cs[m_micro].to_dense()
-            assert allclose(C_mini, C_micro, **tolerances)
-
-            m_C_mini = optim_mini.m_Cs[m_mini].to_dense()
-            m_C_micro = optim_micro.m_Cs[m_micro].to_dense()
-            assert allclose(m_C_mini, m_C_micro, **tolerances)
-
-        # compare momentum buffers
-        for p_mini, p_micro in zip(model_mini.parameters(), model_micro.parameters()):
-            mom_mini = optim_mini.state[p_mini]["momentum_buffer"]
-            mom_micro = optim_micro.state[p_micro]["momentum_buffer"]
-            assert allclose(mom_mini, mom_micro, **tolerances)
-
-        # compare model parameters
-        for p_mini, p_micro in zip(model_mini.parameters(), model_micro.parameters()):
-            assert allclose(p_mini, p_micro, **tolerances)
+        compare_optimizers(optim_mini, optim_micro, rtol=1e-5, atol=5e-7)
 
         if batch_idx >= MAX_STEPS:
             break
