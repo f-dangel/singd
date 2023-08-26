@@ -37,7 +37,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
             mat: A dense and symmetric square matrix which will be approximated by a ``TrilToeplitzMatrix``.
 
         Returns:
-            ``TrilToeplitzMatrix`` representing the passed matrix.
+            ``TrilToeplitzMatrix`` approximating the passed matrix.
         """
         #Reference:
         # https://stackoverflow.com/questions/57347896/sum-all-diagonals-in-feature-maps-in-parallel-in-pytorch
