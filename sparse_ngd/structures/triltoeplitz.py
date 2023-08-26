@@ -21,6 +21,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
     # specialized ones, then eventually remove this line
     WARN_NAIVE: bool = False  # Fall-back to naive base class implementations OK
 
+
     def __init__(self, col: Tensor) -> None:
         """Store the lower-triangular Toeplitz matrix internally.
 
@@ -40,11 +41,12 @@ class TrilToeplitzMatrix(StructuredMatrix):
         """
         #Reference:
         # https://stackoverflow.com/questions/57347896/sum-all-diagonals-in-feature-maps-in-parallel-in-pytorch
-        dim = mat.size(0)
+        # Note the conv2d is too slow when dim is large
 
+        dim = mat.size(0)
         x = torch.fliplr(mat)
         digitized = np.sum(np.indices(x.shape), axis=0).ravel()
-        digitized_tensor = torch.Tensor(digitized).int() #we can cache this
+        digitized_tensor = torch.from_numpy(digitized) 
         result = torch.bincount(digitized_tensor, x.view(-1))
 
         col = result [ range(dim) ].flip(0) + result [ (dim-1): ]
