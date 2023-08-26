@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 from torch import Tensor
-import numpy as np
+import cupy as np
 
 from sparse_ngd.structures.base import StructuredMatrix
 import torch.nn.functional as F
@@ -46,7 +46,8 @@ class TrilToeplitzMatrix(StructuredMatrix):
         dim = mat.size(0)
         x = torch.fliplr(mat)
         digitized = np.sum(np.indices(x.shape), axis=0).ravel()
-        digitized_tensor = torch.from_numpy(digitized) 
+        # digitized_tensor = torch.from_numpy(digitized) #using numpy
+        digitized_tensor = torch.as_tensor(digitized) #using cupy
         result = torch.bincount(digitized_tensor, x.view(-1))
 
         col = result [ range(dim) ].flip(0) + result [ (dim-1): ]
