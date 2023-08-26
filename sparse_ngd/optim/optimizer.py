@@ -34,6 +34,14 @@ class SNGD(Optimizer):
     Attributes:
         SUPPORTED_STRUCTURES: A string-to-class mapping of supported structures.
         SUPPORTED_MODULES: Supported layers.
+        _step_supports_amp_scaling: Indicate that `step` handles gradient scaling
+            internally if the optimizer is used together with a
+            ``torch.cuda.amp.GradScaler``. Before calling this class's ``.step()``,
+            the gradient scaler will store the current gradient scale inside
+            ``.grad_scale``, and whether ``infs`` occur in the gradients in
+            ``.found_inf``. For details, see the implementation of
+            ``torch.cuda.amp.GradScaler.step`` at
+            https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html.
     """
 
     SUPPORTED_STRUCTURES: Dict[str, Type[StructuredMatrix]] = {
@@ -41,6 +49,7 @@ class SNGD(Optimizer):
         "diagonal": DiagonalMatrix,
     }
     SUPPORTED_MODULES: Tuple[Type[Module], ...] = (Linear, Conv2d)
+    _step_supports_amp_scaling = True  # do not modify this name (PyTorch convention)!
 
     def __init__(
         self,
@@ -191,7 +200,7 @@ class SNGD(Optimizer):
         if is_grad_enabled() and self.steps % self.T == 0:
             self.inputs[module] = inputs[0].data
 
-    def _update_preconditioner(self, module: Module):
+    def _update_preconditioner(self, module: Module, grad_scale: float = 1.0):
         """Update the pre-conditioner matrices and their momenta for a layer.
 
         Only updates for steps matched by the specified update frequency.
@@ -200,6 +209,8 @@ class SNGD(Optimizer):
 
         Args:
             module: Layer whose pre-conditioner matrices are updated.
+            grad_scale: Scaling factor for the gradients that were used to compute.
+                ``H_C``. Default is ``1.0``.
         """
         if self.steps % self.T != 0:
             return
@@ -207,7 +218,12 @@ class SNGD(Optimizer):
         K, C = self.Ks[module], self.Cs[module]
         m_K, m_C = self.m_Ks[module], self.m_Cs[module]
         # NOTE: Pop such that they will be freed after
-        H_K, H_C = self.H_Ks.pop(module).value, self.H_Cs.pop(module).value
+        H_K: StructuredMatrix = self.H_Ks.pop(module).value
+        H_C: StructuredMatrix = self.H_Cs.pop(module).value
+
+        # un-scale ``H_C = structure(C.T @ (grad_scale * g) @ (grad_scale * g).T @ C)``
+        if grad_scale != 1.0:
+            H_C *= 1 / grad_scale**2
 
         # 1) COMPUTE UPDATE
         K_tK = K.from_inner()
@@ -311,13 +327,17 @@ class SNGD(Optimizer):
             )
         return modules, handles
 
-    def _compute_natural_gradient(self, module: Module) -> Tuple[Tensor, ...]:
+    def _compute_natural_gradient(
+        self, module: Module, grad_scale: float = 1.0
+    ) -> Tuple[Tensor, ...]:
         """Compute the natural gradient with the current pre-conditioner for a layer.
 
         Uses the current value in ``.grad`` to compute the natural gradient.
 
         Args:
             module: The layer whose natural gradient will be computed.
+            grad_scale: Scaling factor for the gradients stored in ``.grad``.
+                Default is ``1.0`` (no gradient scaling used).
 
         Returns:
             The natural gradient for the parameters (weights only or weights + bias)
@@ -336,6 +356,10 @@ class SNGD(Optimizer):
 
         if module.bias is not None:
             grad_mat = cat([grad_mat, module.bias.grad.data.unsqueeze(1)], dim=1)
+
+        # un-scale gradients
+        if grad_scale != 1.0:
+            grad_mat = grad_mat / grad_scale
 
         # 2) COMPUTE THE NATURAL GRADIENT IN CONCATENATED MATRIX FORM
 
@@ -365,14 +389,28 @@ class SNGD(Optimizer):
             closure: Optional closure that evaluates the loss. Not supported.
 
         Raises:
-            NotImplementedError: If a closure is supplied.
+            NotImplementedError: If a closure is supplied or if ``inf``s are
+                encountered by a gradient scaler that is used jointly with the
+                optimizer.
         """
         if closure is not None:
             raise NotImplementedError("Closure not supported.")
 
+        # get current gradient scale if used with ``torch.cuda.amp.GradScaler``,
+        # see the comment on the class attribute ``_step_supports_amp_scaling`` how
+        # gradient scales are stored inside an optimizer
+        grad_scale = getattr(self, "grad_scale", None)
+        grad_scale = 1.0 if grad_scale is None else grad_scale
+
+        found_inf = getattr(self, "found_inf", False)
+        if found_inf:
+            raise NotImplementedError("Encountered inf in .grad. No policy defined.")
+
         for module in self.modules:
-            self._update_preconditioner(module)
-            natural_gradients = self._compute_natural_gradient(module)
+            self._update_preconditioner(module, grad_scale=grad_scale)
+            natural_gradients = self._compute_natural_gradient(
+                module, grad_scale=grad_scale
+            )
             parameters = (
                 [module.weight] if module.bias is None else [module.weight, module.bias]
             )
