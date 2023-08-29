@@ -55,14 +55,18 @@ class StructuredMatrix(ABC):
 
     @classmethod
     @abstractmethod
-    def from_dense(cls, mat: Tensor) -> StructuredMatrix:
-        """Extract the represented structure from a dense matrix.
+    def from_dense(cls, sym_mat: Tensor) -> StructuredMatrix:
+        """Extract the represented structure from a dense symmetric matrix.
 
         This will discard elements that are not part of the structure, even if they
         are non-zero.
 
+        Warning:
+            We do not verify whether ``mat`` is symmetric internally.
+
         Args:
-            mat: A dense matrix which will be converted into a structured one.
+            sym_mat: A symmetric dense matrix which will be converted into a structured
+                one.
 
         # noqa: DAR202
 

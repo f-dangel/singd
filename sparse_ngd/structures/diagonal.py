@@ -63,19 +63,20 @@ class DiagonalMatrix(StructuredMatrix):
         return DiagonalMatrix(self._mat_diag * other)
 
     @classmethod
-    def from_dense(cls, mat: Tensor) -> DiagonalMatrix:
+    def from_dense(cls, sym_mat: Tensor) -> DiagonalMatrix:
         """Construct a diagonal matrix from a PyTorch tensor.
 
         This will discard elements that are not part of the diagonal, even if they
         are non-zero.
 
         Args:
-            mat: A dense square matrix which will be represented as ``DiagonalMatrix``.
+            sym_mat: A symmetric dense matrix which will be represented as
+                ``DiagonalMatrix``.
 
         Returns:
             ``DiagonalMatrix`` representing the passed matrix's diagonal.
         """
-        return cls(mat.diag())
+        return cls(sym_mat.diag())
 
     def to_dense(self) -> Tensor:
         """Convert diagonal matrix into a dense PyTorch tensor.

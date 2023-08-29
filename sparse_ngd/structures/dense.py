@@ -21,16 +21,17 @@ class DenseMatrix(StructuredMatrix):
         self._mat = mat
 
     @classmethod
-    def from_dense(cls, mat: Tensor) -> DenseMatrix:
+    def from_dense(cls, sym_mat: Tensor) -> DenseMatrix:
         """Construct from a PyTorch tensor.
 
         Args:
-            mat: A dense square matrix which will be represented as ``DenseMatrix``.
+            sym_mat: A dense symmetric matrix which will be represented as
+                ``DenseMatrix``.
 
         Returns:
             ``DenseMatrix`` representing the passed matrix.
         """
-        return cls(mat)
+        return cls(sym_mat)
 
     def to_dense(self) -> Tensor:
         """Convert into dense PyTorch tensor.
