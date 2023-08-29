@@ -1,9 +1,20 @@
 """Utility functions for testing the interface of structured matrices."""
 
+from abc import ABC, abstractmethod
 from typing import Callable, Type, Union
 
 import torch
-from torch import Tensor, allclose, eye, zeros
+from torch import (
+    Tensor,
+    allclose,
+    device,
+    eye,
+    float16,
+    float32,
+    manual_seed,
+    rand,
+    zeros,
+)
 
 from sparse_ngd.structures.base import StructuredMatrix
 
@@ -235,3 +246,114 @@ def _test_trace(
     truth = mat.trace()
     mat_structured = structured_matrix_cls.from_dense(mat)
     assert allclose(truth, mat_structured.trace())
+
+
+class _TestStructuredMatrix(ABC):
+    """Abstract class for testing ``StructuredMatrix`` implementations.
+
+    To test a new structured matrix type, create a new class and specify the class
+    attributes, then implement the ``project`` method.
+
+    ``
+    class TestDenseMatrix(_TestStructuredMatrix):
+        STRUCTURED_MATRIX_CLS = DenseMatrix
+
+        def project(self, mat: Tensor) -> Tensor:):
+            ...
+    ``
+
+    ``pytest`` will automatically pick up the tests defined for ``TestDenseMatrix``
+    via the base class.
+
+    Attributes:
+        STRUCTURED_MATRIX_CLS: The class of the structured matrix that is tested.
+        PROJECT: A function which converts a symmetric square matrix into the structured
+            tested matrix.
+    """
+
+    STRUCTURED_MATRIX_CLS: Type[StructuredMatrix]
+
+    @abstractmethod
+    def project(self, mat: Tensor) -> Tensor:
+        """Project a dense matrix onto a structured matrix.
+
+        Args:
+            mat: A dense matrix.
+
+        Returns:
+            The same matrix.
+        """
+        raise NotImplementedError("Must be implemented by a child class")
+
+    def test_add(self):
+        """Test matrix addition of two structured matrices."""
+        manual_seed(0)
+        mat1 = rand((10, 10))
+        mat2 = rand((10, 10))
+        _test_add(mat1, mat2, self.STRUCTURED_MATRIX_CLS, self.project)
+
+    def test_sub(self):
+        """Test matrix subtraction of two structured matrices."""
+        manual_seed(0)
+        mat1 = rand((10, 10))
+        mat2 = rand((10, 10))
+        _test_sub(mat1, mat2, self.STRUCTURED_MATRIX_CLS, self.project)
+
+    def test_matmul(self):
+        """Test matrix multiplication of two structured matrices."""
+        manual_seed(0)
+        mat1 = rand((10, 10))
+        mat2 = rand((10, 10))
+        _test_matmul(mat1, mat2, self.STRUCTURED_MATRIX_CLS, self.project)
+
+    def test_mul(self):
+        """Test multiplication of a structured matrix with a scalar."""
+        manual_seed(0)
+        mat = rand((10, 10))
+        factor = 0.3
+        _test_mul(mat, factor, self.STRUCTURED_MATRIX_CLS, self.project)
+
+    def test_rmatmat(self):
+        """Test multiplication with the transpose of a structured matrix."""
+        manual_seed(0)
+        mat1 = rand((10, 10))
+        mat2 = rand((10, 20))
+        _test_rmatmat(mat1, mat2, self.STRUCTURED_MATRIX_CLS, self.project)
+
+    def test_from_inner(self):
+        """Test structure extraction after self-inner product w/o intermediate term."""
+        manual_seed(0)
+
+        mat = rand((10, 10))
+        X = None
+        _test_from_inner(mat, self.STRUCTURED_MATRIX_CLS, self.project, X)
+
+        mat = rand((10, 10))
+        X = rand((10, 20))
+        _test_from_inner(mat, self.STRUCTURED_MATRIX_CLS, self.project, X)
+
+    def test_from_inner2(self):
+        """Test structure extraction after self-inner product w/ intermediate matrix."""
+        manual_seed(0)
+
+        mat = rand((10, 10))
+        X = rand((10, 20))
+        XXT = X @ X.T
+        _test_from_inner2(mat, self.STRUCTURED_MATRIX_CLS, self.project, XXT)
+
+    def test_eye(self):
+        """Test initializing a structured matrix representing the identity matrix."""
+        _test_eye(self.STRUCTURED_MATRIX_CLS, 10, float32, device("cpu"))
+        _test_eye(self.STRUCTURED_MATRIX_CLS, 10, float16, device("cpu"))
+
+    def test_zeros(self):
+        """Test initializing a structured matrix representing the zero matrix."""
+        _test_zeros(self.STRUCTURED_MATRIX_CLS, 10, float32, device("cpu"))
+        _test_zeros(self.STRUCTURED_MATRIX_CLS, 10, float16, device("cpu"))
+
+    def test_trace(self):
+        """Test trace of a structured dense matrix."""
+        manual_seed(0)
+
+        mat = rand((10, 10))
+        _test_trace(mat, self.STRUCTURED_MATRIX_CLS)
