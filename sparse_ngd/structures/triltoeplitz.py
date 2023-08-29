@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import cupy as np
+# import cupy as np
+import numpy as np
 import torch
 from torch import Tensor
 
@@ -57,6 +58,8 @@ class TrilToeplitzMatrix(StructuredMatrix):
         col.div_((1.0 + torch.Tensor(range(dim))).flip(0))
         col[0] = col[0] / 2.0
 
+        col = col.to(mat.dtype).to(mat.device)
+
         return cls(col)
 
     def to_dense(self) -> Tensor:
@@ -67,6 +70,8 @@ class TrilToeplitzMatrix(StructuredMatrix):
         """
         dim = self._mat_column.size(0)
         i, j = torch.tril_indices(row=dim, col=dim, offset=0)
-        mat = torch.zeros((dim, dim))
+        mat = torch.zeros(
+            (dim, dim), device=self._mat_column.device, dtype=self._mat_column.dtype
+        )
         mat[i, j] = self._mat_column[i - j]
         return mat
