@@ -12,15 +12,15 @@ class TestDenseMatrix(_TestStructuredMatrix):
 
     STRUCTURED_MATRIX_CLS = DenseMatrix
 
-    def project(self, mat: Tensor) -> Tensor:
-        """Project a dense matrix onto a dense matrix.
+    def project(self, sym_mat: Tensor) -> Tensor:
+        """Project a dense symmetric matrix onto a dense symmetric matrix.
 
         This is just a no-op.
 
         Args:
-            mat: A dense matrix.
+            sym_mat: A dense symmetric matrix.
 
         Returns:
             The same matrix.
         """
-        return mat
+        return sym_mat

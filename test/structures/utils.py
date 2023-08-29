@@ -1,20 +1,11 @@
 """Utility functions for testing the interface of structured matrices."""
 
 from abc import ABC, abstractmethod
+from test.utils import report_nonclose
 from typing import Callable, Type, Union
 
 import torch
-from torch import (
-    Tensor,
-    allclose,
-    device,
-    eye,
-    float16,
-    float32,
-    manual_seed,
-    rand,
-    zeros,
-)
+from torch import Tensor, device, eye, float16, float32, manual_seed, rand, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
 
@@ -43,11 +34,11 @@ def _test_matmul(
 
     # multiplication with a structured matrix
     truth = project(sym_mat1) @ project(sym_mat2)
-    assert allclose(truth, (sym_mat1_structured @ sym_mat2_structured).to_dense())
+    report_nonclose(truth, (sym_mat1_structured @ sym_mat2_structured).to_dense())
 
     # multiplication with a PyTorch tensor
     truth = project(sym_mat1) @ mat2
-    assert allclose(truth, sym_mat1_structured @ mat2)
+    report_nonclose(truth, sym_mat1_structured @ mat2)
 
 
 def _test_add(
@@ -71,7 +62,7 @@ def _test_add(
     truth = project(sym_mat1) + project(sym_mat2)
     sym_mat1_structured = structured_matrix_cls.from_dense(sym_mat1)
     sym_mat2_structured = structured_matrix_cls.from_dense(sym_mat2)
-    assert allclose(truth, (sym_mat1_structured + sym_mat2_structured).to_dense())
+    report_nonclose(truth, (sym_mat1_structured + sym_mat2_structured).to_dense())
 
 
 def _test_sub(
@@ -95,7 +86,7 @@ def _test_sub(
     truth = project(sym_mat1) - project(sym_mat2)
     sym_mat1_structured = structured_matrix_cls.from_dense(sym_mat1)
     sym_mat2_structured = structured_matrix_cls.from_dense(sym_mat2)
-    assert allclose(truth, (sym_mat1_structured - sym_mat2_structured).to_dense())
+    report_nonclose(truth, (sym_mat1_structured - sym_mat2_structured).to_dense())
 
 
 def _test_mul(
@@ -117,7 +108,7 @@ def _test_mul(
     """
     truth = project(factor * sym_mat)
     mat_structured = structured_matrix_cls.from_dense(sym_mat)
-    assert allclose(truth, (mat_structured * factor).to_dense())
+    report_nonclose(truth, (mat_structured * factor).to_dense())
 
 
 def _test_rmatmat(
@@ -140,7 +131,7 @@ def _test_rmatmat(
     """
     truth = project(sym_mat1).T @ mat2
     sym_mat1_structured = structured_matrix_cls.from_dense(sym_mat1)
-    assert allclose(truth, sym_mat1_structured.rmatmat(mat2))
+    report_nonclose(truth, sym_mat1_structured.rmatmat(mat2))
 
 
 def _test_from_inner(
@@ -166,7 +157,7 @@ def _test_from_inner(
         truth = project(project(sym_mat).T @ X @ X.T @ project(sym_mat))
 
     sym_mat_structured = structured_matrix_cls.from_dense(sym_mat)
-    assert allclose(truth, sym_mat_structured.from_inner(X=X).to_dense())
+    report_nonclose(truth, sym_mat_structured.from_inner(X=X).to_dense())
 
 
 def _test_from_inner2(
@@ -188,7 +179,7 @@ def _test_from_inner2(
     """
     truth = project(project(sym_mat).T @ XXT @ project(sym_mat))
     sym_mat_structured = structured_matrix_cls.from_dense(sym_mat)
-    assert allclose(truth, sym_mat_structured.from_inner2(XXT).to_dense())
+    report_nonclose(truth, sym_mat_structured.from_inner2(XXT).to_dense())
 
 
 def _test_zeros(
@@ -214,7 +205,7 @@ def _test_zeros(
     zero_matrix = structured_zero_matrix.to_dense()
     assert truth.dtype == zero_matrix.dtype
     assert truth.device == zero_matrix.device
-    assert allclose(truth, zero_matrix)
+    report_nonclose(truth, zero_matrix)
 
 
 def _test_eye(
@@ -240,7 +231,7 @@ def _test_eye(
     identity_matrix = structured_identity_matrix.to_dense()
     assert truth.dtype == identity_matrix.dtype
     assert truth.device == identity_matrix.device
-    assert allclose(truth, identity_matrix)
+    report_nonclose(truth, identity_matrix)
 
 
 def _test_trace(
@@ -257,7 +248,7 @@ def _test_trace(
     """
     truth = sym_mat.trace()
     mat_structured = structured_matrix_cls.from_dense(sym_mat)
-    assert allclose(truth, mat_structured.trace())
+    report_nonclose(truth, mat_structured.trace())
 
 
 def symmetrize(mat: Tensor) -> Tensor:

@@ -12,13 +12,13 @@ class TestDiagonalMatrix(_TestStructuredMatrix):
 
     STRUCTURED_MATRIX_CLS = DiagonalMatrix
 
-    def project(self, mat: Tensor) -> Tensor:
-        """Project a matrix onto its diagonal.
+    def project(self, sym_mat: Tensor) -> Tensor:
+        """Project a symmetric matrix onto a diagonal matrix.
 
         Args:
-            mat: A square matrix.
+            mat: A symmetric matrix.
 
         Returns:
             A matrix containing the diagonal of ``mat`` on its diagonal.
         """
-        return mat.diag().diag()
+        return sym_mat.diag().diag()
