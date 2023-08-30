@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import torch
-from torch import Tensor
+from torch import Tensor, arange, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
 
@@ -11,8 +10,15 @@ from sparse_ngd.structures.base import StructuredMatrix
 class TriuTopLeftDiagonalMatrix(StructuredMatrix):
     """Sparse upper-triangular matrix with top left diagonal entries.
 
-    [ D  c1 ]
-    [ 0  c2 ]
+    ``
+    [[D, c1],
+    [[0, c2]]
+    ``
+
+    where
+    - ``D`` is a diagonal matrix,
+    - ``c1`` is a row vector, and
+    - ``c2`` is a scalar.
     """
 
     # TODO After the below basic functions are implemented, we can tackle the
@@ -23,8 +29,8 @@ class TriuTopLeftDiagonalMatrix(StructuredMatrix):
         """Store the matrix internally.
 
         Args:
-            diag: the diagonal elements of the matrix.
-            col: the last column of the matrix.
+            diag: The diagonal elements of the matrix (``diag(D)``).
+            col: The last column of the matrix (concatenation of ``c1`` and ``c2``).
         """
         assert diag.size(0) + 1 == col.size(0)
 
@@ -54,9 +60,8 @@ class TriuTopLeftDiagonalMatrix(StructuredMatrix):
             The represented matrix as PyTorch tensor.
         """
         dim = self._mat_col.size(0)
-        mat = torch.zeros((dim, dim))
-
-        k = torch.tensor(range(dim - 1))
+        mat = zeros((dim, dim), dtype=self._mat_col.dtype, device=self._mat_col.device)
+        k = arange(dim - 1)
         mat[k, k] = self._mat_diag
         mat[:, -1] = self._mat_col
 

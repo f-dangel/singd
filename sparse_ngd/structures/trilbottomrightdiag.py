@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import torch
-from torch import Tensor
+from torch import Tensor, arange, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
 
@@ -35,7 +34,7 @@ class TrilBottomRightDiagonalMatrix(StructuredMatrix):
         """
         assert diag.size(0) + 1 == col.size(0)
 
-        self._mat_column = col
+        self._mat_col = col
         self._mat_diag = diag
 
     @classmethod
@@ -60,13 +59,10 @@ class TrilBottomRightDiagonalMatrix(StructuredMatrix):
         Returns:
             The represented matrix as PyTorch tensor.
         """
-        dim = self._mat_column.size(0)
-        mat = torch.zeros(
-            (dim, dim), dtype=self._mat_column.dtype, device=self._mat_column.device
-        )
-
-        k = torch.tensor(range(dim - 1)) + 1
+        dim = self._mat_col.size(0)
+        mat = zeros((dim, dim), dtype=self._mat_col.dtype, device=self._mat_col.device)
+        k = arange(1, dim)
         mat[k, k] = self._mat_diag
-        mat[:, 0] = self._mat_column
+        mat[:, 0] = self._mat_col
 
         return mat

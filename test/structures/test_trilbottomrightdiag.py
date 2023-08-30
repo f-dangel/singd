@@ -13,7 +13,7 @@ class TestTrilBottomRightDiagonalMatrix(_TestStructuredMatrix):
     STRUCTURED_MATRIX_CLS = TrilBottomRightDiagonalMatrix
 
     def project(self, sym_mat: Tensor) -> Tensor:
-        """Project a symmetric matrix onto a lower-tril matrix w/ bottom right diagonal.
+        """Project a symmetric matrix onto a tril matrix w/ bottom right diagonal.
 
         Args:
             sym_mat: A symmetric matrix.
