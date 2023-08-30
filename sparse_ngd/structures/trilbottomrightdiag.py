@@ -30,8 +30,8 @@ class TrilBottomRightDiagonalMatrix(StructuredMatrix):
         """Store the matrix internally.
 
         Args:
-            diag: the diagonal elements of the matrix
-            col: the first column of the matrix
+            diag: The diagonal elements of the matrix (``diag(D)``).
+            col: The first column of the matrix (concatenation of ``c1`` and ``c2``).
         """
         assert diag.size(0) + 1 == col.size(0)
 
@@ -61,7 +61,9 @@ class TrilBottomRightDiagonalMatrix(StructuredMatrix):
             The represented matrix as PyTorch tensor.
         """
         dim = self._mat_column.size(0)
-        mat = torch.zeros((dim, dim))
+        mat = torch.zeros(
+            (dim, dim), dtype=self._mat_column.dtype, device=self._mat_column.device
+        )
 
         k = torch.tensor(range(dim - 1)) + 1
         mat[k, k] = self._mat_diag
