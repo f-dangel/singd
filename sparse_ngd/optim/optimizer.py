@@ -428,7 +428,7 @@ class SNGD(Optimizer):
                         param_state["momentum_buffer"] = zeros_like(p.data)
 
                     p_momentum = param_state["momentum_buffer"]
-                    p_momentum.mul_(self.momentum).add_(p_nat_grad)
+                    p_momentum.mul_(self.momentum).add_(p_step)
                     p_step = p_momentum
 
                 p.data.add_(p_step, alpha=-self.lr)
