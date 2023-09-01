@@ -131,21 +131,11 @@ class SNGD(Optimizer):
                 model, warn_unsupported=warn_unsupported
             )
         super().__init__(params, defaults)
-
         self.steps = 0
 
-        # TODO Remove these variables as they are stored in groups
-        self.lr = lr
-        self.momentum = momentum
-        self.lr_cov = lr_cov
-        self.weight_decay = weight_decay
-        self.damping = damping
-        self.batch_averaged = batch_averaged
-        self.alpha1 = alpha1
-        self.T = T
-
-        # layers whose parameters will be updated
+        # for mapping modules to their groups
         self.param_to_group_idx = self._check_param_groups(model)
+        # layers whose parameters will be updated
         self.modules, self.hook_handles = self._install_hooks(model)
 
         # temporarily stores layer inputs during a forward-backward pass
@@ -167,6 +157,20 @@ class SNGD(Optimizer):
         self.H_Cs: Dict[Module, BatchAccumulator] = {}
 
         self._initialize_buffers()
+
+    def _get_param_group_entry(self, module: Module, entry: str) -> Any:
+        """Get the parameter group that contains the layer's parameters.
+
+        Args:
+            module: A supported layer whose parameter group will be returned.
+            entry: The entry in the parameter group that will be returned.
+
+        Returns:
+            The entry of the parameter group that contains the layer's parameters.
+        """
+        assert isinstance(module, self.SUPPORTED_MODULES)
+        group_idx = self.param_to_group_idx[module.weight.data_ptr()]
+        return self.param_groups[group_idx][entry]
 
     def _check_param_groups(self, model: Module) -> Dict[int, int]:
         """Check parameter groups for conflicts.
@@ -259,8 +263,13 @@ class SNGD(Optimizer):
             dim_K, dim_C = self.preconditioner_dims(module)
             kwargs = {"dtype": module.weight.dtype, "device": module.weight.device}
 
-            self.Ks[module] = self.K_cls.eye(dim_K, **kwargs)
-            self.Cs[module] = self.C_cls.eye(dim_C, **kwargs)
+            # use the structure specified for the parameter group
+            structures = self._get_param_group_entry(module, "structures")
+            K_cls = self.SUPPORTED_STRUCTURES[structures[0]]
+            C_cls = self.SUPPORTED_STRUCTURES[structures[1]]
+
+            self.Ks[module] = K_cls.eye(dim_K, **kwargs)
+            self.Cs[module] = C_cls.eye(dim_C, **kwargs)
 
             self.m_Ks[module] = self.K_cls.zeros(dim_K, **kwargs)
             self.m_Cs[module] = self.C_cls.zeros(dim_C, **kwargs)
@@ -300,7 +309,8 @@ class SNGD(Optimizer):
             module: Layer whose input is stored.
             inputs: Inputs to the layer.
         """
-        if is_grad_enabled() and self.steps % self.T == 0:
+        T = self._get_param_group_entry(module, "T")
+        if is_grad_enabled() and self.steps % T == 0:
             self.inputs[module] = inputs[0].data
 
     def _update_preconditioner(self, module: Module, grad_scale: float = 1.0):
@@ -315,7 +325,8 @@ class SNGD(Optimizer):
             grad_scale: Scaling factor for the gradients that were used to compute.
                 ``H_C``. Default is ``1.0``.
         """
-        if self.steps % self.T != 0:
+        T = self._get_param_group_entry(module, "T")
+        if self.steps % T != 0:
             return
 
         K, C = self.Ks[module], self.Cs[module]
@@ -337,27 +348,34 @@ class SNGD(Optimizer):
         tr_H_C = H_C.trace()
         tr_H_K = H_K.trace()
 
-        c_squared = self.damping * C_tC.trace()
+        # hyper-parameters for parameter group of module
+        damping = self._get_param_group_entry(module, "damping")
+        structures = self._get_param_group_entry(module, "structures")
+        K_cls = self.SUPPORTED_STRUCTURES[structures[0]]
+        C_cls = self.SUPPORTED_STRUCTURES[structures[1]]
+
+        c_squared = damping * C_tC.trace()
         step_m_K = (
             H_K * (tr_H_C / d)
             + K_tK * (c_squared / d)
-            - self.K_cls.eye(p, dtype=tr_H_K.dtype, device=tr_H_K.device)
+            - K_cls.eye(p, dtype=tr_H_K.dtype, device=tr_H_K.device)
         ) * 0.5
 
-        kappa_squared = self.damping * K_tK.trace()
+        kappa_squared = damping * K_tK.trace()
         step_m_C = (
             H_C * (tr_H_K / p)
             + C_tC * (kappa_squared / p)
-            - self.C_cls.eye(d, dtype=tr_H_C.dtype, device=tr_H_C.device)
+            - C_cls.eye(d, dtype=tr_H_C.dtype, device=tr_H_C.device)
         ) * 0.5
 
         # 2) APPLY UPDATE
-        beta1 = self.lr_cov
+        beta1 = self._get_param_group_entry(module, "lr_cov")
+        alpha1 = self._get_param_group_entry(module, "alpha1")
 
-        self.m_Ks[module] = m_K * self.alpha1 + step_m_K
+        self.m_Ks[module] = m_K * alpha1 + step_m_K
         self.Ks[module] = K - (K @ self.m_Ks[module]) * beta1
 
-        self.m_Cs[module] = m_C * self.alpha1 + step_m_C
+        self.m_Cs[module] = m_C * alpha1 + step_m_C
         self.Cs[module] = C - (C @ self.m_Cs[module]) * beta1
 
     def _accumulate_H_terms(
@@ -375,8 +393,11 @@ class SNGD(Optimizer):
             grad_input: Gradients w.r.t. the input.
             grad_output: Gradients w.r.t. the output.
         """
-        if self.steps % self.T != 0:
+        T = self._get_param_group_entry(module, "T")
+        if self.steps % T != 0:
             return
+
+        batch_averaged = self._get_param_group_entry(module, "batch_averaged")
 
         # 1) PROCESS INPUTS AND GRAD_OUTPUTS
         a = self.inputs.pop(module)
@@ -386,7 +407,7 @@ class SNGD(Optimizer):
 
         g = grad_output[0].data
         # Flatten into matrix, add scaling from batch average
-        g = process_grad_output(g, module, self.batch_averaged)
+        g = process_grad_output(g, module, batch_averaged)
 
         # 2) Update H_K, H_C
         K, C = self.Ks[module], self.Cs[module]
@@ -395,9 +416,9 @@ class SNGD(Optimizer):
 
         # maybe set up fresh accumulators (they get flushed in `.step`)
         if module not in self.H_Ks:
-            self.H_Ks[module] = BatchAccumulator(batch_averaged=self.batch_averaged)
+            self.H_Ks[module] = BatchAccumulator(batch_averaged=batch_averaged)
         if module not in self.H_Cs:
-            self.H_Cs[module] = BatchAccumulator(batch_averaged=self.batch_averaged)
+            self.H_Cs[module] = BatchAccumulator(batch_averaged=batch_averaged)
 
         self.H_Ks[module].update(H_K, batch_size)
         self.H_Cs[module].update(H_C, batch_size)
@@ -517,23 +538,29 @@ class SNGD(Optimizer):
             parameters = (
                 [module.weight] if module.bias is None else [module.weight, module.bias]
             )
+
+            # hyper-parameters for group containing module
+            weight_decay = self._get_param_group_entry(module, "weight_decay")
+            momentum = self._get_param_group_entry(module, "momentum")
+            lr = self._get_param_group_entry(module, "lr")
+
             for p, p_nat_grad in zip(parameters, natural_gradients):
                 p_step = p_nat_grad
 
                 # add weight decay
-                if self.weight_decay != 0.0:
-                    p_step.add_(p.data, alpha=self.weight_decay)
+                if weight_decay != 0.0:
+                    p_step.add_(p.data, alpha=weight_decay)
 
                 # momentum on previous updates
-                if self.momentum != 0.0:
+                if momentum != 0.0:
                     param_state = self.state[p]
                     if "momentum_buffer" not in param_state:
                         param_state["momentum_buffer"] = zeros_like(p.data)
 
                     p_momentum = param_state["momentum_buffer"]
-                    p_momentum.mul_(self.momentum).add_(p_step)
+                    p_momentum.mul_(momentum).add_(p_step)
                     p_step = p_momentum
 
-                p.data.add_(p_step, alpha=-self.lr)
+                p.data.add_(p_step, alpha=-lr)
 
         self.steps += 1

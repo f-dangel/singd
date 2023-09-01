@@ -89,7 +89,10 @@ def compare_optimizers(
     atol_momentum = atol_momentum if atol_momentum is not None else atol
     rtol_momentum = rtol_momentum if rtol_momentum is not None else rtol
 
-    if optim1.momentum != 0 or optim2.momentum != 0:
+    if (
+        optim1.param_groups[0]["momentum"] != 0
+        or optim2.param_groups[0]["momentum"] != 0
+    ):
         for module1, module2 in zip(optim1.modules, optim2.modules):
             for p, p_scale in zip(module1.parameters(), module2.parameters()):
                 mom = optim1.state[p]["momentum_buffer"]

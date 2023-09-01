@@ -13,7 +13,7 @@ from torchvision.transforms import ToTensor
 from sparse_ngd.optim.optimizer import SNGD
 
 
-def test_compare_lin2023simplifying():
+def test_compare_lin2023simplifying():  # noqa: C901
     """Compare our implementation with the original one on MNIST."""
     manual_seed(0)
     MAX_STEPS = 30
@@ -105,19 +105,23 @@ def test_compare_lin2023simplifying():
 
         # The original optimizer has a hard-coded schedule for ``lr_cov`` which
         # we immitate here manually
+        step_lr_cov = optim_original.lr_cov
         if optim_ours.steps <= 100:
-            optim_ours.lr_cov = 2e-4
+            step_lr_cov = 2e-4
         elif optim_ours.steps < 500:
-            optim_ours.lr_cov = 2e-3
-        else:
-            optim_ours.lr_cov = optim_original.lr_cov
+            step_lr_cov = 2e-3
+
+        for group in optim_ours.param_groups:
+            group["lr_cov"] = step_lr_cov
 
         # The original optimizer has a hard-coded schedule for ``weight_decay`` which
         # we immitate here manually
-        if optim_ours.steps < 20 * optim_ours.T:
-            optim_ours.weight_decay = 0.0
-        else:
-            optim_ours.weight_decay = weight_decay
+        step_weight_decay = weight_decay
+        if optim_ours.steps < 20 * optim_ours.param_groups[0]["T"]:
+            step_weight_decay = 0.0
+
+        for group in optim_ours.param_groups:
+            group["weight_decay"] = step_weight_decay
 
         output_original = model_original(inputs)
         output_ours = model_ours(inputs)
