@@ -1,6 +1,7 @@
 """Implements structured inverse-free KFAC."""
 
-from typing import Callable, Dict, Iterable, List, Tuple, Type, Union
+from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
+from warnings import warn
 
 from torch import Tensor, cat, is_grad_enabled, zeros_like
 from torch.nn import Conv2d, Linear, Module, Parameter
@@ -54,6 +55,7 @@ class SNGD(Optimizer):
     def __init__(
         self,
         model: Module,
+        params: Union[None, Iterable[Parameter], List[Dict[str, Any]]] = None,
         lr: float = 0.001,  # β₂ in the paper
         momentum: float = 0.9,  # α₂ in the paper
         damping: float = 0.001,  # λ in the paper
@@ -61,9 +63,9 @@ class SNGD(Optimizer):
         weight_decay: float = 0.0,  # γ in the paper
         T: int = 10,  # T in the paper
         batch_averaged: bool = True,
-        model_params: Union[None, Iterable[Parameter]] = None,
         lr_cov: float = 1e-2,  # β₁ in the paper
         structures: Tuple[str, str] = ("diagonal", "dense"),
+        warn_unsupported: bool = True,
     ):
         """Structured inverse-free KFAC optimizer.
 
@@ -72,6 +74,11 @@ class SNGD(Optimizer):
         Args:
             model: The neural network whose parameters (or a subset thereof) will be
                 trained.
+            params: Used to specify the trainable parameters or parameter groups.
+                If unspecified, all parameters of ``model`` which are supported by the
+                optimizer will be trained. If a list of ``Parameters`` is passed,
+                only these parameters will be trained. If a list of dictionaries is
+                passed, these will be used as parameter groups.
             lr: (β₂ in the paper) Learning rate for the parameter updates.
                 Default: ``0.001``.
             momentum: (α₂ in the paper) Momentum on the parameter updates.
@@ -85,13 +92,14 @@ class SNGD(Optimizer):
             T: Pre-conditioner update frequency. Default: ``10``.
             batch_averaged: Whether the loss function is a mean over per-sample
                 losses. Default is ``True``.
-            model_params: Optional sequence of parameters that should be trained.
-                If unspecified, all parameters of ``model`` will be trained.
             lr_cov: (β₁ in the paper) Learning rate for the updates of ``m_K, m_C``.
                 Default is ``1e-2``.
             structures: A 2-tuple of strings specifying the structure of the
                 factorizations of ``K`` and ``C``. Possible values are
                 (``'dense'``, ``'diagonal'``). Default is (``'dense'``, ``'dense'``).
+            warn_unsupported: Only relevant if ``params`` is unspecified. Whether to
+                warn if ``model`` contains parameters of layers that are not supported.
+                These parameters will not be trained by the optimizer.
 
         Raises:
             ValueError: If any of the learning rate and momentum parameters
@@ -107,28 +115,31 @@ class SNGD(Optimizer):
             if x < 0.0:
                 raise ValueError(f"{name} must be positive. Got {x}")
 
-        defaults = dict(lr=lr, momentum=momentum, weight_decay=weight_decay)
-        super().__init__(
-            model.parameters() if model_params is None else model_params, defaults
+        defaults = dict(
+            lr=lr,
+            momentum=momentum,
+            damping=damping,
+            alpha1=alpha1,
+            weight_decay=weight_decay,
+            T=T,
+            batch_averaged=batch_averaged,
+            lr_cov=lr_cov,
+            structures=structures,
         )
-        self.lr = lr
-        self.momentum = momentum
-        self.lr_cov = lr_cov
-        self.weight_decay = weight_decay
-        self.damping = damping
-        self.batch_averaged = batch_averaged
-        self.alpha1 = alpha1
-        self.T = T
+        if params is None:
+            params = self._get_trainable_parameters(
+                model, warn_unsupported=warn_unsupported
+            )
+        super().__init__(params, defaults)
         self.steps = 0
 
+        # for mapping modules to their groups
+        self.param_to_group_idx = self._check_param_groups(model)
         # layers whose parameters will be updated
         self.modules, self.hook_handles = self._install_hooks(model)
 
         # temporarily stores layer inputs during a forward-backward pass
         self.inputs: Dict[Module, Tensor] = {}
-
-        self.K_cls = self.SUPPORTED_STRUCTURES[structures[0]]
-        self.C_cls = self.SUPPORTED_STRUCTURES[structures[1]]
 
         # store matrices for the pre-conditioner
         self.Ks: Dict[Module, StructuredMatrix] = {}
@@ -144,6 +155,99 @@ class SNGD(Optimizer):
 
         self._initialize_buffers()
 
+    def _get_param_group_entry(self, module: Module, entry: str) -> Any:
+        """Get the parameter group that contains the layer's parameters.
+
+        Args:
+            module: A supported layer whose parameter group will be returned.
+            entry: The entry in the parameter group that will be returned.
+
+        Returns:
+            The entry of the parameter group that contains the layer's parameters.
+        """
+        assert isinstance(module, self.SUPPORTED_MODULES)
+        group_idx = self.param_to_group_idx[module.weight.data_ptr()]
+        return self.param_groups[group_idx][entry]
+
+    def _check_param_groups(self, model: Module) -> Dict[int, int]:
+        """Check parameter groups for conflicts.
+
+        For all supported layers, the parameters must be in the same group because
+        we compute and update the pre-conditioner per layer.
+
+        Args:
+            model: The model whose layers will be checked.
+
+        Raises:
+            ValueError: , or (2)
+                parameters in a supported layer are in different groups.
+
+        Returns:
+            A dictionary mapping parameter IDs (``.data_ptr()``) to group indices.
+        """
+        # Find out which parameter is in which group
+        param_to_group_idx = {}
+        for group_idx, group in enumerate(self.param_groups):
+            for param in group["params"]:
+                param_to_group_idx[param.data_ptr()] = group_idx
+
+        param_ids = [
+            param.data_ptr() for group in self.param_groups for param in group["params"]
+        ]
+        # check that parameters in a supported module are in the same group
+        # all layers that are not containers
+        modules = [
+            m
+            for m in model.modules()
+            if len(list(m.modules())) == 1 and isinstance(m, self.SUPPORTED_MODULES)
+        ]
+        for m in modules:
+            m_param_ids = [
+                p.data_ptr() for p in m.parameters() if p.data_ptr() in param_ids
+            ]
+            m_groups = [param_to_group_idx[p_id] for p_id in m_param_ids]
+            if len(set(m_groups)) not in [0, 1]:
+                raise ValueError(
+                    "Parameters of a layer are in different parameter groups. "
+                    + f"Layer: {m}. Group index of parameters: {m_groups}."
+                )
+
+        return param_to_group_idx
+
+    def _get_trainable_parameters(
+        self, model: Module, warn_unsupported: bool
+    ) -> List[Parameter]:
+        """Return a list containing the model parameters that can be trained.
+
+        Args:
+            model: The model whose parameters should be trained.
+            warn_unsupported: Whether to warn if ``model`` contains parameters of
+                layers that are not supported.
+
+        Returns:
+            A list of parameters that can be trained.
+        """
+        # all layers that are not containers
+        named_modules = [
+            (name, mod)
+            for name, mod in model.named_modules()
+            if len(list(mod.modules())) == 1
+        ]
+
+        trainable = []
+        for name, mod in named_modules:
+            mod_trainable = [param for param in mod.parameters() if param.requires_grad]
+            if isinstance(mod, self.SUPPORTED_MODULES):
+                trainable.extend(mod_trainable)
+            elif mod_trainable and warn_unsupported:
+                warn(
+                    "Found un-supported parameter(s) that will not be trained in "
+                    + f"layer {name}: {mod}. To disable this warning, construct the "
+                    "optimizer with `warn_unsupported=False`."
+                )
+
+        return trainable
+
     def _initialize_buffers(self):
         """Initialize buffers for ``K, C, m_K, m_C``.
 
@@ -156,11 +260,16 @@ class SNGD(Optimizer):
             dim_K, dim_C = self.preconditioner_dims(module)
             kwargs = {"dtype": module.weight.dtype, "device": module.weight.device}
 
-            self.Ks[module] = self.K_cls.eye(dim_K, **kwargs)
-            self.Cs[module] = self.C_cls.eye(dim_C, **kwargs)
+            # use the structure specified for the parameter group
+            structures = self._get_param_group_entry(module, "structures")
+            K_cls = self.SUPPORTED_STRUCTURES[structures[0]]
+            C_cls = self.SUPPORTED_STRUCTURES[structures[1]]
 
-            self.m_Ks[module] = self.K_cls.zeros(dim_K, **kwargs)
-            self.m_Cs[module] = self.C_cls.zeros(dim_C, **kwargs)
+            self.Ks[module] = K_cls.eye(dim_K, **kwargs)
+            self.Cs[module] = C_cls.eye(dim_C, **kwargs)
+
+            self.m_Ks[module] = K_cls.zeros(dim_K, **kwargs)
+            self.m_Cs[module] = C_cls.zeros(dim_C, **kwargs)
 
     @staticmethod
     def preconditioner_dims(module: Module) -> Tuple[int, int]:
@@ -197,7 +306,8 @@ class SNGD(Optimizer):
             module: Layer whose input is stored.
             inputs: Inputs to the layer.
         """
-        if is_grad_enabled() and self.steps % self.T == 0:
+        T = self._get_param_group_entry(module, "T")
+        if is_grad_enabled() and self.steps % T == 0:
             self.inputs[module] = inputs[0].data
 
     def _update_preconditioner(self, module: Module, grad_scale: float = 1.0):
@@ -212,7 +322,8 @@ class SNGD(Optimizer):
             grad_scale: Scaling factor for the gradients that were used to compute.
                 ``H_C``. Default is ``1.0``.
         """
-        if self.steps % self.T != 0:
+        T = self._get_param_group_entry(module, "T")
+        if self.steps % T != 0:
             return
 
         K, C = self.Ks[module], self.Cs[module]
@@ -234,27 +345,34 @@ class SNGD(Optimizer):
         tr_H_C = H_C.trace()
         tr_H_K = H_K.trace()
 
-        c_squared = self.damping * C_tC.trace()
+        # hyper-parameters for parameter group of module
+        damping = self._get_param_group_entry(module, "damping")
+        structures = self._get_param_group_entry(module, "structures")
+        K_cls = self.SUPPORTED_STRUCTURES[structures[0]]
+        C_cls = self.SUPPORTED_STRUCTURES[structures[1]]
+
+        c_squared = damping * C_tC.trace()
         step_m_K = (
             H_K * (tr_H_C / d)
             + K_tK * (c_squared / d)
-            - self.K_cls.eye(p, dtype=tr_H_K.dtype, device=tr_H_K.device)
+            - K_cls.eye(p, dtype=tr_H_K.dtype, device=tr_H_K.device)
         ) * 0.5
 
-        kappa_squared = self.damping * K_tK.trace()
+        kappa_squared = damping * K_tK.trace()
         step_m_C = (
             H_C * (tr_H_K / p)
             + C_tC * (kappa_squared / p)
-            - self.C_cls.eye(d, dtype=tr_H_C.dtype, device=tr_H_C.device)
+            - C_cls.eye(d, dtype=tr_H_C.dtype, device=tr_H_C.device)
         ) * 0.5
 
         # 2) APPLY UPDATE
-        beta1 = self.lr_cov
+        beta1 = self._get_param_group_entry(module, "lr_cov")
+        alpha1 = self._get_param_group_entry(module, "alpha1")
 
-        self.m_Ks[module] = m_K * self.alpha1 + step_m_K
+        self.m_Ks[module] = m_K * alpha1 + step_m_K
         self.Ks[module] = K - (K @ self.m_Ks[module]) * beta1
 
-        self.m_Cs[module] = m_C * self.alpha1 + step_m_C
+        self.m_Cs[module] = m_C * alpha1 + step_m_C
         self.Cs[module] = C - (C @ self.m_Cs[module]) * beta1
 
     def _accumulate_H_terms(
@@ -272,8 +390,11 @@ class SNGD(Optimizer):
             grad_input: Gradients w.r.t. the input.
             grad_output: Gradients w.r.t. the output.
         """
-        if self.steps % self.T != 0:
+        T = self._get_param_group_entry(module, "T")
+        if self.steps % T != 0:
             return
+
+        batch_averaged = self._get_param_group_entry(module, "batch_averaged")
 
         # 1) PROCESS INPUTS AND GRAD_OUTPUTS
         a = self.inputs.pop(module)
@@ -283,7 +404,7 @@ class SNGD(Optimizer):
 
         g = grad_output[0].data
         # Flatten into matrix, add scaling from batch average
-        g = process_grad_output(g, module, self.batch_averaged)
+        g = process_grad_output(g, module, batch_averaged)
 
         # 2) Update H_K, H_C
         K, C = self.Ks[module], self.Cs[module]
@@ -292,9 +413,9 @@ class SNGD(Optimizer):
 
         # maybe set up fresh accumulators (they get flushed in `.step`)
         if module not in self.H_Ks:
-            self.H_Ks[module] = BatchAccumulator(batch_averaged=self.batch_averaged)
+            self.H_Ks[module] = BatchAccumulator(batch_averaged=batch_averaged)
         if module not in self.H_Cs:
-            self.H_Cs[module] = BatchAccumulator(batch_averaged=self.batch_averaged)
+            self.H_Cs[module] = BatchAccumulator(batch_averaged=batch_averaged)
 
         self.H_Ks[module].update(H_K, batch_size)
         self.H_Cs[module].update(H_C, batch_size)
@@ -311,11 +432,14 @@ class SNGD(Optimizer):
             List of modules that have been hooked and list of the installed hooks'
             handles.
         """
+        param_ids = [
+            p.data_ptr() for group in self.param_groups for p in group["params"]
+        ]
         modules = [
             m
             for m in model.modules()
             if isinstance(m, self.SUPPORTED_MODULES)
-            and all(p.requires_grad for p in m.parameters())
+            and any(p.data_ptr() in param_ids for p in m.parameters())
         ]
         handles = []
         for module in modules:
@@ -414,23 +538,29 @@ class SNGD(Optimizer):
             parameters = (
                 [module.weight] if module.bias is None else [module.weight, module.bias]
             )
+
+            # hyper-parameters for group containing module
+            weight_decay = self._get_param_group_entry(module, "weight_decay")
+            momentum = self._get_param_group_entry(module, "momentum")
+            lr = self._get_param_group_entry(module, "lr")
+
             for p, p_nat_grad in zip(parameters, natural_gradients):
                 p_step = p_nat_grad
 
                 # add weight decay
-                if self.weight_decay != 0.0:
-                    p_step.add_(p.data, alpha=self.weight_decay)
+                if weight_decay != 0.0:
+                    p_step.add_(p.data, alpha=weight_decay)
 
                 # momentum on previous updates
-                if self.momentum != 0.0:
+                if momentum != 0.0:
                     param_state = self.state[p]
                     if "momentum_buffer" not in param_state:
                         param_state["momentum_buffer"] = zeros_like(p.data)
 
                     p_momentum = param_state["momentum_buffer"]
-                    p_momentum.mul_(self.momentum).add_(p_step)
+                    p_momentum.mul_(momentum).add_(p_step)
                     p_step = p_momentum
 
-                p.data.add_(p_step, alpha=-self.lr)
+                p.data.add_(p_step, alpha=-lr)
 
         self.steps += 1
