@@ -141,9 +141,6 @@ class SNGD(Optimizer):
         # temporarily stores layer inputs during a forward-backward pass
         self.inputs: Dict[Module, Tensor] = {}
 
-        self.K_cls = self.SUPPORTED_STRUCTURES[structures[0]]
-        self.C_cls = self.SUPPORTED_STRUCTURES[structures[1]]
-
         # store matrices for the pre-conditioner
         self.Ks: Dict[Module, StructuredMatrix] = {}
         self.Cs: Dict[Module, StructuredMatrix] = {}
@@ -209,7 +206,7 @@ class SNGD(Optimizer):
                 p.data_ptr() for p in m.parameters() if p.data_ptr() in param_ids
             ]
             m_groups = [param_to_group_idx[p_id] for p_id in m_param_ids]
-            if len(set(m_groups)) != 1:
+            if len(set(m_groups)) not in [0, 1]:
                 raise ValueError(
                     "Parameters of a layer are in different parameter groups. "
                     + f"Layer: {m}. Group index of parameters: {m_groups}."
@@ -271,8 +268,8 @@ class SNGD(Optimizer):
             self.Ks[module] = K_cls.eye(dim_K, **kwargs)
             self.Cs[module] = C_cls.eye(dim_C, **kwargs)
 
-            self.m_Ks[module] = self.K_cls.zeros(dim_K, **kwargs)
-            self.m_Cs[module] = self.C_cls.zeros(dim_C, **kwargs)
+            self.m_Ks[module] = K_cls.zeros(dim_K, **kwargs)
+            self.m_Cs[module] = C_cls.zeros(dim_C, **kwargs)
 
     @staticmethod
     def preconditioner_dims(module: Module) -> Tuple[int, int]:
@@ -435,11 +432,14 @@ class SNGD(Optimizer):
             List of modules that have been hooked and list of the installed hooks'
             handles.
         """
+        param_ids = [
+            p.data_ptr() for group in self.param_groups for p in group["params"]
+        ]
         modules = [
             m
             for m in model.modules()
             if isinstance(m, self.SUPPORTED_MODULES)
-            and all(p.requires_grad for p in m.parameters())
+            and any(p.data_ptr() in param_ids for p in m.parameters())
         ]
         handles = []
         for module in modules:

@@ -68,22 +68,22 @@ def compare_optimizers(
     """
     # compare K, C, m_K, m_C
     assert len(optim1.modules) == len(optim2.modules)
-    for m, m_scale in zip(optim1.modules, optim2.modules):
-        K = optim1.Ks[m].to_dense()
-        K_scale = optim2.Ks[m_scale].to_dense()
-        report_nonclose(K, K_scale, atol=atol, rtol=rtol, name="K")
+    for m1, m2 in zip(optim1.modules, optim2.modules):
+        K1 = optim1.Ks[m1].to_dense()
+        K2 = optim2.Ks[m2].to_dense()
+        report_nonclose(K1, K2, atol=atol, rtol=rtol, name="K")
 
-        m_K = optim1.m_Ks[m].to_dense()
-        m_K_scale = optim2.m_Ks[m_scale].to_dense()
-        report_nonclose(m_K, m_K_scale, atol=atol, rtol=rtol, name="m_K")
+        m_K1 = optim1.m_Ks[m1].to_dense()
+        m_K2 = optim2.m_Ks[m2].to_dense()
+        report_nonclose(m_K1, m_K2, atol=atol, rtol=rtol, name="m_K")
 
-        C = optim1.Cs[m].to_dense()
-        C_scale = optim2.Cs[m_scale].to_dense()
-        report_nonclose(C, C_scale, atol=atol, rtol=rtol, name="C")
+        C1 = optim1.Cs[m1].to_dense()
+        C2 = optim2.Cs[m2].to_dense()
+        report_nonclose(C1, C2, atol=atol, rtol=rtol, name="C")
 
-        m_C = optim1.m_Cs[m].to_dense()
-        m_C_scale = optim2.m_Cs[m_scale].to_dense()
-        report_nonclose(m_C, m_C_scale, atol=atol, rtol=rtol, name="m_C")
+        m_C1 = optim1.m_Cs[m1].to_dense()
+        m_C2 = optim2.m_Cs[m2].to_dense()
+        report_nonclose(m_C1, m_C2, atol=atol, rtol=rtol, name="m_C")
 
     # compare momentum buffers
     atol_momentum = atol_momentum if atol_momentum is not None else atol
@@ -94,12 +94,12 @@ def compare_optimizers(
         or optim2.param_groups[0]["momentum"] != 0
     ):
         for module1, module2 in zip(optim1.modules, optim2.modules):
-            for p, p_scale in zip(module1.parameters(), module2.parameters()):
-                mom = optim1.state[p]["momentum_buffer"]
-                mom_scale = optim2.state[p_scale]["momentum_buffer"]
+            for p1, p2 in zip(module1.parameters(), module2.parameters()):
+                mom1 = optim1.state[p1]["momentum_buffer"]
+                mom2 = optim2.state[p2]["momentum_buffer"]
                 report_nonclose(
-                    mom,
-                    mom_scale,
+                    mom1,
+                    mom2,
                     atol=atol_momentum,
                     rtol=rtol_momentum,
                     name="momentum",
@@ -107,5 +107,5 @@ def compare_optimizers(
 
     # compare parameter values
     for module1, module2 in zip(optim1.modules, optim2.modules):
-        for p, p_scale in zip(module1.parameters(), module2.parameters()):
-            report_nonclose(p, p_scale, atol=atol, rtol=rtol, name="parameters")
+        for p1, p2 in zip(module1.parameters(), module2.parameters()):
+            report_nonclose(p1, p2, atol=atol, rtol=rtol, name="parameters")
