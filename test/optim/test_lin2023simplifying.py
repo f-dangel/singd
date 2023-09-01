@@ -78,6 +78,7 @@ def test_compare_lin2023simplifying():
     )
     optim_ours = SNGD(
         model_ours,
+        params=None,
         lr=lr,
         momentum=momentum,
         damping=damping,
@@ -85,7 +86,6 @@ def test_compare_lin2023simplifying():
         weight_decay=weight_decay,
         batch_averaged=batch_averaged,
         T=T,
-        model_params=None,
         lr_cov=lr_cov,
         structures=("dense", "dense"),
     )

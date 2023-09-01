@@ -1,6 +1,6 @@
 """Implements structured inverse-free KFAC."""
 
-from typing import Callable, Dict, Iterable, List, Tuple, Type, Union
+from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
 from warnings import warn
 
 from torch import Tensor, cat, is_grad_enabled, zeros_like
@@ -55,6 +55,7 @@ class SNGD(Optimizer):
     def __init__(
         self,
         model: Module,
+        params: Union[None, Iterable[Parameter], List[Dict[str, Any]]] = None,
         lr: float = 0.001,  # β₂ in the paper
         momentum: float = 0.9,  # α₂ in the paper
         damping: float = 0.001,  # λ in the paper
@@ -62,7 +63,6 @@ class SNGD(Optimizer):
         weight_decay: float = 0.0,  # γ in the paper
         T: int = 10,  # T in the paper
         batch_averaged: bool = True,
-        model_params: Union[None, Iterable[Parameter]] = None,
         lr_cov: float = 1e-2,  # β₁ in the paper
         structures: Tuple[str, str] = ("diagonal", "dense"),
         warn_unsupported: bool = True,
@@ -74,6 +74,11 @@ class SNGD(Optimizer):
         Args:
             model: The neural network whose parameters (or a subset thereof) will be
                 trained.
+            params: Used to specify the trainable parameters or parameter groups.
+                If unspecified, all parameters of ``model`` which are supported by the
+                optimizer will be trained. If a list of ``Parameters`` is passed,
+                only these parameters will be trained. If a list of dictionaries is
+                passed, these will be used as parameter groups.
             lr: (β₂ in the paper) Learning rate for the parameter updates.
                 Default: ``0.001``.
             momentum: (α₂ in the paper) Momentum on the parameter updates.
@@ -87,16 +92,14 @@ class SNGD(Optimizer):
             T: Pre-conditioner update frequency. Default: ``10``.
             batch_averaged: Whether the loss function is a mean over per-sample
                 losses. Default is ``True``.
-            model_params: Optional sequence of parameters that should be trained.
-                If unspecified, all parameters of ``model`` will be trained.
             lr_cov: (β₁ in the paper) Learning rate for the updates of ``m_K, m_C``.
                 Default is ``1e-2``.
             structures: A 2-tuple of strings specifying the structure of the
                 factorizations of ``K`` and ``C``. Possible values are
                 (``'dense'``, ``'diagonal'``). Default is (``'dense'``, ``'dense'``).
-            warn_unsupported: Whether to warn if ``model`` or ``model_params``
-                contain parameters of layers that are not supported. These parameters
-                will not be trained by the optimizer.
+            warn_unsupported: Only relevant if ``params`` is unspecified. Whether to
+                warn if ``model`` contains parameters of layers that are not supported.
+                These parameters will not be trained by the optimizer.
 
         Raises:
             ValueError: If any of the learning rate and momentum parameters
@@ -112,13 +115,26 @@ class SNGD(Optimizer):
             if x < 0.0:
                 raise ValueError(f"{name} must be positive. Got {x}")
 
-        defaults = dict(lr=lr, momentum=momentum, weight_decay=weight_decay)
-
-        if model_params is None:
-            model_params = self._get_trainable_parameters(
+        defaults = dict(
+            lr=lr,
+            momentum=momentum,
+            damping=damping,
+            alpha1=alpha1,
+            weight_decay=weight_decay,
+            T=T,
+            batch_averaged=batch_averaged,
+            lr_cov=lr_cov,
+            structures=structures,
+        )
+        if params is None:
+            params = self._get_trainable_parameters(
                 model, warn_unsupported=warn_unsupported
             )
-        super().__init__(model_params, defaults)
+        super().__init__(params, defaults)
+
+        self.steps = 0
+
+        # TODO Remove these variables as they are stored in groups
         self.lr = lr
         self.momentum = momentum
         self.lr_cov = lr_cov
@@ -127,9 +143,9 @@ class SNGD(Optimizer):
         self.batch_averaged = batch_averaged
         self.alpha1 = alpha1
         self.T = T
-        self.steps = 0
 
         # layers whose parameters will be updated
+        self.param_to_group_idx = self._check_param_groups(model)
         self.modules, self.hook_handles = self._install_hooks(model)
 
         # temporarily stores layer inputs during a forward-backward pass
@@ -152,6 +168,50 @@ class SNGD(Optimizer):
 
         self._initialize_buffers()
 
+    def _check_param_groups(self, model: Module) -> Dict[int, int]:
+        """Check parameter groups for conflicts.
+
+        For all supported layers, the parameters must be in the same group because
+        we compute and update the pre-conditioner per layer.
+
+        Args:
+            model: The model whose layers will be checked.
+
+        Raises:
+            ValueError: , or (2)
+                parameters in a supported layer are in different groups.
+
+        Returns:
+            A dictionary mapping parameter IDs (``.data_ptr()``) to group indices.
+        """
+        # Find out which parameter is in which group
+        param_to_group_idx = {}
+        for group_idx, group in enumerate(self.param_groups):
+            for param in group["params"]:
+                param_to_group_idx[param.data_ptr()] = group_idx
+
+        param_ids = [
+            param.data_ptr() for group in self.param_groups for param in group["params"]
+        ]
+        # check that parameters in a supported module are in the same group
+        # all layers that are not containers
+        modules = [
+            m
+            for m in model.modules()
+            if len(list(m.modules())) == 1 and isinstance(m, self.SUPPORTED_MODULES)
+        ]
+        for m in modules:
+            m_param_ids = [
+                p.data_ptr() for p in m.parameters() if p.data_ptr() in param_ids
+            ]
+            m_groups = [param_to_group_idx[p_id] for p_id in m_param_ids]
+            if len(set(m_groups)) != 1:
+                raise ValueError(
+                    "Parameters of a layer are in different parameter groups. "
+                    + f"Layer: {m}. Group index of parameters: {m_groups}."
+                )
+
+        return param_to_group_idx
 
     def _get_trainable_parameters(
         self, model: Module, warn_unsupported: bool
