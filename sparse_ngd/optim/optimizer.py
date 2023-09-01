@@ -1,6 +1,7 @@
 """Implements structured inverse-free KFAC."""
 
 from typing import Callable, Dict, Iterable, List, Tuple, Type, Union
+from warnings import warn
 
 from torch import Tensor, cat, is_grad_enabled, zeros_like
 from torch.nn import Conv2d, Linear, Module, Parameter
@@ -64,6 +65,7 @@ class SNGD(Optimizer):
         model_params: Union[None, Iterable[Parameter]] = None,
         lr_cov: float = 1e-2,  # β₁ in the paper
         structures: Tuple[str, str] = ("diagonal", "dense"),
+        warn_unsupported: bool = True,
     ):
         """Structured inverse-free KFAC optimizer.
 
@@ -92,6 +94,9 @@ class SNGD(Optimizer):
             structures: A 2-tuple of strings specifying the structure of the
                 factorizations of ``K`` and ``C``. Possible values are
                 (``'dense'``, ``'diagonal'``). Default is (``'dense'``, ``'dense'``).
+            warn_unsupported: Whether to warn if ``model`` or ``model_params``
+                contain parameters of layers that are not supported. These parameters
+                will not be trained by the optimizer.
 
         Raises:
             ValueError: If any of the learning rate and momentum parameters
@@ -108,9 +113,12 @@ class SNGD(Optimizer):
                 raise ValueError(f"{name} must be positive. Got {x}")
 
         defaults = dict(lr=lr, momentum=momentum, weight_decay=weight_decay)
-        super().__init__(
-            model.parameters() if model_params is None else model_params, defaults
-        )
+
+        if model_params is None:
+            model_params = self._get_trainable_parameters(
+                model, warn_unsupported=warn_unsupported
+            )
+        super().__init__(model_params, defaults)
         self.lr = lr
         self.momentum = momentum
         self.lr_cov = lr_cov
@@ -143,6 +151,41 @@ class SNGD(Optimizer):
         self.H_Cs: Dict[Module, BatchAccumulator] = {}
 
         self._initialize_buffers()
+
+
+    def _get_trainable_parameters(
+        self, model: Module, warn_unsupported: bool
+    ) -> List[Parameter]:
+        """Return a list containing the model parameters that can be trained.
+
+        Args:
+            model: The model whose parameters should be trained.
+            warn_unsupported: Whether to warn if ``model`` contains parameters of
+                layers that are not supported.
+
+        Returns:
+            A list of parameters that can be trained.
+        """
+        # all layers that are not containers
+        named_modules = [
+            (name, mod)
+            for name, mod in model.named_modules()
+            if len(list(mod.modules())) == 1
+        ]
+
+        trainable = []
+        for name, mod in named_modules:
+            mod_trainable = [param for param in mod.parameters() if param.requires_grad]
+            if isinstance(mod, self.SUPPORTED_MODULES):
+                trainable.extend(mod_trainable)
+            elif mod_trainable and warn_unsupported:
+                warn(
+                    "Found un-supported parameter(s) that will not be trained in "
+                    + f"layer {name}: {mod}. To disable this warning, construct the "
+                    "optimizer with `warn_unsupported=False`."
+                )
+
+        return trainable
 
     def _initialize_buffers(self):
         """Initialize buffers for ``K, C, m_K, m_C``.
