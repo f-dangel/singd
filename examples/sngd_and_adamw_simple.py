@@ -1,6 +1,6 @@
 """Demonstrate training MNIST with SNGD and AdamW."""
 
-from torch import manual_seed
+from torch import cuda, device, manual_seed
 from torch.nn import (
     BatchNorm1d,
     Conv2d,
@@ -17,13 +17,11 @@ from torchvision.transforms import ToTensor
 
 from sparse_ngd.optim.optimizer import SNGD
 
-manual_seed(0)
-MAX_STEPS = 150
-BATCH_SIZE = 32
+manual_seed(0)  # make deterministic
+MAX_STEPS = 100  # quit training after this many steps
+DEV = device("cuda" if cuda.is_available() else "cpu")
 
-###############################################################################
-#                                 BASIC SETUP                                 #
-###############################################################################
+BATCH_SIZE = 32
 train_dataset = MNIST("./data", train=True, download=True, transform=ToTensor())
 train_loader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
@@ -36,8 +34,8 @@ model = Sequential(
     Linear(200, 50),
     ReLU(),
     Linear(50, 10),
-)
-loss_func = CrossEntropyLoss()
+).to(DEV)
+loss_func = CrossEntropyLoss().to(DEV)
 
 # We will train parameters of convolutions, linear layers, and batch
 # normalizations differently. Convolutions will be trained with ``SNGD`` and
@@ -45,13 +43,22 @@ loss_func = CrossEntropyLoss()
 # diagonal structures. BN layers are not supported by ``SNGD``, so we will
 # train them with ``AdamW``.
 conv_params = [
-    p for m in model.modules() if isinstance(m, Conv2d) for p in m.parameters()
+    p
+    for m in model.modules()
+    if isinstance(m, Conv2d)
+    for p in m.parameters()
+    if p.requires_grad
 ]
 linear_params = [
-    p for m in model.modules() if isinstance(m, Linear) for p in m.parameters()
+    p
+    for m in model.modules()
+    if isinstance(m, Linear)
+    for p in m.parameters()
+    if p.requires_grad
 ]
-bn_params = [
-    p for m in model.modules() if isinstance(m, BatchNorm1d) for p in m.parameters()
+ptrs = [p.data_ptr() for p in conv_params + linear_params]
+other_params = [
+    p for p in model.parameters() if p.data_ptr() not in ptrs and p.requires_grad
 ]
 
 sngd_hyperparams = {
@@ -66,6 +73,9 @@ sngd_hyperparams = {
     "structures": ("dense", "dense"),
 }
 
+# To demonstrate using multiple parameter groups, we define separate groups for
+# the parameters in convolution and linear layers. For simplicity, we use the
+# same hyperparameters in each group, but they could be different in practise.
 conv_group = {"params": conv_params, **sngd_hyperparams}
 linear_group = {"params": linear_params, **sngd_hyperparams}
 linear_group["structures"] = ("diagonal", "diagonal")  # structure of K, C
@@ -73,30 +83,29 @@ linear_group["structures"] = ("diagonal", "diagonal")  # structure of K, C
 param_groups = [conv_group, linear_group]
 sngd = SNGD(model, params=param_groups)
 
-
+# For the other parameters, we use ``AdamW``
 adamw = AdamW(
-    bn_params,
+    other_params,
     eps=1e-8,
     betas=(0.9, 0.999),
     lr=5e-4,
     weight_decay=1e-2,
 )
 
-losses = []
-
 # Loop over each batch from the training set
 for batch_idx, (inputs, target) in enumerate(train_loader):
     print(f"Step {sngd.steps}")
+    inputs, target = inputs.to(DEV), target.to(DEV)
 
     # Zero gradient buffers
     sngd.zero_grad()
     adamw.zero_grad()
 
-    # Take a step
+    # Backward pass
     loss = loss_func(model(inputs), target)
     loss.backward()
-    losses.append(loss.item())
 
+    # Update parameters
     sngd.step()
     adamw.step()
 
