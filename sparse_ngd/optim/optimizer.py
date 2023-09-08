@@ -3,6 +3,7 @@
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
 from warnings import warn
 
+import torch.distributed as dist
 from torch import Tensor, cat, is_grad_enabled, zeros_like
 from torch.nn import Conv2d, Linear, Module, Parameter
 from torch.optim import Optimizer
@@ -102,9 +103,21 @@ class SNGD(Optimizer):
                 These parameters will not be trained by the optimizer.
 
         Raises:
+            TypeError: If DataParallel or DistributedDataParallel model wrappers
+                are used.
             ValueError: If any of the learning rate and momentum parameters
                 (``lr, lr_cov, alpha1, momentum, weight_decay``) are non-positive.
         """
+        from torch.nn.parallel import DataParallel as DP
+        from torch.nn.parallel import DistributedDataParallel as DDP
+
+        if isinstance(model, (DP, DDP)):
+            raise TypeError(
+                "DataParallel and DistributedDataParallel wrappers are not supported. "
+                "Use the normal DDP setup without the wrapper for distributed training."
+            )
+        del DP, DDP
+
         for x, name in [
             (lr, "lr"),
             (lr_cov, "lr_cov"),
@@ -411,6 +424,12 @@ class SNGD(Optimizer):
         H_K = K.from_inner(X=a.T)
         H_C = C.from_inner(X=g.T)
 
+        # If DDP is used.
+        if dist.is_initialized():
+            # all-reduce across devices (computes average by default).
+            H_K.all_reduce()
+            H_C.all_reduce()
+
         # maybe set up fresh accumulators (they get flushed in `.step`)
         if module not in self.H_Ks:
             self.H_Ks[module] = BatchAccumulator(batch_averaged=batch_averaged)
@@ -495,6 +514,11 @@ class SNGD(Optimizer):
 
         C = self.Cs[module]
         nat_grad = C @ (C.rmatmat(nat_grad))
+
+        # If DDP is used.
+        if dist.is_initialized():
+            # all-reduce across devices.
+            dist.all_reduce(nat_grad, op=dist.ReduceOp.AVG)
 
         # 3) UN-CONCATENATE, UN-RESHAPE, AND COPY THE NATURAL GRADIENT TO ``.GRAD``
         if module.bias is not None:
