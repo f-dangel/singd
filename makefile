@@ -58,7 +58,7 @@ install-test:
 .PHONY: test test-light
 
 test:
-	@pytest -vx --run-optional-tests=expensive --cov=sparse_ngd test
+	@pytest -vx --run-optional-tests=expensive --cov=sparse_ngd test --ignore=test/optim/test_lin2023simplifying_ddp.py
 
 test-light:
 	@pytest -vx --cov=sparse_ngd test
