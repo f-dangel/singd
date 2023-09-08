@@ -6,6 +6,8 @@ from warnings import warn
 import torch.distributed as dist
 from torch import Tensor, cat, is_grad_enabled, zeros_like
 from torch.nn import Conv2d, Linear, Module, Parameter
+from torch.nn.parallel import DataParallel as DP
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import Optimizer
 from torch.utils.hooks import RemovableHandle
 
@@ -108,15 +110,11 @@ class SNGD(Optimizer):
             ValueError: If any of the learning rate and momentum parameters
                 (``lr, lr_cov, alpha1, momentum, weight_decay``) are non-positive.
         """
-        from torch.nn.parallel import DataParallel as DP
-        from torch.nn.parallel import DistributedDataParallel as DDP
-
         if isinstance(model, (DP, DDP)):
             raise TypeError(
                 "DataParallel and DistributedDataParallel wrappers are not supported. "
                 "Use the normal DDP setup without the wrapper for distributed training."
             )
-        del DP, DDP
 
         for x, name in [
             (lr, "lr"),
