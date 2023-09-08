@@ -64,7 +64,7 @@ class SNGD(Optimizer):
         weight_decay: float = 0.0,  # γ in the paper
         T: int = 10,  # T in the paper
         batch_averaged: bool = True,
-        lr_cov: float = 1e-2,  # β₁ in the paper
+        lr_cov: Union[float, Callable[[int], float]] = 1e-2,  # β₁ in the paper
         structures: Tuple[str, str] = ("diagonal", "dense"),
         warn_unsupported: bool = True,
         kfac_like: bool = False,
@@ -99,7 +99,8 @@ class SNGD(Optimizer):
             batch_averaged: Whether the loss function is a mean over per-sample
                 losses. Default is ``True``.
             lr_cov: (β₁ in the paper) Learning rate for the updates of ``m_K, m_C``.
-                Default is ``1e-2``.
+                Default is ``1e-2``. Also allows for a callable which takes the current
+                step and returns the current value for ``lr_cov``.
             structures: A 2-tuple of strings specifying the structure of the
                 factorizations of ``K`` and ``C``. Possible values are
                 (``'dense'``, ``'diagonal'``). Default is (``'dense'``, ``'dense'``).
@@ -126,7 +127,7 @@ class SNGD(Optimizer):
             (momentum, "momentum"),
             (weight_decay, "weight_decay"),
         ]:
-            if x < 0.0:
+            if isinstance(x, float) and x < 0.0:
                 raise ValueError(f"{name} must be positive. Got {x}")
 
         defaults = dict(
@@ -418,6 +419,8 @@ class SNGD(Optimizer):
             self.m_Ks[module] = new_m_K
 
         beta1 = self._get_param_group_entry(module, "lr_cov")
+        if isinstance(beta1, Callable):  # scheduled
+            beta1 = beta1(self.steps)
         self.Ks[module] = K - (K @ new_m_K) * beta1
         self.Cs[module] = C - (C @ new_m_C) * beta1
 

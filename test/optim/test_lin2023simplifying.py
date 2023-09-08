@@ -76,6 +76,23 @@ def test_compare_lin2023simplifying():  # noqa: C901
         lr_cov=lr_cov,
         batch_averaged=batch_averaged,
     )
+
+    def lr_cov_schedule(step: int) -> float:
+        """Schedule for ``lr_cov`` from the original optimizer.
+
+        Args:
+            step: Current step.
+
+        Returns:
+            Current value of ``lr_cov``.
+        """
+        if step <= 100:
+            return 2e-4
+        elif step < 500:
+            return 2e-3
+        else:
+            return lr_cov
+
     optim_ours = SNGD(
         model_ours,
         params=None,
@@ -86,7 +103,7 @@ def test_compare_lin2023simplifying():  # noqa: C901
         weight_decay=weight_decay,
         batch_averaged=batch_averaged,
         T=T,
-        lr_cov=lr_cov,
+        lr_cov=lr_cov_schedule,
         structures=("dense", "dense"),
     )
 
@@ -102,17 +119,6 @@ def test_compare_lin2023simplifying():  # noqa: C901
         # Zero gradient buffers
         optim_original.zero_grad()
         optim_ours.zero_grad()
-
-        # The original optimizer has a hard-coded schedule for ``lr_cov`` which
-        # we immitate here manually
-        step_lr_cov = optim_original.lr_cov
-        if optim_ours.steps <= 100:
-            step_lr_cov = 2e-4
-        elif optim_ours.steps < 500:
-            step_lr_cov = 2e-3
-
-        for group in optim_ours.param_groups:
-            group["lr_cov"] = step_lr_cov
 
         # The original optimizer has a hard-coded schedule for ``weight_decay`` which
         # we immitate here manually
