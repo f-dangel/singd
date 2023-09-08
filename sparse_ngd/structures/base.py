@@ -7,7 +7,9 @@ from typing import Union
 from warnings import warn
 
 import torch
-from torch import Tensor, bfloat16, eye, zeros
+from torch import Tensor, zeros
+
+from sparse_ngd.structures.utils import supported_eye, supported_matmul, supported_trace
 
 
 class StructuredMatrix(ABC):
@@ -48,10 +50,13 @@ class StructuredMatrix(ABC):
             matrix.
         """
         self._warn_naive_implementation("__matmul__")
+
+        dense = self.to_dense()
         if isinstance(other, Tensor):
-            return self.to_dense() @ other
-        else:
-            return self.from_dense(self.to_dense() @ other.to_dense())
+            return supported_matmul(dense, other)
+
+        other_dense = other.to_dense()
+        return self.from_dense(supported_matmul(dense, other_dense))
 
     @classmethod
     @abstractmethod
@@ -137,7 +142,7 @@ class StructuredMatrix(ABC):
             A dense PyTorch tensor resulting from the multiplication.
         """
         self._warn_naive_implementation("rmatmat")
-        return self.to_dense().T @ mat
+        return supported_matmul(self.to_dense().T, mat)
 
     @classmethod
     def _warn_naive_implementation(cls, fn_name: str):
@@ -175,8 +180,10 @@ class StructuredMatrix(ABC):
             The structured matrix extracted from ``self.T @ X @ X^T @ self``.
         """
         self._warn_naive_implementation("from_inner")
-        S_dense = self.to_dense().T if X is None else self.to_dense().T @ X
-        return self.from_dense(S_dense @ S_dense.T)
+        S_dense = self.to_dense().T
+        if X is not None:
+            S_dense = supported_matmul(S_dense, X)
+        return self.from_dense(supported_matmul(S_dense, S_dense.T))
 
     # NOTE This operation should be removed long-term as implementing IF-KFAC
     # with `from_inner` is more efficient. For now, it will exist as it makes
@@ -192,8 +199,8 @@ class StructuredMatrix(ABC):
             The structured matrix extracted from ``self.T @ XXT @ self``.
         """
         self._warn_naive_implementation("from_inner2")
-        self_dense = self.to_dense()
-        return self.from_dense(self_dense.T @ XXT @ self_dense)
+        dense = self.to_dense()
+        return self.from_dense(supported_matmul(dense.T, XXT, dense))
 
     def trace(self) -> Tensor:
         """Compute the trace of the represented matrix.
@@ -202,13 +209,7 @@ class StructuredMatrix(ABC):
             The trace of the represented matrix.
         """
         self._warn_naive_implementation("trace")
-        dense = self.to_dense()
-
-        # trace not implemented in bfloat16
-        if dense.dtype == bfloat16:
-            dense = dense.float()
-
-        return dense.trace()
+        return supported_trace(self.to_dense())
 
     ###############################################################################
     #                      Special initialization operations                      #
@@ -255,4 +256,4 @@ class StructuredMatrix(ABC):
             A structured matrix representing the identity matrix.
         """
         cls._warn_naive_implementation("eye")
-        return cls.from_dense(eye(dim, dtype=dtype, device=device))
+        return cls.from_dense(supported_eye(dim, dtype=dtype, device=device))

@@ -2,9 +2,12 @@
 
 from typing import Union
 
-from torch import Tensor, allclose, isclose
+from torch import Tensor, allclose, cuda, device, isclose
 
 from sparse_ngd.optim.optimizer import SNGD
+
+DEVICE_IDS = ["cpu", "cuda"] if cuda.is_available() else ["cpu"]
+DEVICES = [device(name) for name in DEVICE_IDS]
 
 
 def report_nonclose(
