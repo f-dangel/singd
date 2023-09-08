@@ -24,8 +24,8 @@ def test_compare_lin2023simplifying_ddp():  # noqa: C901
         pytest_skip()
     try:
         RANK = int(environ["LOCAL_RANK"])
-    except KeyError:
-        raise ValueError("This test has to be run via torchrun.")
+    except KeyError as exec:
+        raise RuntimeError("This test has to be run via torchrun.") from exec
     DEVICE = torch.device(f"cuda:{RANK}")
     torch.cuda.set_device(RANK)
     # Initialize the process group.
