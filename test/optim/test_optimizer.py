@@ -78,3 +78,7 @@ def test_SNGD_check_param_groups():
 
     assert optim.param_groups[0]["structures"] == ("dense", "dense")
     assert optim.param_groups[1]["structures"] == ("diagonal", "diagonal")
+
+    # warn user if kfac_like is turned on and alpha1≠0
+    with warns(UserWarning):
+        optim = SNGD(model, **dummy_hyperparams, kfac_like=True)
