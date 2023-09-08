@@ -171,7 +171,10 @@ class StructuredMatrix(ABC):
         group: Union[dist.ProcessGroup, None] = None,
         async_op: bool = False,
     ) -> Union[None, Union[torch._C.Future, Tuple[torch._C.Future, ...]]]:
-        """Reduce the structured matrix across all workers.
+        """Reduce the structured matrix across all devices.
+
+        This method only has to be implemented to support distributed data
+        parallel training.
 
         Args:
             op: The reduction operation to perform (default: ``dist.ReduceOp.AVG``).
