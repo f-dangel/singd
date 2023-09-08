@@ -6,6 +6,7 @@ from os import environ, path
 
 import torch
 import torch.distributed as dist
+from pytest import skip as pytest_skip
 from torch import allclose, manual_seed
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
 from torch.utils.data import DataLoader
@@ -14,14 +15,18 @@ from torchvision.transforms import ToTensor
 
 from sparse_ngd.optim.optimizer import SNGD
 
-RANK = int(environ["LOCAL_RANK"])
-DEVICE = torch.device(f"cuda:{RANK}")
-N_GPUS = torch.cuda.device_count()
-
 
 def test_compare_lin2023simplifying_ddp():  # noqa: C901
     """Compare our implementation with the original one on MNIST in the DDP setting."""
-    assert torch.cuda.is_available(), "This test requires a GPU."
+    N_GPUS = torch.cuda.device_count()
+    if not torch.cuda.is_available() or N_GPUS < 2:
+        # This test requires multiple GPUs.
+        pytest_skip()
+    try:
+        RANK = int(environ["LOCAL_RANK"])
+    except KeyError:
+        raise ValueError("This test has to be run via torchrun.")
+    DEVICE = torch.device(f"cuda:{RANK}")
     torch.cuda.set_device(RANK)
     # Initialize the process group.
     dist.init_process_group("nccl")
