@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Union
+from typing import Tuple, Union
 from warnings import warn
 
 import torch
+import torch.distributed as dist
 from torch import Tensor, zeros
 
 from sparse_ngd.structures.utils import supported_eye, supported_matmul, supported_trace
@@ -162,6 +163,30 @@ class StructuredMatrix(ABC):
                 f"Calling naive implementation of {cls_name}.{fn_name}."
                 + f"Consider implementing {cls_name}.{fn_name} using structure."
             )
+
+    @abstractmethod
+    def all_reduce(
+        self,
+        op: dist.ReduceOp = dist.ReduceOp.AVG,
+        group: Union[dist.ProcessGroup, None] = None,
+        async_op: bool = False,
+    ) -> Union[None, Union[torch._C.Future, Tuple[torch._C.Future, ...]]]:
+        """Reduce the structured matrix across all workers.
+
+        Args:
+            op: The reduction operation to perform (default: ``dist.ReduceOp.AVG``).
+            group: The process group to work on. If ``None``, the default process group
+                will be used.
+            async_op: If ``True``, this function will return a
+                ``torch.distributed.Future`` object.
+                Otherwise, it will block until the reduction completes
+                (default: ``False``).
+
+        Returns:
+            If ``async_op`` is ``True``, a (tuple of) ``torch.distributed.Future``
+            object(s), else ``None``.
+        """
+        raise NotImplementedError
 
     ###############################################################################
     #                        Special operations for IF-KFAC                       #

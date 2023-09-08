@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Tuple, Union
+
+import torch.distributed as dist
 from torch import Tensor, arange, zeros
+from torch._C import Future
 
 from sparse_ngd.structures.base import StructuredMatrix
 
@@ -66,3 +70,35 @@ class TrilBottomRightDiagonalMatrix(StructuredMatrix):
         mat[:, 0] = self._mat_col
 
         return mat
+
+    def all_reduce(
+        self,
+        op: dist.ReduceOp = dist.ReduceOp.AVG,
+        group: Union[dist.ProcessGroup, None] = None,
+        async_op: bool = False,
+    ) -> Union[None, Tuple[Future, Future]]:
+        """Reduce the structured matrix across all workers.
+
+        Args:
+            op: The reduction operation to perform (default: ``dist.ReduceOp.AVG``).
+            group: The process group to work on. If ``None``, the default process group
+                will be used.
+            async_op: If ``True``, this function will return a
+                ``torch.distributed.Future`` object.
+                Otherwise, it will block until the reduction completes
+                (default: ``False``).
+
+        Returns:
+            If ``async_op`` is ``True``, a tuple of ``torch.distributed.Future``
+            objects, else ``None``.
+        """
+        if async_op:
+            handle_col = dist.all_reduce(
+                self._mat_col, op=op, group=group, async_op=async_op
+            )
+            handle_diag = dist.all_reduce(
+                self._mat_diag, op=op, group=group, async_op=async_op
+            )
+            return handle_col, handle_diag
+        dist.all_reduce(self._mat_col, op=op, group=group, async_op=async_op)
+        dist.all_reduce(self._mat_diag, op=op, group=group, async_op=async_op)
