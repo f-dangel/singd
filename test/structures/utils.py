@@ -1,13 +1,23 @@
 """Utility functions for testing the interface of structured matrices."""
 
 from abc import ABC, abstractmethod
-from test.utils import report_nonclose
+from test.utils import DEVICE_IDS, DEVICES, report_nonclose
 from typing import Callable, Type, Union
 
 import torch
-from torch import Tensor, device, eye, float16, float32, manual_seed, rand, zeros
+from pytest import mark
+from torch import Tensor, device, manual_seed, rand, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
+from sparse_ngd.structures.utils import (
+    is_half_precision,
+    supported_eye,
+    supported_matmul,
+    supported_trace,
+)
+
+DTYPES = [torch.float32, torch.float16, torch.bfloat16]
+DTYPE_IDS = [str(dt).split(".")[-1] for dt in DTYPES]
 
 
 def _test_matmul(
@@ -32,13 +42,20 @@ def _test_matmul(
     sym_mat2 = symmetrize(mat2)
     sym_mat2_structured = structured_matrix_cls.from_dense(sym_mat2)
 
+    tolerances = {
+        "rtol": 5e-2 if is_half_precision(sym_mat1.dtype) else 1e-5,
+        "atol": 1e-4 if is_half_precision(sym_mat1.dtype) else 1e-7,
+    }
+
     # multiplication with a structured matrix
-    truth = project(sym_mat1) @ project(sym_mat2)
-    report_nonclose(truth, (sym_mat1_structured @ sym_mat2_structured).to_dense())
+    truth = supported_matmul(project(sym_mat1), project(sym_mat2))
+    report_nonclose(
+        truth, (sym_mat1_structured @ sym_mat2_structured).to_dense(), **tolerances
+    )
 
     # multiplication with a PyTorch tensor
-    truth = project(sym_mat1) @ mat2
-    report_nonclose(truth, sym_mat1_structured @ mat2)
+    truth = supported_matmul(project(sym_mat1), mat2)
+    report_nonclose(truth, sym_mat1_structured @ mat2, **tolerances)
 
 
 def _test_add(
@@ -62,7 +79,13 @@ def _test_add(
     truth = project(sym_mat1) + project(sym_mat2)
     sym_mat1_structured = structured_matrix_cls.from_dense(sym_mat1)
     sym_mat2_structured = structured_matrix_cls.from_dense(sym_mat2)
-    report_nonclose(truth, (sym_mat1_structured + sym_mat2_structured).to_dense())
+
+    report_nonclose(
+        truth,
+        (sym_mat1_structured + sym_mat2_structured).to_dense(),
+        rtol=1e-2 if is_half_precision(sym_mat1.dtype) else 1e-5,
+        atol=1e-4 if is_half_precision(sym_mat1.dtype) else 1e-7,
+    )
 
 
 def _test_sub(
@@ -86,7 +109,12 @@ def _test_sub(
     truth = project(sym_mat1) - project(sym_mat2)
     sym_mat1_structured = structured_matrix_cls.from_dense(sym_mat1)
     sym_mat2_structured = structured_matrix_cls.from_dense(sym_mat2)
-    report_nonclose(truth, (sym_mat1_structured - sym_mat2_structured).to_dense())
+    report_nonclose(
+        truth,
+        (sym_mat1_structured - sym_mat2_structured).to_dense(),
+        rtol=1e-1 if is_half_precision(sym_mat1.dtype) else 1e-5,
+        atol=1e-4 if is_half_precision(sym_mat1.dtype) else 1e-7,
+    )
 
 
 def _test_mul(
@@ -108,7 +136,12 @@ def _test_mul(
     """
     truth = project(factor * sym_mat)
     mat_structured = structured_matrix_cls.from_dense(sym_mat)
-    report_nonclose(truth, (mat_structured * factor).to_dense())
+    report_nonclose(
+        truth,
+        (mat_structured * factor).to_dense(),
+        rtol=1e-2 if is_half_precision(sym_mat.dtype) else 1e-5,
+        atol=1e-4 if is_half_precision(sym_mat.dtype) else 1e-7,
+    )
 
 
 def _test_rmatmat(
@@ -129,9 +162,15 @@ def _test_rmatmat(
         project: A function which converts an arbitrary symmetric dense matrix into a
             dense matrix of the tested structure. Used to establish the ground truth.
     """
-    truth = project(sym_mat1).T @ mat2
+    truth = supported_matmul(project(sym_mat1).T, mat2)
+
     sym_mat1_structured = structured_matrix_cls.from_dense(sym_mat1)
-    report_nonclose(truth, sym_mat1_structured.rmatmat(mat2))
+    report_nonclose(
+        truth,
+        sym_mat1_structured.rmatmat(mat2),
+        rtol=1e-1 if is_half_precision(sym_mat1.dtype) else 1e-5,
+        atol=1e-4 if is_half_precision(sym_mat1.dtype) else 1e-7,
+    )
 
 
 def _test_from_inner(
@@ -152,12 +191,17 @@ def _test_from_inner(
         X: An optional matrix which will be passed to the ``from_inner`` method.
     """
     if X is None:
-        truth = project(project(sym_mat).T @ project(sym_mat))
+        truth = project(supported_matmul(project(sym_mat).T, project(sym_mat)))
     else:
-        truth = project(project(sym_mat).T @ X @ X.T @ project(sym_mat))
+        truth = project(supported_matmul(project(sym_mat).T, X, X.T, project(sym_mat)))
 
     sym_mat_structured = structured_matrix_cls.from_dense(sym_mat)
-    report_nonclose(truth, sym_mat_structured.from_inner(X=X).to_dense())
+    report_nonclose(
+        truth,
+        sym_mat_structured.from_inner(X=X).to_dense(),
+        rtol=1e-2 if is_half_precision(sym_mat.dtype) else 1e-5,
+        atol=1e-4 if is_half_precision(sym_mat.dtype) else 1e-7,
+    )
 
 
 def _test_from_inner2(
@@ -177,9 +221,14 @@ def _test_from_inner2(
             dense matrix of the tested structure. Used to establish the ground truth.
         XXT: An symmetric PSD matrix that will be passed to ``from_inner2``.
     """
-    truth = project(project(sym_mat).T @ XXT @ project(sym_mat))
+    truth = project(supported_matmul(project(sym_mat).T, XXT, project(sym_mat)))
     sym_mat_structured = structured_matrix_cls.from_dense(sym_mat)
-    report_nonclose(truth, sym_mat_structured.from_inner2(XXT).to_dense())
+    report_nonclose(
+        truth,
+        sym_mat_structured.from_inner2(XXT).to_dense(),
+        rtol=1e-2 if is_half_precision(sym_mat.dtype) else 1e-5,
+        atol=1e-4 if is_half_precision(sym_mat.dtype) else 1e-7,
+    )
 
 
 def _test_zeros(
@@ -224,7 +273,7 @@ def _test_eye(
         device: Optional device of the matrix. If not specified, uses the default
             tensor type.
     """
-    truth = eye(dim, dtype=dtype, device=device)
+    truth = supported_eye(dim, dtype=dtype, device=device)
     structured_identity_matrix = structured_matrix_cls.eye(
         dim, dtype=dtype, device=device
     )
@@ -246,9 +295,14 @@ def _test_trace(
         structured_matrix_cls: The class of the structured matrix into which ``sym_mat``
             will be converted.
     """
-    truth = sym_mat.trace()
+    truth = supported_trace(sym_mat)
     mat_structured = structured_matrix_cls.from_dense(sym_mat)
-    report_nonclose(truth, mat_structured.trace())
+    report_nonclose(
+        truth,
+        mat_structured.trace(),
+        rtol=1e-2 if is_half_precision(sym_mat.dtype) else 1e-5,
+        atol=1e-4 if is_half_precision(sym_mat.dtype) else 1e-7,
+    )
 
 
 def symmetrize(mat: Tensor) -> Tensor:
@@ -300,75 +354,143 @@ class _TestStructuredMatrix(ABC):
         """
         raise NotImplementedError("Must be implemented by a child class")
 
-    def test_add(self):
-        """Test matrix addition of two structured matrices."""
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_add(self, dev: device, dtype: torch.dtype):
+        """Test matrix addition of two structured matrices.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+        """
         manual_seed(0)
-        sym_mat1 = symmetrize(rand((10, 10)))
-        sym_mat2 = symmetrize(rand((10, 10)))
+        sym_mat1 = symmetrize(rand((10, 10), device=dev, dtype=dtype))
+        sym_mat2 = symmetrize(rand((10, 10), device=dev, dtype=dtype))
         _test_add(sym_mat1, sym_mat2, self.STRUCTURED_MATRIX_CLS, self.project)
 
-    def test_sub(self):
-        """Test matrix subtraction of two structured matrices."""
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_sub(self, dev: device, dtype: torch.dtype):
+        """Test matrix subtraction of two structured matrices.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+        """
         manual_seed(0)
-        sym_mat1 = symmetrize(rand((10, 10)))
-        sym_mat2 = symmetrize(rand((10, 10)))
+        sym_mat1 = symmetrize(rand((10, 10), device=dev, dtype=dtype))
+        sym_mat2 = symmetrize(rand((10, 10), device=dev, dtype=dtype))
         _test_sub(sym_mat1, sym_mat2, self.STRUCTURED_MATRIX_CLS, self.project)
 
-    def test_matmul(self):
-        """Test matrix multiplication of two structured matrices."""
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_matmul(self, dev: device, dtype: torch.dtype):
+        """Test matrix multiplication of two structured matrices.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+        """
         manual_seed(0)
-        sym_mat1 = symmetrize(rand((10, 10)))
-        mat2 = rand((10, 10))
+        sym_mat1 = symmetrize(rand((10, 10), device=dev, dtype=dtype))
+        mat2 = rand((10, 10), device=dev, dtype=dtype)
         _test_matmul(sym_mat1, mat2, self.STRUCTURED_MATRIX_CLS, self.project)
 
-    def test_mul(self):
-        """Test multiplication of a structured matrix with a scalar."""
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_mul(self, dev: device, dtype: torch.dtype):
+        """Test multiplication of a structured matrix with a scalar.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+        """
         manual_seed(0)
-        sym_mat = symmetrize(rand((10, 10)))
+        sym_mat = symmetrize(rand((10, 10), device=dev, dtype=dtype))
         factor = 0.3
         _test_mul(sym_mat, factor, self.STRUCTURED_MATRIX_CLS, self.project)
 
-    def test_rmatmat(self):
-        """Test multiplication with the transpose of a structured matrix."""
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_rmatmat(self, dev: device, dtype: torch.dtype):
+        """Test multiplication with the transpose of a structured matrix.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+        """
         manual_seed(0)
-        sym_mat1 = symmetrize(rand((10, 10)))
-        mat2 = rand((10, 20))
+        sym_mat1 = symmetrize(rand((10, 10), device=dev, dtype=dtype))
+        mat2 = rand((10, 20), device=dev, dtype=dtype)
         _test_rmatmat(sym_mat1, mat2, self.STRUCTURED_MATRIX_CLS, self.project)
 
-    def test_from_inner(self):
-        """Test structure extraction after self-inner product w/o intermediate term."""
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_from_inner(self, dev: device, dtype: torch.dtype):
+        """Test structure extraction after self-inner product w/o intermediate term.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+        """
         manual_seed(0)
 
-        sym_mat = symmetrize(rand((10, 10)))
+        sym_mat = symmetrize(rand((10, 10), device=dev, dtype=dtype))
         X = None
         _test_from_inner(sym_mat, self.STRUCTURED_MATRIX_CLS, self.project, X)
 
-        sym_mat = symmetrize(rand((10, 10)))
-        X = rand((10, 20))
+        sym_mat = symmetrize(rand((10, 10), device=dev, dtype=dtype))
+        X = rand((10, 20), device=dev, dtype=dtype)
         _test_from_inner(sym_mat, self.STRUCTURED_MATRIX_CLS, self.project, X)
 
-    def test_from_inner2(self):
-        """Test structure extraction after self-inner product w/ intermediate matrix."""
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_from_inner2(self, dev: device, dtype: torch.dtype):
+        """Test structure extraction after self-inner product w/ intermediate matrix.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+        """
         manual_seed(0)
 
-        sym_mat = symmetrize(rand((10, 10)))
-        X = rand((10, 20))
-        XXT = X @ X.T
+        sym_mat = symmetrize(rand((10, 10), device=dev, dtype=dtype))
+        X = rand((10, 20), device=dev, dtype=dtype)
+        XXT = supported_matmul(X, X.T)
         _test_from_inner2(sym_mat, self.STRUCTURED_MATRIX_CLS, self.project, XXT)
 
-    def test_eye(self):
-        """Test initializing a structured matrix representing the identity matrix."""
-        _test_eye(self.STRUCTURED_MATRIX_CLS, 10, float32, device("cpu"))
-        _test_eye(self.STRUCTURED_MATRIX_CLS, 10, float16, device("cpu"))
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_eye(self, dev: device, dtype: torch.dtype):
+        """Test initializing a structured matrix representing the identity matrix.
 
-    def test_zeros(self):
-        """Test initializing a structured matrix representing the zero matrix."""
-        _test_zeros(self.STRUCTURED_MATRIX_CLS, 10, float32, device("cpu"))
-        _test_zeros(self.STRUCTURED_MATRIX_CLS, 10, float16, device("cpu"))
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+        """
+        _test_eye(self.STRUCTURED_MATRIX_CLS, 10, dtype=dtype, device=dev)
 
-    def test_trace(self):
-        """Test trace of a structured dense matrix."""
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_zeros(self, dev: device, dtype: torch.dtype):
+        """Test initializing a structured matrix representing the zero matrix.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+        """
+        _test_zeros(self.STRUCTURED_MATRIX_CLS, 10, dtype=dtype, device=dev)
+
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_trace(self, dev: device, dtype: torch.dtype):
+        """Test trace of a structured dense matrix.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+        """
         manual_seed(0)
 
-        mat = rand((10, 10))
+        mat = rand((10, 10), device=dev, dtype=dtype)
         _test_trace(mat, self.STRUCTURED_MATRIX_CLS)

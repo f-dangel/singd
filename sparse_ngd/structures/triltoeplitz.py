@@ -49,13 +49,13 @@ class TrilToeplitzMatrix(StructuredMatrix):
         x = torch.fliplr(mat)
         digitized = np.sum(np.indices(x.shape), axis=0).ravel()
         # digitized_tensor = torch.from_numpy(digitized) #using numpy
-        digitized_tensor = torch.as_tensor(
-            digitized
+        digitized_tensor = torch.as_tensor(digitized).to(
+            x.device
         )  # using cupy instead of numpy to avoid a cpu-to-gpu call
         result = torch.bincount(digitized_tensor, x.view(-1))
 
         col = result[range(dim)].flip(0) + result[(dim - 1) :]
-        col.div_((1.0 + torch.Tensor(range(dim))).flip(0))
+        col.div_((1.0 + torch.Tensor(range(dim)).to(col.device)).flip(0))
         col[0] = col[0] / 2.0
 
         col = col.to(mat.dtype).to(mat.device)

@@ -1,5 +1,6 @@
 """Implements structured inverse-free KFAC."""
 
+from math import sqrt
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
 from warnings import warn
 
@@ -334,7 +335,10 @@ class SNGD(Optimizer):
 
         # un-scale ``H_C = structure(C.T @ (grad_scale * g) @ (grad_scale * g).T @ C)``
         if grad_scale != 1.0:
-            H_C *= 1 / grad_scale**2
+            # In total we have to divide by ``grad_scale ** 2``. The ``H_C`` computed
+            # in the backward pass was already divided by ``grad_scale`` to avoid
+            # overflows. Here, we apply the remaining un-scaling
+            H_C *= 1 / grad_scale
 
         # 1) COMPUTE UPDATE
         K_tK = K.from_inner()
@@ -409,6 +413,13 @@ class SNGD(Optimizer):
         # 2) Update H_K, H_C
         K, C = self.Ks[module], self.Cs[module]
         H_K = K.from_inner(X=a.T)
+
+        grad_scale = self._get_grad_scale()
+        if grad_scale != 1.0:
+            # In total we have to divide by ``grad_scale ** 2``. Here, we only divide
+            # by ``grad_scale`` and apply the remaining un-scaling later when updating
+            # the pre-conditioner
+            g = g / sqrt(grad_scale)
         H_C = C.from_inner(X=g.T)
 
         # maybe set up fresh accumulators (they get flushed in `.step`)
@@ -520,12 +531,7 @@ class SNGD(Optimizer):
         if closure is not None:
             raise NotImplementedError("Closure not supported.")
 
-        # get current gradient scale if used with ``torch.cuda.amp.GradScaler``,
-        # see the comment on the class attribute ``_step_supports_amp_scaling`` how
-        # gradient scales are stored inside an optimizer
-        grad_scale = getattr(self, "grad_scale", None)
-        grad_scale = 1.0 if grad_scale is None else grad_scale
-
+        grad_scale = self._get_grad_scale()
         found_inf = getattr(self, "found_inf", False)
         if found_inf:
             raise NotImplementedError("Encountered inf in .grad. No policy defined.")
@@ -564,3 +570,16 @@ class SNGD(Optimizer):
                 p.data.add_(p_step, alpha=-lr)
 
         self.steps += 1
+
+    def _get_grad_scale(self) -> float:
+        """Get the current gradient scale.
+
+        Get current gradient scale if used with ``torch.cuda.amp.GradScaler``,
+        see the comment on the class attribute ``_step_supports_amp_scaling`` how
+        gradient scales are stored inside an optimizer
+
+        Returns:
+            The current gradient scale.
+        """
+        grad_scale = getattr(self, "grad_scale", None)
+        return grad_scale if grad_scale is not None else 1.0

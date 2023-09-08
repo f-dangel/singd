@@ -8,7 +8,7 @@ Uses the following bells and whistles (relevant parts in the code are tagged):
 - [ACC] micro batches (gradient accumulation)
 """
 
-from torch import autocast, bfloat16, cuda, device, manual_seed
+from torch import autocast, bfloat16, cuda, device, manual_seed, zeros_like
 from torch.cuda.amp import GradScaler
 from torch.nn import (
     BatchNorm1d,
@@ -23,7 +23,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
-from torchvision.transforms import ToTensor
+from torchvision.transforms import Compose, Normalize, ToTensor
 
 from sparse_ngd.optim.optimizer import SNGD
 
@@ -36,7 +36,12 @@ BATCH_SIZE = 32
 MICRO_BATCH_SIZE = 8  # [ACC]
 assert BATCH_SIZE % MICRO_BATCH_SIZE == 0  # [ACC]
 
-train_dataset = MNIST("./data", train=True, download=True, transform=ToTensor())
+train_dataset = MNIST(
+    "./data",
+    train=True,
+    download=True,
+    transform=Compose([ToTensor(), Normalize(mean=(0.1307,), std=(0.3081,))]),
+)
 train_loader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
 model = Sequential(
@@ -107,8 +112,9 @@ adamw = AdamW(
 
 # [SCL] We need one scaler per optimizer, as each will handle the ``.grad``s of
 # the parameters in its optimizer (THEY NEED TO BE IDENTICAL!)
-scaler_sngd = GradScaler()  # [SCL]
-scaler_adamw = GradScaler()  # [SCL]
+init_scale = 100
+scaler_sngd = GradScaler(init_scale=init_scale)  # [SCL]
+scaler_adamw = GradScaler(init_scale=init_scale)  # [SCL]
 
 # [LR] We need one learning rate scheduler per optimizer (THEY CAN BE DIFFERENT)
 scheduler_sngd = ExponentialLR(sngd, gamma=0.999)  # [LR]
@@ -137,8 +143,15 @@ for batch_idx, (inputs, target) in enumerate(train_loader):
     for inputs_micro, target_micro in zip(inputs_split, target_split):  # [ACC]
         with autocast(device_type=amp_device_type, dtype=amp_dtype):  # [AMP]
             loss = loss_func(model(inputs_micro), target_micro)
-            loss = scaler_sngd.scale(loss)  # [SCL]
-            loss.backward()
+
+        # [AMP] Backward passes under ``autocast`` are not recommended, see
+        # (https://pytorch.org/docs/stable/amp.html#torch.autocast).
+        # Therefore, this part happens outside the ``autocast`` context
+        loss = scaler_sngd.scale(loss)  # [SCL]
+        # [SCL] We also have to call ``.scale`` of the other scaler on some dummy.
+        # This sets the optimizer's ``.grad_scale`` argument to the current scale
+        _ = scaler_adamw.scale(zeros_like(loss))  # [SCL]
+        loss.backward()
 
     # [SCL] Re-scale gradients and update parameters
     scaler_sngd.step(sngd)  # [SCL]
