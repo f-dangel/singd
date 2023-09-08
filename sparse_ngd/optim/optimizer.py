@@ -4,7 +4,7 @@ from math import sqrt
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
 from warnings import warn
 
-from torch import Tensor, cat, is_grad_enabled, zeros_like
+from torch import Tensor, cat, dtype, is_grad_enabled, zeros_like
 from torch.nn import Conv2d, Linear, Module, Parameter
 from torch.optim import Optimizer
 from torch.utils.hooks import RemovableHandle
@@ -68,6 +68,10 @@ class SNGD(Optimizer):
         structures: Tuple[str, str] = ("diagonal", "dense"),
         warn_unsupported: bool = True,
         kfac_like: bool = False,
+        preconditioner_dtype: Tuple[Union[dtype, None], Union[dtype, None]] = (
+            None,
+            None,
+        ),
     ):
         """Structured inverse-free KFAC optimizer.
 
@@ -105,6 +109,11 @@ class SNGD(Optimizer):
             kfac_like: Whether to use an update rule which results in an update close
                 to the KFAC optimizer. Default: ``False``. Please see the theorem in
                 the paper for more details.
+            preconditioner_dtype: Data types used to store the structured
+                pre-conditioner matrices (``K`` and ``C``). If ``None``, will use the
+                same data type as the parameter for both pre-conditioner matrices. If
+                ``(float32, None)``, will use ``float32`` for ``K`` and the same data
+                type as the weight for ``C``. Default: ``(None, None)``.
 
         Raises:
             ValueError: If any of the learning rate and momentum parameters
@@ -131,6 +140,7 @@ class SNGD(Optimizer):
             lr_cov=lr_cov,
             structures=structures,
             kfac_like=kfac_like,
+            preconditioner_dtype=preconditioner_dtype,
         )
         if params is None:
             params = self._get_trainable_parameters(
@@ -274,20 +284,23 @@ class SNGD(Optimizer):
         for module in self.modules:
             dim_K, dim_C = self.preconditioner_dims(module)
 
-            kwargs = {"dtype": module.weight.dtype, "device": module.weight.device}
+            dtype = self._get_param_group_entry(module, "preconditioner_dtype")
+            dtype_K = dtype[0] if dtype[0] is not None else module.weight.dtype
+            dtype_C = dtype[1] if dtype[1] is not None else module.weight.dtype
+            device = module.weight.device
 
             # use the structure specified for the parameter group
             structures = self._get_param_group_entry(module, "structures")
             K_cls = self.SUPPORTED_STRUCTURES[structures[0]]
             C_cls = self.SUPPORTED_STRUCTURES[structures[1]]
 
-            self.Ks[module] = K_cls.eye(dim_K, **kwargs)
-            self.Cs[module] = C_cls.eye(dim_C, **kwargs)
+            self.Ks[module] = K_cls.eye(dim_K, dtype=dtype_K, device=device)
+            self.Cs[module] = C_cls.eye(dim_C, dtype=dtype_C, device=device)
 
             alpha1 = self._get_param_group_entry(module, "alpha1")
             if alpha1 != 0.0:
-                self.m_Ks[module] = K_cls.zeros(dim_K, **kwargs)
-                self.m_Cs[module] = C_cls.zeros(dim_C, **kwargs)
+                self.m_Ks[module] = K_cls.zeros(dim_K, dtype=dtype_K, device=device)
+                self.m_Cs[module] = C_cls.zeros(dim_C, dtype=dtype_C, device=device)
 
     @staticmethod
     def preconditioner_dims(module: Module) -> Tuple[int, int]:
