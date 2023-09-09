@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Union
+from typing import Tuple
 
 # import cupy as np
 import numpy as np
 import torch
-import torch.distributed as dist
 from torch import Tensor
 
 from sparse_ngd.structures.base import StructuredMatrix
@@ -33,6 +32,18 @@ class TrilToeplitzMatrix(StructuredMatrix):
                 second entry to the constant on the lower first off-diagonal, etc.
         """
         self._mat_column = diag_consts
+
+    @property
+    def _tensors_to_sync(self) -> Tuple(Tensor):
+        """Tensors that need to be synchronized across devices.
+
+        This is used to support distributed data parallel training. If ``None``,
+        this structured matrix does not support distributed data parallel training.
+
+        Returns:
+            A tensor that need to be synchronized across devices.
+        """
+        return (self._mat_column,)
 
     @classmethod
     def from_dense(cls, mat: Tensor) -> TrilToeplitzMatrix:
@@ -78,30 +89,3 @@ class TrilToeplitzMatrix(StructuredMatrix):
         )
         mat[i, j] = self._mat_column[i - j]
         return mat
-
-    def all_reduce(
-        self,
-        op: dist.ReduceOp = dist.ReduceOp.AVG,
-        group: Union[dist.ProcessGroup, None] = None,
-        async_op: bool = False,
-    ) -> Union[None, torch._C.Future]:
-        """Reduce the structured matrix across all workers.
-
-        Args:
-            op: The reduction operation to perform (default: ``dist.ReduceOp.AVG``).
-            group: The process group to work on. If ``None``, the default process group
-                will be used.
-            async_op: If ``True``, this function will return a
-                ``torch.distributed.Future`` object.
-                Otherwise, it will block until the reduction completes
-                (default: ``False``).
-
-        Returns:
-            If ``async_op`` is ``True``, a ``torch.distributed.Future``
-            object, else ``None``.
-        """
-        if async_op:
-            return dist.all_reduce(
-                self._mat_column, op=op, group=group, async_op=async_op
-            )
-        dist.all_reduce(self._mat_column, op=op, group=group, async_op=async_op)

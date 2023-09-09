@@ -34,6 +34,19 @@ class StructuredMatrix(ABC):
 
     WARN_NAIVE: bool = True
 
+    @property
+    def _tensors_to_sync(self) -> Union[None, Tuple[Tensor, ...]]:
+        """Tensors that need to be synchronized across devices.
+
+        This is used to support distributed data parallel training. If ``None``,
+        this structured matrix does not support distributed data parallel training.
+
+        Returns:
+            A tuple of tensors that need to be synchronized across devices
+            or ``None``.
+        """
+        return None
+
     def __matmul__(
         self, other: Union[StructuredMatrix, Tensor]
     ) -> Union[StructuredMatrix, Tensor]:
@@ -164,13 +177,12 @@ class StructuredMatrix(ABC):
                 + f"Consider implementing {cls_name}.{fn_name} using structure."
             )
 
-    @abstractmethod
     def all_reduce(
         self,
         op: dist.ReduceOp = dist.ReduceOp.AVG,
         group: Union[dist.ProcessGroup, None] = None,
         async_op: bool = False,
-    ) -> Union[None, Union[torch._C.Future, Tuple[torch._C.Future, ...]]]:
+    ) -> Union[None, Tuple[torch._C.Future, ...]]:
         """Reduce the structured matrix across all devices.
 
         This method only has to be implemented to support distributed data
@@ -188,8 +200,25 @@ class StructuredMatrix(ABC):
         Returns:
             If ``async_op`` is ``True``, a (tuple of) ``torch.distributed.Future``
             object(s), else ``None``.
+
+        Raises:
+            NotImplementedError: If _tensors_to_sync is None all_reduce is not
+                supported.
         """
-        raise NotImplementedError
+        if self._tensors_to_sync is None:
+            raise NotImplementedError(
+                "This structured matrix does not support all_reduce."
+            )
+        handles = []
+        for tensor in self._tensors_to_sync:
+            if async_op:
+                handles.append(
+                    dist.all_reduce(tensor, op=op, group=group, async_op=True)
+                )
+            else:
+                dist.all_reduce(tensor, op=op, group=group, async_op=False)
+        if async_op:
+            return tuple(handles)
 
     ###############################################################################
     #                        Special operations for IF-KFAC                       #

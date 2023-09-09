@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Union
+from typing import Tuple, Union
 
 import torch
-import torch.distributed as dist
 from torch import Tensor, einsum, ones, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
@@ -21,6 +20,18 @@ class DiagonalMatrix(StructuredMatrix):
             mat_diag: A 1d tensor representing the matrix diagonal.
         """
         self._mat_diag = mat_diag
+
+    @property
+    def _tensors_to_sync(self) -> Tuple(Tensor):
+        """Tensors that need to be synchronized across devices.
+
+        This is used to support distributed data parallel training. If ``None``,
+        this structured matrix does not support distributed data parallel training.
+
+        Returns:
+            A tensor that need to be synchronized across devices.
+        """
+        return (self._mat_diag,)
 
     def __matmul__(
         self, other: Union[DiagonalMatrix, Tensor]
@@ -98,33 +109,6 @@ class DiagonalMatrix(StructuredMatrix):
             The transpose of the represented matrix.
         """
         return self @ mat
-
-    def all_reduce(
-        self,
-        op: dist.ReduceOp = dist.ReduceOp.AVG,
-        group: Union[dist.ProcessGroup, None] = None,
-        async_op: bool = False,
-    ) -> Union[None, torch._C.Future]:
-        """Reduce the structured matrix across all workers.
-
-        Args:
-            op: The reduction operation to perform (default: ``dist.ReduceOp.AVG``).
-            group: The process group to work on. If ``None``, the default process group
-                will be used.
-            async_op: If ``True``, this function will return a
-                ``torch.distributed.Future`` object.
-                Otherwise, it will block until the reduction completes
-                (default: ``False``).
-
-        Returns:
-            If ``async_op`` is ``True``, a ``torch.distributed.Future``
-            object, else ``None``.
-        """
-        if async_op:
-            return dist.all_reduce(
-                self._mat_diag, op=op, group=group, async_op=async_op
-            )
-        dist.all_reduce(self._mat_diag, op=op, group=group, async_op=async_op)
 
     ###############################################################################
     #                        Special operations for IF-KFAC                       #
