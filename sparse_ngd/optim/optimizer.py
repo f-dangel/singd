@@ -590,7 +590,10 @@ class SNGD(Optimizer):
         if closure is not None:
             raise NotImplementedError("Closure not supported.")
 
-        # store the current ``grad_scale`` internally
+        # Get current gradient scale if used with ``torch.cuda.amp.GradScaler``
+        # and store it internally. See the comment on the class attribute
+        # ``_step_supports_amp_scaling`` how gradient scales are stored inside
+        # an optimizer
         grad_scale = getattr(self, "grad_scale", Tensor([1.0]))
         self._grad_scales[self.steps] = grad_scale
 
@@ -637,9 +640,8 @@ class SNGD(Optimizer):
     def _get_grad_scale(self, t: int) -> float:
         """Get the gradient scale used in the backpropagation of step ``t``.
 
-        Get current gradient scale if used with ``torch.cuda.amp.GradScaler``,
-        see the comment on the class attribute ``_step_supports_amp_scaling`` how
-        gradient scales are stored inside an optimizer
+        Args:
+            t: The step for which the gradient scale is requested.
 
         Returns:
             The gradient scale at step ``t``.
