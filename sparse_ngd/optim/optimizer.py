@@ -1,10 +1,11 @@
 """Implements structured inverse-free KFAC."""
 
+from math import sqrt
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
 from warnings import warn
 
 import torch.distributed as dist
-from torch import Tensor, cat, is_grad_enabled, zeros_like
+from torch import Tensor, cat, dtype, is_grad_enabled, zeros_like
 from torch.nn import Conv2d, Linear, Module, Parameter
 from torch.nn.parallel import DataParallel as DP
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -66,9 +67,14 @@ class SNGD(Optimizer):
         weight_decay: float = 0.0,  # γ in the paper
         T: int = 10,  # T in the paper
         batch_averaged: bool = True,
-        lr_cov: float = 1e-2,  # β₁ in the paper
+        lr_cov: Union[float, Callable[[int], float]] = 1e-2,  # β₁ in the paper
         structures: Tuple[str, str] = ("diagonal", "dense"),
         warn_unsupported: bool = True,
+        kfac_like: bool = False,
+        preconditioner_dtype: Tuple[Union[dtype, None], Union[dtype, None]] = (
+            None,
+            None,
+        ),
     ):
         """Structured inverse-free KFAC optimizer.
 
@@ -96,13 +102,22 @@ class SNGD(Optimizer):
             batch_averaged: Whether the loss function is a mean over per-sample
                 losses. Default is ``True``.
             lr_cov: (β₁ in the paper) Learning rate for the updates of ``m_K, m_C``.
-                Default is ``1e-2``.
+                Default is ``1e-2``. Also allows for a callable which takes the current
+                step and returns the current value for ``lr_cov``.
             structures: A 2-tuple of strings specifying the structure of the
                 factorizations of ``K`` and ``C``. Possible values are
                 (``'dense'``, ``'diagonal'``). Default is (``'dense'``, ``'dense'``).
             warn_unsupported: Only relevant if ``params`` is unspecified. Whether to
                 warn if ``model`` contains parameters of layers that are not supported.
                 These parameters will not be trained by the optimizer.
+            kfac_like: Whether to use an update rule which results in an update close
+                to the KFAC optimizer. Default: ``False``. Please see the theorem in
+                the paper for more details.
+            preconditioner_dtype: Data types used to store the structured
+                pre-conditioner matrices (``K`` and ``C``). If ``None``, will use the
+                same data type as the parameter for both pre-conditioner matrices. If
+                ``(float32, None)``, will use ``float32`` for ``K`` and the same data
+                type as the weight for ``C``. Default: ``(None, None)``.
 
         Raises:
             TypeError: If DataParallel or DistributedDataParallel model wrappers
@@ -123,7 +138,7 @@ class SNGD(Optimizer):
             (momentum, "momentum"),
             (weight_decay, "weight_decay"),
         ]:
-            if x < 0.0:
+            if isinstance(x, float) and x < 0.0:
                 raise ValueError(f"{name} must be positive. Got {x}")
 
         defaults = dict(
@@ -136,6 +151,8 @@ class SNGD(Optimizer):
             batch_averaged=batch_averaged,
             lr_cov=lr_cov,
             structures=structures,
+            kfac_like=kfac_like,
+            preconditioner_dtype=preconditioner_dtype,
         )
         if params is None:
             params = self._get_trainable_parameters(
@@ -190,12 +207,21 @@ class SNGD(Optimizer):
             model: The model whose layers will be checked.
 
         Raises:
-            ValueError: , or (2)
-                parameters in a supported layer are in different groups.
+            ValueError: If parameters in a supported layer are in different groups.
 
         Returns:
             A dictionary mapping parameter IDs (``.data_ptr()``) to group indices.
         """
+        # if KFAC-like update is employed, alpha1 will be ignored
+        for idx, group in enumerate(self.param_groups):
+            if group["kfac_like"] and group["alpha1"] != 0.0:
+                warn(
+                    f"Parameter group {idx} has kfac_like=True but was initialized "
+                    + f"with non-zero Riemannian momentum (alpha1={group['alpha1']}). "
+                    + "Setting alpha' to zero."
+                )
+                group["alpha1"] = 0.0
+
         # Find out which parameter is in which group
         param_to_group_idx = {}
         for group_idx, group in enumerate(self.param_groups):
@@ -269,18 +295,24 @@ class SNGD(Optimizer):
         """
         for module in self.modules:
             dim_K, dim_C = self.preconditioner_dims(module)
-            kwargs = {"dtype": module.weight.dtype, "device": module.weight.device}
+
+            dtype = self._get_param_group_entry(module, "preconditioner_dtype")
+            dtype_K = dtype[0] if dtype[0] is not None else module.weight.dtype
+            dtype_C = dtype[1] if dtype[1] is not None else module.weight.dtype
+            device = module.weight.device
 
             # use the structure specified for the parameter group
             structures = self._get_param_group_entry(module, "structures")
             K_cls = self.SUPPORTED_STRUCTURES[structures[0]]
             C_cls = self.SUPPORTED_STRUCTURES[structures[1]]
 
-            self.Ks[module] = K_cls.eye(dim_K, **kwargs)
-            self.Cs[module] = C_cls.eye(dim_C, **kwargs)
+            self.Ks[module] = K_cls.eye(dim_K, dtype=dtype_K, device=device)
+            self.Cs[module] = C_cls.eye(dim_C, dtype=dtype_C, device=device)
 
-            self.m_Ks[module] = K_cls.zeros(dim_K, **kwargs)
-            self.m_Cs[module] = C_cls.zeros(dim_C, **kwargs)
+            alpha1 = self._get_param_group_entry(module, "alpha1")
+            if alpha1 != 0.0:
+                self.m_Ks[module] = K_cls.zeros(dim_K, dtype=dtype_K, device=device)
+                self.m_Cs[module] = C_cls.zeros(dim_C, dtype=dtype_C, device=device)
 
     @staticmethod
     def preconditioner_dims(module: Module) -> Tuple[int, int]:
@@ -338,14 +370,16 @@ class SNGD(Optimizer):
             return
 
         K, C = self.Ks[module], self.Cs[module]
-        m_K, m_C = self.m_Ks[module], self.m_Cs[module]
         # NOTE: Pop such that they will be freed after
         H_K: StructuredMatrix = self.H_Ks.pop(module).value
         H_C: StructuredMatrix = self.H_Cs.pop(module).value
 
         # un-scale ``H_C = structure(C.T @ (grad_scale * g) @ (grad_scale * g).T @ C)``
         if grad_scale != 1.0:
-            H_C *= 1 / grad_scale**2
+            # In total we have to divide by ``grad_scale ** 2``. The ``H_C`` computed
+            # in the backward pass was already divided by ``grad_scale`` to avoid
+            # overflows. Here, we apply the remaining un-scaling
+            H_C *= 1 / grad_scale
 
         # 1) COMPUTE UPDATE
         K_tK = K.from_inner()
@@ -353,38 +387,53 @@ class SNGD(Optimizer):
 
         p, d = self.preconditioner_dims(module)
 
+        # TODO These don't need to be computed for KFAC-like, but at the moment we
+        # need their device and dtype to create the ``eye_like``s below
         tr_H_C = H_C.trace()
         tr_H_K = H_K.trace()
 
         # hyper-parameters for parameter group of module
+        kfac_like = self._get_param_group_entry(module, "kfac_like")
         damping = self._get_param_group_entry(module, "damping")
         structures = self._get_param_group_entry(module, "structures")
         K_cls = self.SUPPORTED_STRUCTURES[structures[0]]
         C_cls = self.SUPPORTED_STRUCTURES[structures[1]]
 
-        c_squared = damping * C_tC.trace()
-        step_m_K = (
-            H_K * (tr_H_C / d)
-            + K_tK * (c_squared / d)
-            - K_cls.eye(p, dtype=tr_H_K.dtype, device=tr_H_K.device)
-        ) * 0.5
+        # step for m_K
+        if kfac_like:
+            first_term = H_K
+            second_term = K_tK * damping
+        else:
+            first_term = H_K * (tr_H_C / d)
+            c_squared = damping * C_tC.trace()
+            second_term = K_tK * (c_squared / d)
+        third_term = K_cls.eye(p, dtype=tr_H_K.dtype, device=tr_H_K.device)
+        new_m_K = (first_term + second_term - third_term) * 0.5
 
-        kappa_squared = damping * K_tK.trace()
-        step_m_C = (
-            H_C * (tr_H_K / p)
-            + C_tC * (kappa_squared / p)
-            - C_cls.eye(d, dtype=tr_H_C.dtype, device=tr_H_C.device)
-        ) * 0.5
+        # step for m_C
+        if kfac_like:
+            first_term = H_C
+            second_term = C_tC
+        else:
+            first_term = H_C * (tr_H_K / p)
+            kappa_squared = damping * K_tK.trace()
+            second_term = C_tC * (kappa_squared / p)
+        third_term = C_cls.eye(d, dtype=tr_H_C.dtype, device=tr_H_C.device)
+        new_m_C = (first_term + second_term - third_term) * 0.5
 
         # 2) APPLY UPDATE
-        beta1 = self._get_param_group_entry(module, "lr_cov")
         alpha1 = self._get_param_group_entry(module, "alpha1")
+        if alpha1 != 0.0:
+            new_m_C += self.m_Cs[module] * alpha1
+            new_m_K += self.m_Ks[module] * alpha1
+            self.m_Cs[module] = new_m_C
+            self.m_Ks[module] = new_m_K
 
-        self.m_Ks[module] = m_K * alpha1 + step_m_K
-        self.Ks[module] = K - (K @ self.m_Ks[module]) * beta1
-
-        self.m_Cs[module] = m_C * alpha1 + step_m_C
-        self.Cs[module] = C - (C @ self.m_Cs[module]) * beta1
+        beta1 = self._get_param_group_entry(module, "lr_cov")
+        if isinstance(beta1, Callable):  # scheduled
+            beta1 = beta1(self.steps)
+        self.Ks[module] = K - (K @ new_m_K) * beta1
+        self.Cs[module] = C - (C @ new_m_C) * beta1
 
     def _accumulate_H_terms(
         self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]
@@ -420,6 +469,13 @@ class SNGD(Optimizer):
         # 2) Update H_K, H_C
         K, C = self.Ks[module], self.Cs[module]
         H_K = K.from_inner(X=a.T)
+
+        grad_scale = self._get_grad_scale()
+        if grad_scale != 1.0:
+            # In total we have to divide by ``grad_scale ** 2``. Here, we only divide
+            # by ``grad_scale`` and apply the remaining un-scaling later when updating
+            # the pre-conditioner
+            g = g / sqrt(grad_scale)
         H_C = C.from_inner(X=g.T)
 
         # If DDP is used.
@@ -542,12 +598,7 @@ class SNGD(Optimizer):
         if closure is not None:
             raise NotImplementedError("Closure not supported.")
 
-        # get current gradient scale if used with ``torch.cuda.amp.GradScaler``,
-        # see the comment on the class attribute ``_step_supports_amp_scaling`` how
-        # gradient scales are stored inside an optimizer
-        grad_scale = getattr(self, "grad_scale", None)
-        grad_scale = 1.0 if grad_scale is None else grad_scale
-
+        grad_scale = self._get_grad_scale()
         found_inf = getattr(self, "found_inf", False)
         if found_inf:
             raise NotImplementedError("Encountered inf in .grad. No policy defined.")
@@ -586,3 +637,16 @@ class SNGD(Optimizer):
                 p.data.add_(p_step, alpha=-lr)
 
         self.steps += 1
+
+    def _get_grad_scale(self) -> float:
+        """Get the current gradient scale.
+
+        Get current gradient scale if used with ``torch.cuda.amp.GradScaler``,
+        see the comment on the class attribute ``_step_supports_amp_scaling`` how
+        gradient scales are stored inside an optimizer
+
+        Returns:
+            The current gradient scale.
+        """
+        grad_scale = getattr(self, "grad_scale", None)
+        return grad_scale if grad_scale is not None else 1.0
