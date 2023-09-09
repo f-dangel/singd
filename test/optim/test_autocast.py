@@ -82,7 +82,11 @@ def test_autocast():
             output_mixed = model_mixed(inputs)
             assert output_mixed.dtype == bfloat16  # due to linear layers
             loss_mixed = loss_func_mixed(output_mixed, target)
-            (GRAD_SCALE * loss_mixed).backward()
+
+        # Backward passes under ``autocast`` are not recommended, see
+        # (https://pytorch.org/docs/stable/amp.html#torch.autocast).
+        # Therefore, this part happens outside the ``autocast`` context
+        (GRAD_SCALE * loss_mixed).backward()
         optim_mixed.step()
 
         compare_optimizers(
