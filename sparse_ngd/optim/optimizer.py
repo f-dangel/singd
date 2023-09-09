@@ -72,6 +72,7 @@ class SNGD(Optimizer):
             None,
             None,
         ),
+        init_grad_scale: float = 1.0,
     ):
         """Structured inverse-free KFAC optimizer.
 
@@ -115,6 +116,11 @@ class SNGD(Optimizer):
                 same data type as the parameter for both pre-conditioner matrices. If
                 ``(float32, None)``, will use ``float32`` for ``K`` and the same data
                 type as the weight for ``C``. Default: ``(None, None)``.
+            init_grad_scale: Only relevant if using a ``GradScaler``. Initial gradient
+                scale of the scaler or a number of similar magnitude. If unspecified,
+                the optimizer will still work correctly but the pre-conditioner compu-
+                tation in the first backpropagation might be numerically unstable.
+                Default: ``1.0``.
 
         Raises:
             ValueError: If any of the learning rate and momentum parameters
@@ -171,6 +177,14 @@ class SNGD(Optimizer):
         self.H_Cs: Dict[Module, BatchAccumulator] = {}
 
         self._initialize_buffers()
+
+        # Book-keeping of ``grad_scale``s. We need to keep track of scales of two
+        # consecutive steps because we do not have access to the scale at step ``t``
+        # during its backpropagation, but only when updating the pre-conditioner. Our
+        # solution is to un-scale the gradient with the scale from step ``t-1`` in the
+        # backward hook computations for step ``t``, then undo and use the scale from
+        # step ``t`` in the pre-conditioner update.
+        self._grad_scales: Dict[int, Tensor] = {-1: Tensor([init_grad_scale])}
 
     def _get_param_group_entry(self, module: Module, entry: str) -> Any:
         """Get the parameter group that contains the layer's parameters.
@@ -342,7 +356,7 @@ class SNGD(Optimizer):
         if is_grad_enabled() and self.steps % T == 0:
             self.inputs[module] = inputs[0].data
 
-    def _update_preconditioner(self, module: Module, grad_scale: float = 1.0):
+    def _update_preconditioner(self, module: Module):
         """Update the pre-conditioner matrices and their momenta for a layer.
 
         Only updates for steps matched by the specified update frequency.
@@ -351,8 +365,6 @@ class SNGD(Optimizer):
 
         Args:
             module: Layer whose pre-conditioner matrices are updated.
-            grad_scale: Scaling factor for the gradients that were used to compute.
-                ``H_C``. Default is ``1.0``.
         """
         T = self._get_param_group_entry(module, "T")
         if self.steps % T != 0:
@@ -364,11 +376,13 @@ class SNGD(Optimizer):
         H_C: StructuredMatrix = self.H_Cs.pop(module).value
 
         # un-scale ``H_C = structure(C.T @ (grad_scale * g) @ (grad_scale * g).T @ C)``
-        if grad_scale != 1.0:
+        prev_grad_scale = self._get_grad_scale(self.steps - 1)
+        grad_scale = self._get_grad_scale(self.steps)
+        if grad_scale != 1.0 or prev_grad_scale != 1.0:
             # In total we have to divide by ``grad_scale ** 2``. The ``H_C`` computed
-            # in the backward pass was already divided by ``grad_scale`` to avoid
+            # in the backward pass was already divided by ``prev_grad_scale`` to avoid
             # overflows. Here, we apply the remaining un-scaling
-            H_C *= 1 / grad_scale
+            H_C *= prev_grad_scale / grad_scale**2
 
         # 1) COMPUTE UPDATE
         K_tK = K.from_inner()
@@ -459,12 +473,15 @@ class SNGD(Optimizer):
         K, C = self.Ks[module], self.Cs[module]
         H_K = K.from_inner(X=a.T)
 
-        grad_scale = self._get_grad_scale()
-        if grad_scale != 1.0:
-            # In total we have to divide by ``grad_scale ** 2``. Here, we only divide
-            # by ``grad_scale`` and apply the remaining un-scaling later when updating
-            # the pre-conditioner
-            g = g / sqrt(grad_scale)
+        # use the gradient scale from the previous step because we do not have access
+        # to the actual one during backpropagation
+        prev_grad_scale = self._get_grad_scale(self.steps - 1)
+        if prev_grad_scale != 1.0:
+            # In total we have to divide by ``grad_scale ** 2``. Here, we divide
+            # by ``prev_grad_scale`` and apply the remaining un-scaling with
+            # ``grad_scale **2 / prev_grad_scale`` later when updating the
+            # pre-conditioner
+            g = g / sqrt(prev_grad_scale)
         H_C = C.from_inner(X=g.T)
 
         # maybe set up fresh accumulators (they get flushed in `.step`)
@@ -507,17 +524,13 @@ class SNGD(Optimizer):
             )
         return modules, handles
 
-    def _compute_natural_gradient(
-        self, module: Module, grad_scale: float = 1.0
-    ) -> Tuple[Tensor, ...]:
+    def _compute_natural_gradient(self, module: Module) -> Tuple[Tensor, ...]:
         """Compute the natural gradient with the current pre-conditioner for a layer.
 
         Uses the current value in ``.grad`` to compute the natural gradient.
 
         Args:
             module: The layer whose natural gradient will be computed.
-            grad_scale: Scaling factor for the gradients stored in ``.grad``.
-                Default is ``1.0`` (no gradient scaling used).
 
         Returns:
             The natural gradient for the parameters (weights only or weights + bias)
@@ -538,6 +551,7 @@ class SNGD(Optimizer):
             grad_mat = cat([grad_mat, module.bias.grad.data.unsqueeze(1)], dim=1)
 
         # un-scale gradients
+        grad_scale = self._get_grad_scale(self.steps)
         if grad_scale != 1.0:
             grad_mat = grad_mat / grad_scale
 
@@ -576,16 +590,17 @@ class SNGD(Optimizer):
         if closure is not None:
             raise NotImplementedError("Closure not supported.")
 
-        grad_scale = self._get_grad_scale()
+        # store the current ``grad_scale`` internally
+        grad_scale = getattr(self, "grad_scale", Tensor([1.0]))
+        self._grad_scales[self.steps] = grad_scale
+
         found_inf = getattr(self, "found_inf", False)
         if found_inf:
             raise NotImplementedError("Encountered inf in .grad. No policy defined.")
 
         for module in self.modules:
-            self._update_preconditioner(module, grad_scale=grad_scale)
-            natural_gradients = self._compute_natural_gradient(
-                module, grad_scale=grad_scale
-            )
+            self._update_preconditioner(module)
+            natural_gradients = self._compute_natural_gradient(module)
             parameters = (
                 [module.weight] if module.bias is None else [module.weight, module.bias]
             )
@@ -616,15 +631,26 @@ class SNGD(Optimizer):
 
         self.steps += 1
 
-    def _get_grad_scale(self) -> float:
-        """Get the current gradient scale.
+        # remove ``grad_scale``s that are not required anymore
+        self._remove_used_grad_scales()
+
+    def _get_grad_scale(self, t: int) -> float:
+        """Get the gradient scale used in the backpropagation of step ``t``.
 
         Get current gradient scale if used with ``torch.cuda.amp.GradScaler``,
         see the comment on the class attribute ``_step_supports_amp_scaling`` how
         gradient scales are stored inside an optimizer
 
         Returns:
-            The current gradient scale.
+            The gradient scale at step ``t``.
         """
-        grad_scale = getattr(self, "grad_scale", None)
-        return grad_scale if grad_scale is not None else 1.0
+        return self._grad_scales[t].item()
+
+    def _remove_used_grad_scales(self):
+        """Remove gradient scales that are not required anymore.
+
+        Modifies ``self._grad_scales`` in-place.
+        """
+        drop = [t for t in self._grad_scales if t < self.steps - 1]
+        for t in drop:
+            del self._grad_scales[t]
