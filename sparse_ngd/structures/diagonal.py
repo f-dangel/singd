@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Union
+from typing import Tuple, Union
 
 import torch
 from torch import Tensor, einsum, ones, zeros
@@ -20,6 +20,18 @@ class DiagonalMatrix(StructuredMatrix):
             mat_diag: A 1d tensor representing the matrix diagonal.
         """
         self._mat_diag = mat_diag
+
+    @property
+    def _tensors_to_sync(self) -> Tuple[Tensor]:
+        """Tensors that need to be synchronized across devices.
+
+        This is used to support distributed data parallel training. If ``None``,
+        this structured matrix does not support distributed data parallel training.
+
+        Returns:
+            A tensor that need to be synchronized across devices.
+        """
+        return (self._mat_diag,)
 
     def __matmul__(
         self, other: Union[DiagonalMatrix, Tensor]
