@@ -478,8 +478,8 @@ class SNGD(Optimizer):
         prev_grad_scale = self._get_grad_scale(self.steps - 1)
         if prev_grad_scale != 1.0:
             # In total we have to divide by ``grad_scale ** 2``. Here, we divide
-            # by ``prev_grad_scale`` and apply the remaining un-scaling with
-            # ``grad_scale **2 / prev_grad_scale`` later when updating the
+            # by ``prev_grad_scale`` and apply the remaining un-scaling by dividing
+            # by ``grad_scale **2 / prev_grad_scale`` later when updating the
             # pre-conditioner
             g = g / sqrt(prev_grad_scale)
         H_C = C.from_inner(X=g.T)
