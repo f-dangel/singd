@@ -34,7 +34,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
         self._mat_column = diag_consts
 
     @property
-    def _tensors_to_sync(self) -> Tuple(Tensor):
+    def _tensors_to_sync(self) -> Tuple[Tensor]:
         """Tensors that need to be synchronized across devices.
 
         This is used to support distributed data parallel training. If ``None``,
