@@ -481,8 +481,9 @@ class SNGD(Optimizer):
         # If DDP is used.
         if dist.is_initialized():
             # all-reduce across devices (computes average by default).
-            H_K.all_reduce()
-            H_C.all_reduce()
+            op = dist.ReduceOp.AVG if batch_averaged else dist.ReduceOp.SUM
+            H_K.all_reduce(op=op)
+            H_C.all_reduce(op=op)
 
         # maybe set up fresh accumulators (they get flushed in `.step`)
         if module not in self.H_Ks:
@@ -572,7 +573,9 @@ class SNGD(Optimizer):
         # If DDP is used.
         if dist.is_initialized():
             # all-reduce across devices.
-            dist.all_reduce(nat_grad, op=dist.ReduceOp.AVG)
+            batch_averaged = self._get_param_group_entry(module, "batch_averaged")
+            op = dist.ReduceOp.AVG if batch_averaged else dist.ReduceOp.SUM
+            dist.all_reduce(nat_grad, op=op)
 
         # 3) UN-CONCATENATE, UN-RESHAPE, AND COPY THE NATURAL GRADIENT TO ``.GRAD``
         if module.bias is not None:
