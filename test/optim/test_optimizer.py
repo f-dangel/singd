@@ -219,10 +219,8 @@ def test_warning_init_grad_scale():
 
     # one training step
     optim.zero_grad()
-
     GRAD_SCALE = 10_000.0
     loss = GRAD_SCALE * loss_func(model(inputs), target)
-
     loss.backward()
 
     # NOTE This is NOT how you would use gradient scaling.
