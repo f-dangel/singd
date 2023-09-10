@@ -594,8 +594,7 @@ class SNGD(Optimizer):
         # and store it internally. See the comment on the class attribute
         # ``_step_supports_amp_scaling`` how gradient scales are stored inside
         # an optimizer
-        grad_scale = getattr(self, "grad_scale", Tensor([1.0]))
-        self._grad_scales[self.steps] = grad_scale
+        self._set_current_grad_scale(getattr(self, "grad_scale", Tensor([1.0])))
 
         found_inf = getattr(self, "found_inf", False)
         if found_inf:
@@ -656,3 +655,23 @@ class SNGD(Optimizer):
         drop = [t for t in self._grad_scales if t < self.steps - 1]
         for t in drop:
             del self._grad_scales[t]
+
+    def _set_current_grad_scale(self, grad_scale: Tensor):
+        """Store the current gradient scale internally.
+
+        Warn the user if ``init_grad_scale`` was not specified but a scaler is used.
+
+        Args:
+            grad_scale: The current gradient scale.
+        """
+        self._grad_scales[self.steps] = grad_scale
+
+        if self.steps == 0:
+            init_scale, this_scale = self._get_grad_scale(-1), self._get_grad_scale(0)
+            if init_scale == 1.0 and this_scale != 1.0:
+                warn(
+                    f"Detected non-zero gradient scaling ({this_scale} at step 0). "
+                    + f"Consider passing a value similar to {this_scale} to "
+                    "`init_grad_scale` when initializing the optimizer as this will "
+                    f"improve numerical stability (was initialized to {init_scale})."
+                )
