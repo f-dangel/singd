@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Tuple
+
 # import cupy as np
 import numpy as np
 import torch
@@ -30,6 +32,18 @@ class TriuToeplitzMatrix(StructuredMatrix):
                 second entry to the constant on the upper first off-diagonal, etc.
         """
         self._mat_row = diag_consts
+
+    @property
+    def _tensors_to_sync(self) -> Tuple[Tensor]:
+        """Tensors that need to be synchronized across devices.
+
+        This is used to support distributed data parallel training. If ``None``,
+        this structured matrix does not support distributed data parallel training.
+
+        Returns:
+            A tensor that need to be synchronized across devices.
+        """
+        return (self._mat_row,)
 
     @classmethod
     def from_dense(cls, mat: Tensor) -> TriuToeplitzMatrix:
