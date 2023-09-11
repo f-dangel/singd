@@ -1,3 +1,5 @@
+# import sys, os
+# sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
 from sparse_ngd.optim.optimizer import SNGD
 import torch.optim as optim
 import torch
