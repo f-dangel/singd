@@ -4,8 +4,11 @@ from math import sqrt
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
 from warnings import warn
 
+import torch.distributed as dist
 from torch import Tensor, cat, dtype, is_grad_enabled, zeros_like
 from torch.nn import Conv2d, Linear, Module, Parameter
+from torch.nn.parallel import DataParallel as DP
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import Optimizer
 from torch.utils.hooks import RemovableHandle
 
@@ -117,9 +120,17 @@ class SNGD(Optimizer):
                 type as the weight for ``C``. Default: ``(None, None)``.
 
         Raises:
+            TypeError: If DataParallel or DistributedDataParallel model wrappers
+                are used.
             ValueError: If any of the learning rate and momentum parameters
                 (``lr, lr_cov, alpha1, momentum, weight_decay``) are non-positive.
         """
+        if isinstance(model, (DP, DDP)):
+            raise TypeError(
+                "DataParallel and DistributedDataParallel wrappers are not supported. "
+                "Use the normal DDP setup without the wrapper for distributed training."
+            )
+
         for x, name in [
             (lr, "lr"),
             (lr_cov, "lr_cov"),
@@ -467,6 +478,13 @@ class SNGD(Optimizer):
             g = g / sqrt(grad_scale)
         H_C = C.from_inner(X=g.T)
 
+        # If DDP is used.
+        if dist.is_initialized():
+            # all-reduce across devices (computes average by default).
+            op = dist.ReduceOp.AVG if batch_averaged else dist.ReduceOp.SUM
+            H_K.all_reduce(op=op)
+            H_C.all_reduce(op=op)
+
         # maybe set up fresh accumulators (they get flushed in `.step`)
         if module not in self.H_Ks:
             self.H_Ks[module] = BatchAccumulator(batch_averaged=batch_averaged)
@@ -551,6 +569,13 @@ class SNGD(Optimizer):
 
         C = self.Cs[module]
         nat_grad = C @ (C.rmatmat(nat_grad))
+
+        # If DDP is used.
+        if dist.is_initialized():
+            # all-reduce across devices.
+            batch_averaged = self._get_param_group_entry(module, "batch_averaged")
+            op = dist.ReduceOp.AVG if batch_averaged else dist.ReduceOp.SUM
+            dist.all_reduce(nat_grad, op=op)
 
         # 3) UN-CONCATENATE, UN-RESHAPE, AND COPY THE NATURAL GRADIENT TO ``.GRAD``
         if module.bias is not None:

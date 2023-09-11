@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Union
+from typing import Tuple, Union
 
 from torch import Tensor, arange, zeros
 
@@ -82,6 +82,18 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
         self._blocks = blocks
         self._last = last
+
+    @property
+    def _tensors_to_sync(self) -> Tuple[Tensor, Tensor]:
+        """Tensors that need to be synchronized across devices.
+
+        This is used to support distributed data parallel training. If ``None``,
+        this structured matrix does not support distributed data parallel training.
+
+        Returns:
+            A tuple of tensors that need to be synchronized across devices.
+        """
+        return (self._blocks, self._last)
 
     @classmethod
     def from_dense(cls, mat: Tensor) -> BlockDiagonalMatrixTemplate:

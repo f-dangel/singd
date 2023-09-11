@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Tuple
+
 from torch import Tensor
 
 from sparse_ngd.structures.base import StructuredMatrix
@@ -19,6 +21,18 @@ class DenseMatrix(StructuredMatrix):
             mat: A dense square matrix.
         """
         self._mat = mat
+
+    @property
+    def _tensors_to_sync(self) -> Tuple[Tensor]:
+        """Tensors that need to be synchronized across devices.
+
+        This is used to support distributed data parallel training. If ``None``,
+        this structured matrix does not support distributed data parallel training.
+
+        Returns:
+            A tensor that needs to be synchronized across devices.
+        """
+        return (self._mat,)
 
     @classmethod
     def from_dense(cls, sym_mat: Tensor) -> DenseMatrix:
