@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Tuple
+
 from torch import Tensor, arange, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
@@ -36,6 +38,18 @@ class TriuBottomRightDiagonalMatrix(StructuredMatrix):
 
         self._mat_row = row
         self._mat_diag = diag
+
+    @property
+    def _tensors_to_sync(self) -> Tuple[Tensor, Tensor]:
+        """Tensors that need to be synchronized across devices.
+
+        This is used to support distributed data parallel training. If ``None``,
+        this structured matrix does not support distributed data parallel training.
+
+        Returns:
+            A tuple of tensors that need to be synchronized across devices.
+        """
+        return (self._mat_row, self._mat_diag)
 
     @classmethod
     def from_dense(cls, mat: Tensor) -> TriuBottomRightDiagonalMatrix:

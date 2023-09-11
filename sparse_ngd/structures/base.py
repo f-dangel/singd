@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Union
+from typing import Tuple, Union
 from warnings import warn
 
 import torch
+import torch.distributed as dist
 from torch import Tensor, zeros
 
 from sparse_ngd.structures.utils import supported_eye, supported_matmul, supported_trace
@@ -32,6 +33,19 @@ class StructuredMatrix(ABC):
     """
 
     WARN_NAIVE: bool = True
+
+    @property
+    def _tensors_to_sync(self) -> Union[None, Tuple[Tensor, ...]]:
+        """Tensors that need to be synchronized across devices.
+
+        This is used to support distributed data parallel training. If ``None``,
+        this structured matrix does not support distributed data parallel training.
+
+        Returns:
+            A tuple of tensors that need to be synchronized across devices
+            or ``None``.
+        """
+        return None
 
     def __matmul__(
         self, other: Union[StructuredMatrix, Tensor]
@@ -162,6 +176,49 @@ class StructuredMatrix(ABC):
                 f"Calling naive implementation of {cls_name}.{fn_name}."
                 + f"Consider implementing {cls_name}.{fn_name} using structure."
             )
+
+    def all_reduce(
+        self,
+        op: dist.ReduceOp = dist.ReduceOp.AVG,
+        group: Union[dist.ProcessGroup, None] = None,
+        async_op: bool = False,
+    ) -> Union[None, Tuple[torch._C.Future, ...]]:
+        """Reduce the structured matrix across all devices.
+
+        This method only has to be implemented to support distributed data
+        parallel training.
+
+        Args:
+            op: The reduction operation to perform (default: ``dist.ReduceOp.AVG``).
+            group: The process group to work on. If ``None``, the default process group
+                will be used.
+            async_op: If ``True``, this function will return a
+                ``torch.distributed.Future`` object.
+                Otherwise, it will block until the reduction completes
+                (default: ``False``).
+
+        Returns:
+            If ``async_op`` is ``True``, a (tuple of) ``torch.distributed.Future``
+            object(s), else ``None``.
+
+        Raises:
+            NotImplementedError: If _tensors_to_sync is None all_reduce is not
+                supported.
+        """
+        if self._tensors_to_sync is None:
+            raise NotImplementedError(
+                "This structured matrix does not support all_reduce."
+            )
+        handles = []
+        for tensor in self._tensors_to_sync:
+            if async_op:
+                handles.append(
+                    dist.all_reduce(tensor, op=op, group=group, async_op=True)
+                )
+            else:
+                dist.all_reduce(tensor, op=op, group=group, async_op=False)
+        if async_op:
+            return tuple(handles)
 
     ###############################################################################
     #                        Special operations for IF-KFAC                       #
