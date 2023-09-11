@@ -3,7 +3,7 @@
 from copy import deepcopy
 from test.utils import compare_optimizers
 
-from torch import autocast, bfloat16, manual_seed
+from torch import Tensor, autocast, bfloat16, manual_seed
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
@@ -54,8 +54,9 @@ def test_autocast():
         "structures": ("dense", "dense"),
     }
 
+    GRAD_SCALE = 10_000.0
     optim_single = SNGD(model_single, **optim_hyperparams)
-    optim_mixed = SNGD(model_mixed, **optim_hyperparams)
+    optim_mixed = SNGD(model_mixed, **optim_hyperparams, init_grad_scale=GRAD_SCALE)
 
     model_single.train()
     model_mixed.train()
@@ -75,8 +76,7 @@ def test_autocast():
         # NOTE This is NOT how you would use gradient scaling.
         # It serves for testing purposes because ``GradientScaler`` only
         # works with CUDA and we want the test to run on CPU.
-        GRAD_SCALE = 10_000
-        optim_mixed.grad_scale = GRAD_SCALE
+        optim_mixed.grad_scale = Tensor([GRAD_SCALE])
 
         with autocast(device_type="cpu", dtype=bfloat16):
             output_mixed = model_mixed(inputs)

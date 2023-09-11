@@ -3,7 +3,7 @@
 from copy import deepcopy
 from test.utils import compare_optimizers
 
-from torch import manual_seed
+from torch import Tensor, manual_seed
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
@@ -53,8 +53,9 @@ def test_scaler():
         "structures": ("dense", "dense"),
     }
 
+    GRAD_SCALE = 10_000.0
     optim = SNGD(model, **optim_hyperparams)
-    optim_scale = SNGD(model_scale, **optim_hyperparams)
+    optim_scale = SNGD(model_scale, **optim_hyperparams, init_grad_scale=GRAD_SCALE)
 
     model.train()
     model_scale.train()
@@ -78,13 +79,13 @@ def test_scaler():
         # NOTE This is NOT how you would use gradient scaling.
         # It serves for testing purposes because ``GradientScaler`` only
         # works with CUDA and we want the test to run on CPU.
-        GRAD_SCALE = 10_000
-        optim_scale.grad_scale = GRAD_SCALE
+        optim_scale.grad_scale = Tensor([GRAD_SCALE])
 
         output_scale = model_scale(inputs)
         loss_scale = loss_func_scale(output_scale, target)
         (GRAD_SCALE * loss_scale).backward()
         optim_scale.step()
+        del optim_scale.grad_scale
 
         compare_optimizers(optim, optim_scale, rtol=1e-2, atol=5e-5)
 

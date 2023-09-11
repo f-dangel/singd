@@ -6,7 +6,18 @@ from test.utils import DEVICE_IDS, DEVICES
 from typing import Tuple, Union
 
 from pytest import mark, raises, warns
-from torch import autocast, bfloat16, device, dtype, float16, float32, manual_seed
+from torch import (
+    Tensor,
+    autocast,
+    bfloat16,
+    device,
+    dtype,
+    float16,
+    float32,
+    manual_seed,
+    rand,
+    randint,
+)
 from torch.nn import (
     BatchNorm1d,
     Conv2d,
@@ -187,3 +198,35 @@ def test_SNGD_preconditioner_dtype(
 
         if batch_idx >= MAX_STEPS:
             break
+
+
+def test_warning_init_grad_scale():
+    """Test emission of warning for gradient scaling with ``init_grad_scale=1.0``."""
+    manual_seed(0)
+    inputs, target = rand(32, 1, 28, 28), randint(0, 10, (32,))
+    model = Sequential(
+        Conv2d(1, 3, kernel_size=5, stride=2),
+        ReLU(),
+        Flatten(),
+        Linear(432, 50),
+        ReLU(),
+        Linear(50, 10),
+    )
+    loss_func = CrossEntropyLoss()
+
+    model.train()
+    optim = SNGD(model)
+
+    # one training step
+    optim.zero_grad()
+    GRAD_SCALE = 10_000.0
+    loss = GRAD_SCALE * loss_func(model(inputs), target)
+    loss.backward()
+
+    # NOTE This is NOT how you would use gradient scaling.
+    # It serves for testing purposes because ``GradientScaler`` only
+    # works with CUDA and we want the test to run on CPU.
+    optim.grad_scale = Tensor([GRAD_SCALE])
+
+    with warns(UserWarning):
+        optim.step()

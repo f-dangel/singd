@@ -100,7 +100,15 @@ linear_group = {"params": linear_params, **sngd_hyperparams}
 linear_group["structures"] = ("diagonal", "diagonal")
 
 param_groups = [conv_group, linear_group]
-sngd = SNGD(model, params=param_groups)
+# [SCL] Tell the optimizer which scale is used in the first backpropagation.
+# It will also work if you don't tell the optimizer, however there might be
+# numerical issues in the pre-conditioner computation during the first backpropagation
+init_grad_scale = 10_000.0
+sngd = SNGD(
+    model,
+    params=param_groups,
+    init_grad_scale=init_grad_scale,  # [SCL]
+)
 
 adamw = AdamW(
     other_params,
@@ -112,9 +120,8 @@ adamw = AdamW(
 
 # [SCL] We need one scaler per optimizer, as each will handle the ``.grad``s of
 # the parameters in its optimizer (THEY NEED TO BE IDENTICAL!)
-init_scale = 100
-scaler_sngd = GradScaler(init_scale=init_scale)  # [SCL]
-scaler_adamw = GradScaler(init_scale=init_scale)  # [SCL]
+scaler_sngd = GradScaler(init_scale=init_grad_scale)  # [SCL]
+scaler_adamw = GradScaler(init_scale=init_grad_scale)  # [SCL]
 
 # [LR] We need one learning rate scheduler per optimizer (THEY CAN BE DIFFERENT)
 scheduler_sngd = ExponentialLR(sngd, gamma=0.999)  # [LR]
