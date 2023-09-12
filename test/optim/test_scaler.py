@@ -2,7 +2,9 @@
 
 from copy import deepcopy
 from test.utils import compare_optimizers
+from typing import Callable
 
+from pytest import mark
 from torch import Tensor, manual_seed
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
 from torch.utils.data import DataLoader
@@ -12,8 +14,44 @@ from torchvision.transforms import ToTensor
 from sparse_ngd.optim.optimizer import SNGD
 
 
-def test_scaler():
-    """Compare optimizer with optimizer w/ gradient scaling."""
+def constant_schedule(step: int) -> float:
+    """Constant schedule.
+
+    Args:
+        step: Current step.
+
+    Returns:
+        Current gradient scaling.
+    """
+    return 10_000.0
+
+
+def cyclic_schedule(step: int) -> float:
+    """Cyclic schedule.
+
+    Args:
+        step: Current step.
+
+    Returns:
+        Current gradient scaling.
+    """
+    values = [100.0, 10_000.0, 100.0, 1.0]
+    idx = step % len(values)
+    return values[idx]
+
+
+@mark.parametrize(
+    "grad_scale_schedule",
+    [constant_schedule, cyclic_schedule],
+    ids=["constant", "cyclic"],
+)
+def test_scaler(grad_scale_schedule: Callable[[int], float]):
+    """Compare optimizer with optimizer w/ gradient scaling.
+
+    Args:
+        grad_scale_schedule: Gradient scaling schedule. Maps a step to its gradient
+            scaling.
+    """
     manual_seed(0)
     MAX_STEPS = 150
 
@@ -53,17 +91,19 @@ def test_scaler():
         "structures": ("dense", "dense"),
     }
 
-    GRAD_SCALE = 10_000.0
     optim = SNGD(model, **optim_hyperparams)
-    optim_scale = SNGD(model_scale, **optim_hyperparams, init_grad_scale=GRAD_SCALE)
+    optim_scale = SNGD(
+        model_scale, **optim_hyperparams, init_grad_scale=grad_scale_schedule(0)
+    )
 
     model.train()
     model_scale.train()
 
     losses = []
+    steps = 0
 
     # Loop over each batch from the training set
-    for batch_idx, (inputs, target) in enumerate(train_loader):
+    for inputs, target in train_loader:
         print(f"Step {optim.steps}")
 
         # Zero gradient buffers
@@ -79,15 +119,18 @@ def test_scaler():
         # NOTE This is NOT how you would use gradient scaling.
         # It serves for testing purposes because ``GradientScaler`` only
         # works with CUDA and we want the test to run on CPU.
-        optim_scale.grad_scale = Tensor([GRAD_SCALE])
+        grad_scale = grad_scale_schedule(steps)
+        optim_scale.grad_scale = Tensor([grad_scale])
 
         output_scale = model_scale(inputs)
         loss_scale = loss_func_scale(output_scale, target)
-        (GRAD_SCALE * loss_scale).backward()
+        (grad_scale * loss_scale).backward()
         optim_scale.step()
         del optim_scale.grad_scale
 
+        steps += 1
+
         compare_optimizers(optim, optim_scale, rtol=1e-2, atol=5e-5)
 
-        if batch_idx >= MAX_STEPS:
+        if steps >= MAX_STEPS:
             break
