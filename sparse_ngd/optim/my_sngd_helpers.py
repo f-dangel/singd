@@ -150,6 +150,14 @@ class My_LRScheduler:
                 else:
                     lr.step(epoch)
 
+    def get_cycle_length(self):
+        ss = 0
+        for idx, lr in enumerate(self._lr):
+            ss = lr.get_cycle_length()
+        return ss
+
+
+
     def step_update(self, num_updates, metric = None):
         for idx, lr in enumerate(self._lr):
                 lr.step_update(num_updates, metric)
