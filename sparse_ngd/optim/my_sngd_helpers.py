@@ -143,9 +143,12 @@ class My_LRScheduler:
             ss = lr.get_last_lr()
         return ss
 
-    def step(self, epoch=None):
+    def step(self, epoch=None, metric = None):
         for idx, lr in enumerate(self._lr):
-                lr.step(epoch)
+                if metric is not None:
+                    lr.step(epoch, metric)
+                else:
+                    lr.step(epoch)
 
     def step_update(self, num_updates, metric = None):
         for idx, lr in enumerate(self._lr):
