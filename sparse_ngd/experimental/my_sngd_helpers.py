@@ -24,6 +24,9 @@ class My_SNGD(Optimizer):
         kfac_like=False,
         batch_averaged=True,
         using_adamw: bool = False,
+        adamw_eps = 1e-8,
+        adamw_beta1 = 0.9,
+        adamw_beta2 = 0.999,
     ):
         conv_params = [
             p for m in model.modules() if isinstance(m, Conv2d) for p in m.parameters()
@@ -65,8 +68,8 @@ class My_SNGD(Optimizer):
         if using_adamw:
             self._other_opt = optim.AdamW(
                 other_params,
-                eps=1e-8,
-                betas=(0.9, 0.999),
+                eps=adamw_eps,
+                betas=(adamw_beta1, adamw_beta2),
                 lr=lr,
                 weight_decay=weight_decay,
             )
@@ -150,7 +153,6 @@ class My_LRScheduler:
         for idx, lr in enumerate(self._lr):
             ss = lr.get_cycle_length()
         return ss
-
 
 
     def step_update(self, num_updates, metric=None):
