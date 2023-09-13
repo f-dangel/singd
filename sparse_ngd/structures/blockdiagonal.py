@@ -84,7 +84,7 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
         self._last = last
 
     @property
-    def _tensors_to_sync(self) -> Tuple[Tensor, Tensor]:
+    def _tensors_to_sync(self) -> Tuple[Union[None, Tensor], Union[None, Tensor]]:
         """Tensors that need to be synchronized across devices.
 
         This is used to support distributed data parallel training. If ``None``,
