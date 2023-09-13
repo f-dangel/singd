@@ -615,11 +615,18 @@ class SNGD(Optimizer):
         if closure is not None:
             raise NotImplementedError("Closure not supported.")
 
-        # Get current gradient scale if used with ``torch.cuda.amp.GradScaler``
+        # Set current gradient scale if used with ``torch.cuda.amp.GradScaler``
         # and store it internally. See the comment on the class attribute
-        # ``_step_supports_amp_scaling`` how gradient scales are stored inside
-        # an optimizer
-        self._set_current_grad_scale(getattr(self, "grad_scale", Tensor([1.0])))
+        # ``_step_supports_amp_scaling`` how gradient scales are communicated to
+        # an optimizer.
+        try:
+            # see if ``grad_scale`` was externally supplied by the user (e.g. when
+            # using gradient clipping via ``torch.cuda.amp.GradScaler.unscale_``)
+            self._get_grad_scale(self.steps)
+        except KeyError:
+            # ``grad_scale`` was supplied to the optimizer via ``scaler.step``,
+            # or no gradient scaler is used.
+            self.set_current_grad_scale(getattr(self, "grad_scale", Tensor([1.0])))
 
         found_inf = getattr(self, "found_inf", False)
         if found_inf:
@@ -681,7 +688,7 @@ class SNGD(Optimizer):
         for t in drop:
             del self._grad_scales[t]
 
-    def _set_current_grad_scale(self, grad_scale: Tensor):
+    def set_current_grad_scale(self, grad_scale: Tensor):
         """Store the current gradient scale internally.
 
         Warn the user if ``init_grad_scale`` was not specified but a scaler is used.
