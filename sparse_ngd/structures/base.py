@@ -211,6 +211,7 @@ class StructuredMatrix(ABC):
             )
         handles = []
         for tensor in self._tensors_to_sync:
+            tensor = tensor.contiguous()
             if async_op:
                 handles.append(
                     dist.all_reduce(tensor, op=op, group=group, async_op=True)
