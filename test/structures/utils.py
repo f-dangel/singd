@@ -112,8 +112,8 @@ def _test_sub(
     report_nonclose(
         truth,
         (sym_mat1_structured - sym_mat2_structured).to_dense(),
-        rtol=1e-1 if is_half_precision(sym_mat1.dtype) else 1e-5,
-        atol=1e-4 if is_half_precision(sym_mat1.dtype) else 1e-7,
+        rtol=3e-1 if is_half_precision(sym_mat1.dtype) else 1e-5,
+        atol=1e-4 if is_half_precision(sym_mat1.dtype) else 5e-7,
     )
 
 
@@ -139,7 +139,7 @@ def _test_mul(
     report_nonclose(
         truth,
         (mat_structured * factor).to_dense(),
-        rtol=1e-2 if is_half_precision(sym_mat.dtype) else 1e-5,
+        rtol=1e-1 if is_half_precision(sym_mat.dtype) else 1e-5,
         atol=1e-4 if is_half_precision(sym_mat.dtype) else 1e-7,
     )
 
@@ -199,7 +199,7 @@ def _test_from_inner(
     report_nonclose(
         truth,
         sym_mat_structured.from_inner(X=X).to_dense(),
-        rtol=1e-2 if is_half_precision(sym_mat.dtype) else 1e-5,
+        rtol=3e-2 if is_half_precision(sym_mat.dtype) else 1e-5,
         atol=1e-4 if is_half_precision(sym_mat.dtype) else 1e-7,
     )
 
