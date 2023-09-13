@@ -16,6 +16,8 @@ exclude = '''
     | models
     | low_numerical
     | lin2023simplifying
+    | sparse_ngd_exp
+    | sparse_ngd/experimental
   )/
 )
 '''

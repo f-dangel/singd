@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from typing import Tuple
 
-# import cupy as np
-import numpy as np
-import torch
-from torch import Tensor
+from torch import Tensor, arange, triu_indices, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
+from sparse_ngd.structures.utils import all_traces
 
 
 class TriuToeplitzMatrix(StructuredMatrix):
@@ -56,25 +54,21 @@ class TriuToeplitzMatrix(StructuredMatrix):
         Returns:
             ``TriuToeplitzMatrix`` approximating the passed matrix.
         """
-        # Reference:
-        # https://stackoverflow.com/questions/57347896/sum-all-diagonals-in-feature-maps-in-parallel-in-pytorch
-        # Note the conv2d is too slow when dim is large
-        dim = mat.size(0)
-        x = torch.fliplr(mat)
-        digitized = np.sum(np.indices(x.shape), axis=0).ravel()
-        # digitized_tensor = torch.from_numpy(digitized) #using numpy
-        digitized_tensor = torch.as_tensor(digitized).to(
-            x.device
-        )  # using cupy instead of numpy to avoid a cpu-to-gpu call
-        result = torch.bincount(digitized_tensor, x.view(-1))
+        assert mat.shape[0] == mat.shape[1]
+        traces = all_traces(mat)
 
-        row = result[range(dim)].flip(0) + result[(dim - 1) :]
-        row.div_((1.0 + torch.Tensor(range(dim)).to(row.device)).flip(0))
-        row[0] = row[0] / 2.0
+        # sum the lower- and upper-diagonal traces
+        dim = mat.shape[0]
+        row = zeros(dim, dtype=mat.dtype, device=mat.device)
+        idx_main = dim - 1
+        row[0] += traces[idx_main]
+        row[1:] += traces[idx_main + 1 :]
+        row[1:] += traces[:idx_main].flip(0)
 
-        row = row.to(mat.device).to(mat.dtype)
+        normalization = arange(dim, 0, step=-1, dtype=mat.dtype, device=mat.device)
+        row.div_(normalization)
 
-        return cls(row)  # the same as the tril case
+        return cls(row)
 
     def to_dense(self) -> Tensor:
         """Convert into dense PyTorch tensor.
@@ -82,10 +76,8 @@ class TriuToeplitzMatrix(StructuredMatrix):
         Returns:
             The represented matrix as PyTorch tensor.
         """
-        dim = self._mat_row.size(0)
-        i, j = torch.triu_indices(row=dim, col=dim, offset=0)
-        mat = torch.zeros(
-            (dim, dim), dtype=self._mat_row.dtype, device=self._mat_row.device
-        )
+        dim = self._mat_row.shape[0]
+        i, j = triu_indices(row=dim, col=dim, offset=0)
+        mat = zeros((dim, dim), dtype=self._mat_row.dtype, device=self._mat_row.device)
         mat[i, j] = self._mat_row[j - i]
         return mat

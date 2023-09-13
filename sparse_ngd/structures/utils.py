@@ -3,7 +3,17 @@
 from typing import Any
 
 import torch
-from torch import Tensor, bfloat16, device, eye, float16, float32, get_default_dtype
+from torch import (
+    Tensor,
+    arange,
+    bfloat16,
+    device,
+    eye,
+    float16,
+    float32,
+    get_default_dtype,
+    zeros,
+)
 
 
 def is_half_precision(dtype: torch.dtype) -> bool:
@@ -89,3 +99,32 @@ def supported_trace(input: Tensor) -> Tensor:
         return input.to(float32).trace().to(original)
     else:
         return input.trace()
+
+
+def all_traces(mat: Tensor) -> Tensor:
+    """Compute the traces of a matrix across all diagonals.
+
+    A matrix of shape ``[N, M]`` has ``N + M - 1`` diagonals.
+
+    Args:
+        mat: A matrix of shape ``[N, M]``.
+
+    Returns:
+        A tensor of shape ``[N + M - 1]`` containing the traces of the matrix. Element
+        ``[N - 1]`` contains the main diagonal's trace. Elements to the left contain
+        the traces of the negative off-diagonals, and elements to the right contain the
+        traces of the positive off-diagonals.
+    """
+    num_rows, num_cols = mat.shape
+    num_diags = 1 + (num_rows - 1) + (num_cols - 1)
+
+    row_idxs = arange(num_rows, device=mat.device).unsqueeze(-1).expand(-1, num_cols)
+    col_idxs = arange(num_cols, device=mat.device).unsqueeze(0).expand(num_rows, -1)
+    idxs = col_idxs - row_idxs
+    shift = num_rows - 1  # bottom left entry of idxs
+    idxs = idxs.add_(shift).flatten()
+
+    traces = zeros(num_diags, dtype=mat.dtype, device=mat.device)
+    traces.scatter_add_(0, idxs, mat.flatten())
+
+    return traces

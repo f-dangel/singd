@@ -1,14 +1,11 @@
 # import sys, os
 # sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
-from sparse_ngd.optim.optimizer import SNGD
-import torch.optim as optim
 import torch
-from torch.optim.lr_scheduler import LRScheduler
+import torch.optim as optim
+from torch.nn import Conv2d, Linear
 from torch.optim import Optimizer
-from torch.nn import (
-    Conv2d,
-    Linear,
-)
+
+from sparse_ngd.optim.optimizer import SNGD
 
 
 class My_SNGD(Optimizer):
@@ -22,11 +19,14 @@ class My_SNGD(Optimizer):
         weight_decay,
         T,
         lr_cov,
-        preconditioner_dtype = (torch.float32, torch.float32),
-        structures = ('dense', 'dense'),
-        kfac_like = False,
-        batch_averaged = True,
+        preconditioner_dtype=(torch.float32, torch.float32),
+        structures=("dense", "dense"),
+        kfac_like=False,
+        batch_averaged=True,
         using_adamw: bool = False,
+        adamw_eps = 1e-8,
+        adamw_beta1 = 0.9,
+        adamw_beta2 = 0.999,
     ):
         conv_params = [
             p for m in model.modules() if isinstance(m, Conv2d) for p in m.parameters()
@@ -36,10 +36,13 @@ class My_SNGD(Optimizer):
         ]
         sngd_params = [p.data_ptr() for p in conv_params + linear_params]
         other_params = [
-            p for p in model.parameters() if p.data_ptr() not in sngd_params ]
+            p for p in model.parameters() if p.data_ptr() not in sngd_params
+        ]
 
-        assert(len(other_params)+len(conv_params)+len(linear_params) == len(list(model.parameters())))
-     
+        assert len(other_params) + len(conv_params) + len(linear_params) == len(
+            list(model.parameters())
+        )
+
         sngd_hyperparams = {
             "lr": lr,
             "momentum": momentum,
@@ -50,17 +53,11 @@ class My_SNGD(Optimizer):
             "batch_averaged": batch_averaged,
             "lr_cov": lr_cov,
             "structures": structures,
-            'kfac_like': kfac_like,
-            'preconditioner_dtype': preconditioner_dtype,
+            "kfac_like": kfac_like,
+            "preconditioner_dtype": preconditioner_dtype,
         }
         self.weight_decay = weight_decay
         self.lr_cov = lr_cov
-
-        conv_group = {"params": conv_params, **sngd_hyperparams}
-        linear_group = {"params": linear_params, **sngd_hyperparams}
-
-        param_groups = [conv_group, linear_group]
-        optimizer = SNGD(model, params=param_groups)
 
         conv_group = {"params": conv_params, **sngd_hyperparams}
         linear_group = {"params": linear_params, **sngd_hyperparams}
@@ -71,21 +68,20 @@ class My_SNGD(Optimizer):
         if using_adamw:
             self._other_opt = optim.AdamW(
                 other_params,
-                eps=1e-8,
-                betas=(0.9, 0.999),
+                eps=adamw_eps,
+                betas=(adamw_beta1, adamw_beta2),
                 lr=lr,
                 weight_decay=weight_decay,
             )
         else:
             self._other_opt = optim.SGD(
                 other_params,
-                lr=lr, 
+                lr=lr,
                 weight_decay=weight_decay,
-                momentum= momentum,
+                momentum=momentum,
             )
 
         self.param_groups = self._other_opt.param_groups
-
 
     def zero_grad(self, set_to_none: bool = True):
         self._other_opt.zero_grad(set_to_none)
@@ -110,7 +106,7 @@ class My_SNGD(Optimizer):
             group["weight_decay"] = step_weight_decay
 
         for group in self._other_opt.param_groups:
-            group['weight_decay'] = step_weight_decay
+            group["weight_decay"] = step_weight_decay
 
     def step(self, closure=None):
         assert closure is None
@@ -122,10 +118,12 @@ class My_LRScheduler:
     def __init__(self, optimizer, scheduler_class, **kwargs):
         if isinstance(optimizer, My_SNGD):
             sngd_lr = scheduler_class(optimizer._sngd_opt, **kwargs)
-            other_lr = scheduler_class(optimizer._other_opt,  **kwargs)
-            self._lr = [ sngd_lr, other_lr ]
+            other_lr = scheduler_class(optimizer._other_opt, **kwargs)
+            self._lr = [sngd_lr, other_lr]
         else:
-            self._lr = [scheduler_class(optimizer, **kwargs), ]
+            self._lr = [
+                scheduler_class(optimizer, **kwargs),
+            ]
 
     def _get_lr(self):
         ss = 0.0
@@ -143,28 +141,38 @@ class My_LRScheduler:
             ss = lr.get_last_lr()
         return ss
 
-    def step(self, epoch=None):
+    def step(self, epoch=None, metric=None):
         for idx, lr in enumerate(self._lr):
+            if metric is not None:
+                lr.step(epoch, metric)
+            else:
                 lr.step(epoch)
 
-    def step_update(self, num_updates, metric = None):
+    def get_cycle_length(self):
+        ss = 0
         for idx, lr in enumerate(self._lr):
-                lr.step_update(num_updates, metric)
-     
+            ss = lr.get_cycle_length()
+        return ss
+
+
+    def step_update(self, num_updates, metric=None):
+        for idx, lr in enumerate(self._lr):
+            lr.step_update(num_updates, metric)
+
 
 class My_Scaler:
     def __init__(self, optimizer, scaler_class):
         if isinstance(optimizer, My_SNGD):
-            self._scaler = [ scaler_class(), scaler_class() ]
+            self._scaler = [scaler_class(), scaler_class()]
         else:
-            self._scaler = [ scaler_class() ]
+            self._scaler = [scaler_class()]
 
     def __call__(
-            self,
-            loss,
-            optimizer,
-            clip_grad = None,
-            **kwargs,
+        self,
+        loss,
+        optimizer,
+        clip_grad=None,
+        **kwargs,
     ):
         assert clip_grad is None
 
@@ -173,7 +181,7 @@ class My_Scaler:
             # grad_scale = self._scaler[0].get_scale()
             # optimizer._sngd_opt.grad_scale = grad_scale
             loss2.backward()
-            self._scaler[1].scale( torch.zeros_like(loss) )
+            self._scaler[1].scale(torch.zeros_like(loss))
 
             self._scaler[0].step(optimizer._sngd_opt)
             self._scaler[1].step(optimizer._other_opt)
@@ -190,4 +198,3 @@ class My_Scaler:
     def load_state_dict(self, state_dict):
         assert False
         # self._scaler[0].load_state_dict(state_dict)
-

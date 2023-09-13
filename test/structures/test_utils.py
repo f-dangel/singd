@@ -1,7 +1,9 @@
 """Test utility functions of ``sparse_ngd.structures``."""
 
 from pytest import raises
-from torch import bfloat16, device, eye, float16, zeros
+from torch import Tensor, allclose, bfloat16, device, eye, float16, zeros
+
+from sparse_ngd.structures.utils import all_traces
 
 
 def test_cpu_float16_matmul_unsupported():
@@ -29,3 +31,29 @@ def test_cpu_half_precision_trace_unsupported():
         mat = zeros((2, 2), device=cpu).to(dtype)
         with raises(RuntimeError):
             mat.trace()
+
+
+def test_all_traces():
+    """Test the computation of all traces of a matrix."""
+    # fat matrix
+    A = Tensor(
+        [
+            [0.0, 1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0, 7.0],
+            [8.0, 9.0, 10.0, 11.0],
+        ]
+    )
+    traces = Tensor([8.0, 13.0, 15.0, 18.0, 9.0, 3.0])
+    assert allclose(all_traces(A), traces)
+
+    # tall matrix
+    B = Tensor(
+        [
+            [0.0, 4.0, 8.0],
+            [1.0, 5.0, 9.0],
+            [2.0, 6.0, 10.0],
+            [3.0, 7.0, 11.0],
+        ]
+    )
+    traces = Tensor([3.0, 9.0, 18.0, 15.0, 13.0, 8.0])
+    assert allclose(all_traces(B), traces)

@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import Tuple
 
-# import cupy as np
-import numpy as np
 import torch
-from torch import Tensor
+from torch import Tensor, arange, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
+from sparse_ngd.structures.utils import all_traces
 
 
 class TrilToeplitzMatrix(StructuredMatrix):
@@ -56,23 +55,19 @@ class TrilToeplitzMatrix(StructuredMatrix):
         Returns:
             ``TrilToeplitzMatrix`` approximating the passed matrix.
         """
-        # Reference:
-        # https://stackoverflow.com/questions/57347896/sum-all-diagonals-in-feature-maps-in-parallel-in-pytorch
-        # Note the conv2d is too slow when dim is large
-        dim = mat.size(0)
-        x = torch.fliplr(mat)
-        digitized = np.sum(np.indices(x.shape), axis=0).ravel()
-        # digitized_tensor = torch.from_numpy(digitized) #using numpy
-        digitized_tensor = torch.as_tensor(digitized).to(
-            x.device
-        )  # using cupy instead of numpy to avoid a cpu-to-gpu call
-        result = torch.bincount(digitized_tensor, x.view(-1))
+        assert mat.shape[0] == mat.shape[1]
+        traces = all_traces(mat)
 
-        col = result[range(dim)].flip(0) + result[(dim - 1) :]
-        col.div_((1.0 + torch.Tensor(range(dim)).to(col.device)).flip(0))
-        col[0] = col[0] / 2.0
+        # sum the lower- and upper-diagonal traces
+        dim = mat.shape[0]
+        col = zeros(dim, dtype=mat.dtype, device=mat.device)
+        idx_main = dim - 1
+        col[0] += traces[idx_main]
+        col[1:] += traces[idx_main + 1 :]
+        col[1:] += traces[:idx_main].flip(0)
 
-        col = col.to(mat.dtype).to(mat.device)
+        normalization = arange(dim, 0, step=-1, dtype=mat.dtype, device=mat.device)
+        col.div_(normalization)
 
         return cls(col)
 
