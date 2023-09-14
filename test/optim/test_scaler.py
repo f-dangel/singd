@@ -120,7 +120,7 @@ def test_scaler(grad_scale_schedule: Callable[[int], float]):
         # It serves for testing purposes because ``GradientScaler`` only
         # works with CUDA and we want the test to run on CPU.
         grad_scale = grad_scale_schedule(steps)
-        optim_scale.grad_scale = grad_scale
+        optim_scale.grad_scale = Tensor([grad_scale])
 
         output_scale = model_scale(inputs)
         loss_scale = loss_func_scale(output_scale, target)
@@ -134,3 +134,6 @@ def test_scaler(grad_scale_schedule: Callable[[int], float]):
 
         if steps >= MAX_STEPS:
             break
+
+test_scaler(constant_schedule)
+test_scaler(cyclic_schedule)
