@@ -223,9 +223,9 @@ def test_warning_init_grad_scale():
     loss = GRAD_SCALE * loss_func(model(inputs), target)
     loss.backward()
 
-    # NOTE This line emulates a scaler on CPU for testing purposes
-    # and is not required on GPU
-    optim.set_current_grad_scale(GRAD_SCALE)
-
     with warns(UserWarning):
-        optim.step()
+        # NOTE This line emulates a scaler on CPU for testing purposes
+        # and is not required on GPU
+        optim.set_current_grad_scale(GRAD_SCALE)
+
+    optim.step()
