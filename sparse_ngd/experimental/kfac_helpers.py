@@ -1,5 +1,5 @@
 import sys, os
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../baselines/KFAC-Pytorch/'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../wang2019kfac/KFAC-Pytorch/'))
 from optimizers import KFACOptimizer
 import torch
 import torch.optim as optim
@@ -44,13 +44,13 @@ class My_KFAC(Optimizer):
         self._opt.zero_grad(set_to_none)
 
         if self._opt.steps <= 500:
-            step_lr_cov = 1e-6
+            step_lr_cov = self.lr_cov/10000.0
         elif self._opt.steps <= 1000:
-            step_lr_cov = 1e-5
+            step_lr_cov = self.lr_cov/1000.0
         elif self._opt.steps <= 1500:
-            step_lr_cov = 1e-4
+            step_lr_cov = self.lr_cov/100.0
         elif self._opt.steps <= 2000:
-            step_lr_cov = 1e-3
+            step_lr_cov = self.lr_cov/10.0
         else:
             step_lr_cov = self.lr_cov
 
