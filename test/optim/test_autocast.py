@@ -3,7 +3,7 @@
 from copy import deepcopy
 from test.utils import compare_optimizers
 
-from torch import Tensor, autocast, bfloat16, manual_seed
+from torch import autocast, bfloat16, manual_seed
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST

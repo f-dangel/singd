@@ -7,7 +7,6 @@ from typing import Tuple, Union
 
 from pytest import mark, raises, warns
 from torch import (
-    Tensor,
     autocast,
     bfloat16,
     device,
