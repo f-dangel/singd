@@ -1,3 +1,6 @@
 [submodule "lin2023simplifying"]
 	path = lin2023simplifying
 	url = https://github.com/f-dangel/StructuredNGD-DL.git
+[submodule "wang2019kfac"]
+	path = wang2019kfac
+	url = git@github.com:yorkerlin/KFAC-Pytorch.git
