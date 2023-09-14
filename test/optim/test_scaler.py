@@ -134,6 +134,3 @@ def test_scaler(grad_scale_schedule: Callable[[int], float]):
 
         if steps >= MAX_STEPS:
             break
-
-test_scaler(constant_schedule)
-test_scaler(cyclic_schedule)
