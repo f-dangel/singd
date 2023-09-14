@@ -83,6 +83,7 @@ class My_SNGD(Optimizer):
             )
 
         self.param_groups = self._other_opt.param_groups
+        print('max lr_cov', self.lr_cov)
 
     def zero_grad(self, set_to_none: bool = True):
         self._other_opt.zero_grad(set_to_none)
