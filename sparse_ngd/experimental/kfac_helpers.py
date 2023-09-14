@@ -64,6 +64,9 @@ class My_KFAC(Optimizer):
         for group in self._opt.param_groups:
             group["weight_decay"] = step_weight_decay
 
+    def set_cast_dtype(self, cast_dtype):
+        self._opt.cast_dtype = cast_dtype
+
 
     def step(self, closure=None):
         assert closure is None
