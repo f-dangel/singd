@@ -116,17 +116,14 @@ def test_scaler(grad_scale_schedule: Callable[[int], float]):
         losses.append(loss.item())
         optim.step()
 
-        # NOTE This is NOT how you would use gradient scaling.
-        # It serves for testing purposes because ``GradientScaler`` only
-        # works with CUDA and we want the test to run on CPU.
         grad_scale = grad_scale_schedule(steps)
-        optim_scale.grad_scale = Tensor([grad_scale])
-
         output_scale = model_scale(inputs)
-        loss_scale = loss_func_scale(output_scale, target)
-        (grad_scale * loss_scale).backward()
+        loss_scale = grad_scale * loss_func_scale(output_scale, target)
+        loss_scale.backward()
+        # NOTE This line emulates a scaler on CPU for testing purposes
+        # and is not required on GPU
+        optim_scale.set_current_grad_scale(grad_scale)
         optim_scale.step()
-        del optim_scale.grad_scale
 
         steps += 1
 
