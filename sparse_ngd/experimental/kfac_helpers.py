@@ -1,5 +1,5 @@
 import sys, os
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../wang2019kfac/KFAC-Pytorch/'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../wang2019kfac/'))
 from optimizers import KFACOptimizer
 import torch
 import torch.optim as optim
