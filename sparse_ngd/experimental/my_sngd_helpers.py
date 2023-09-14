@@ -6,6 +6,7 @@ from torch.nn import Conv2d, Linear
 from torch.optim import Optimizer
 
 from sparse_ngd.optim.optimizer import SNGD
+from sparse_ngd.experimental.kfac_helpers import My_KFAC
 
 
 class My_SNGD(Optimizer):
@@ -87,10 +88,14 @@ class My_SNGD(Optimizer):
         self._other_opt.zero_grad(set_to_none)
         self._sngd_opt.zero_grad(set_to_none)
 
-        if self._sngd_opt.steps <= 100:
-            step_lr_cov = 2e-4
-        elif self._sngd_opt.steps < 500:
-            step_lr_cov = 2e-3
+        if self._sngd_opt.steps <= 500:
+            step_lr_cov = 1e-6
+        elif self._sngd_opt.steps <= 1000:
+            step_lr_cov = 1e-5
+        elif self._sngd_opt.steps <= 1500:
+            step_lr_cov = 1e-4
+        elif self._sngd_opt.steps <= 2000:
+            step_lr_cov = 1e-3
         else:
             step_lr_cov = self.lr_cov
 
@@ -120,6 +125,8 @@ class My_LRScheduler:
             sngd_lr = scheduler_class(optimizer._sngd_opt, **kwargs)
             other_lr = scheduler_class(optimizer._other_opt, **kwargs)
             self._lr = [sngd_lr, other_lr]
+        elif isinstance(optimizer, My_KFAC):
+            self._lr = [scheduler_class(optimizer._opt, **kwargs)]
         else:
             self._lr = [
                 scheduler_class(optimizer, **kwargs),
@@ -188,6 +195,15 @@ class My_Scaler:
 
             for sl in self._scaler:
                 sl.update()
+
+        elif isinstance(optimizer, My_KFAC):
+            loss2 = self._scaler[0].scale(loss)
+            grad_scale = self._scaler[0].get_scale()
+            optimizer._opt.grad_scale = grad_scale
+            loss2.backward()
+            self._scaler[0].unscale_(optimizer._opt)
+            self._scaler[0].step(optimizer._opt)
+            self._scaler[0].update()
 
         else:
             self._scaler[0](loss, optimizer, clip_grad=clip_grad, **kwargs)
