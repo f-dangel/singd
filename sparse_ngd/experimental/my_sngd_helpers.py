@@ -28,6 +28,7 @@ class My_SNGD(Optimizer):
         adamw_eps = 1e-8,
         adamw_beta1 = 0.9,
         adamw_beta2 = 0.999,
+        warmup_factor = 10,
     ):
         conv_params = [
             p for m in model.modules() if isinstance(m, Conv2d) for p in m.parameters()
@@ -83,19 +84,20 @@ class My_SNGD(Optimizer):
             )
 
         self.param_groups = self._other_opt.param_groups
+        self.warmup_factor = warmup_factor
         print('max lr_cov', self.lr_cov)
 
     def zero_grad(self, set_to_none: bool = True):
         self._other_opt.zero_grad(set_to_none)
         self._sngd_opt.zero_grad(set_to_none)
 
-        if self._sngd_opt.steps <= 500:
+        if self._sngd_opt.steps <= 50*warmup_factor:
             step_lr_cov = self.lr_cov/10000.0
-        elif self._sngd_opt.steps <= 1000:
-            step_lr_cov = self.lr_cov/1000.0
-        elif self._sngd_opt.steps <= 1500:
+        elif self._sngd_opt.steps <= 100*warmup_factor:
             step_lr_cov = self.lr_cov/100.0
-        elif self._sngd_opt.steps <= 2000:
+        elif self._sngd_opt.steps <= 150*warmup_factor:
+            step_lr_cov = self.lr_cov/10.0
+        elif self._sngd_opt.steps <= 200*warmup_factor:
             step_lr_cov = self.lr_cov/10.0
         else:
             step_lr_cov = self.lr_cov
