@@ -195,7 +195,7 @@ class SNGD(Optimizer):
         # solution is to un-scale the gradient with the scale from step ``t-1`` in the
         # backward hook computations for step ``t``, then undo and use the scale from
         # step ``t`` in the pre-conditioner update.
-        self._grad_scales: Dict[int, Tensor] = {-1: Tensor([init_grad_scale])}
+        self._grad_scales: Dict[int, float] = {-1: init_grad_scale}
 
     def _get_param_group_entry(self, module: Module, entry: str) -> Any:
         """Get the parameter group that contains the layer's parameters.
@@ -615,11 +615,19 @@ class SNGD(Optimizer):
         if closure is not None:
             raise NotImplementedError("Closure not supported.")
 
-        # Get current gradient scale if used with ``torch.cuda.amp.GradScaler``
+        # Set current gradient scale if used with ``torch.cuda.amp.GradScaler``
         # and store it internally. See the comment on the class attribute
-        # ``_step_supports_amp_scaling`` how gradient scales are stored inside
-        # an optimizer
-        self._set_current_grad_scale(getattr(self, "grad_scale", Tensor([1.0])))
+        # ``_step_supports_amp_scaling`` how gradient scales are communicated to
+        # an optimizer.
+        try:
+            # see if ``grad_scale`` was externally supplied by the user (e.g. when
+            # using gradient clipping via ``torch.cuda.amp.GradScaler.unscale_``)
+            self._get_grad_scale(self.steps)
+        except KeyError:
+            # ``grad_scale`` was supplied to the optimizer via ``scaler.step``,
+            # or no gradient scaler is used.
+            grad_scale = getattr(self, "grad_scale", Tensor([1.0])).item()
+            self.set_current_grad_scale(grad_scale)
 
         found_inf = getattr(self, "found_inf", False)
         if found_inf:
@@ -670,7 +678,7 @@ class SNGD(Optimizer):
         Returns:
             The gradient scale at step ``t``.
         """
-        return self._grad_scales[t].item()
+        return self._grad_scales[t]
 
     def _remove_used_grad_scales(self):
         """Remove gradient scales that are not required anymore.
@@ -681,7 +689,7 @@ class SNGD(Optimizer):
         for t in drop:
             del self._grad_scales[t]
 
-    def _set_current_grad_scale(self, grad_scale: Tensor):
+    def set_current_grad_scale(self, grad_scale: float):
         """Store the current gradient scale internally.
 
         Warn the user if ``init_grad_scale`` was not specified but a scaler is used.
