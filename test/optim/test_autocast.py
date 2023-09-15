@@ -3,7 +3,7 @@
 from copy import deepcopy
 from test.utils import compare_optimizers
 
-from torch import Tensor, autocast, bfloat16, manual_seed
+from torch import autocast, bfloat16, manual_seed
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
@@ -73,11 +73,6 @@ def test_autocast():
         loss_func_single(model_single(inputs), target).backward()
         optim_single.step()
 
-        # NOTE This is NOT how you would use gradient scaling.
-        # It serves for testing purposes because ``GradientScaler`` only
-        # works with CUDA and we want the test to run on CPU.
-        optim_mixed.grad_scale = Tensor([GRAD_SCALE])
-
         with autocast(device_type="cpu", dtype=bfloat16):
             output_mixed = model_mixed(inputs)
             assert output_mixed.dtype == bfloat16  # due to linear layers
@@ -87,6 +82,10 @@ def test_autocast():
         # (https://pytorch.org/docs/stable/amp.html#torch.autocast).
         # Therefore, this part happens outside the ``autocast`` context
         (GRAD_SCALE * loss_mixed).backward()
+
+        # NOTE This line emulates a scaler on CPU for testing purposes
+        # and is not required on GPU
+        optim_mixed.set_current_grad_scale(GRAD_SCALE)
         optim_mixed.step()
 
         compare_optimizers(

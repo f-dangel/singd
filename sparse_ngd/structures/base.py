@@ -35,7 +35,7 @@ class StructuredMatrix(ABC):
     WARN_NAIVE: bool = True
 
     @property
-    def _tensors_to_sync(self) -> Union[None, Tuple[Tensor, ...]]:
+    def _tensors_to_sync(self) -> Union[None, Tuple[Union[None, Tensor], ...]]:
         """Tensors that need to be synchronized across devices.
 
         This is used to support distributed data parallel training. If ``None``,

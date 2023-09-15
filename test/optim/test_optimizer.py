@@ -7,7 +7,6 @@ from typing import Tuple, Union
 
 from pytest import mark, raises, warns
 from torch import (
-    Tensor,
     autocast,
     bfloat16,
     device,
@@ -215,7 +214,7 @@ def test_warning_init_grad_scale():
     loss_func = CrossEntropyLoss()
 
     model.train()
-    optim = SNGD(model)
+    optim = SNGD(model)  # ``init_grad_scale`` not supplied by user
 
     # one training step
     optim.zero_grad()
@@ -223,10 +222,9 @@ def test_warning_init_grad_scale():
     loss = GRAD_SCALE * loss_func(model(inputs), target)
     loss.backward()
 
-    # NOTE This is NOT how you would use gradient scaling.
-    # It serves for testing purposes because ``GradientScaler`` only
-    # works with CUDA and we want the test to run on CPU.
-    optim.grad_scale = Tensor([GRAD_SCALE])
-
     with warns(UserWarning):
-        optim.step()
+        # NOTE This line emulates a scaler on CPU for testing purposes
+        # and is not required on GPU
+        optim.set_current_grad_scale(GRAD_SCALE)
+
+    optim.step()
