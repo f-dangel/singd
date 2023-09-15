@@ -83,19 +83,20 @@ class My_SNGD(Optimizer):
             )
 
         self.param_groups = self._other_opt.param_groups
+        print('max lr_cov', self.lr_cov)
 
     def zero_grad(self, set_to_none: bool = True):
         self._other_opt.zero_grad(set_to_none)
         self._sngd_opt.zero_grad(set_to_none)
 
         if self._sngd_opt.steps <= 500:
-            step_lr_cov = 1e-6
+            step_lr_cov = self.lr_cov/10000.0
         elif self._sngd_opt.steps <= 1000:
-            step_lr_cov = 1e-5
+            step_lr_cov = self.lr_cov/1000.0
         elif self._sngd_opt.steps <= 1500:
-            step_lr_cov = 1e-4
+            step_lr_cov = self.lr_cov/100.0
         elif self._sngd_opt.steps <= 2000:
-            step_lr_cov = 1e-3
+            step_lr_cov = self.lr_cov/10.0
         else:
             step_lr_cov = self.lr_cov
 

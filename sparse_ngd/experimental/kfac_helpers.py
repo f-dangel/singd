@@ -1,5 +1,5 @@
 import sys, os
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../baselines/KFAC-Pytorch/'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../wang2019kfac/'))
 from optimizers import KFACOptimizer
 import torch
 import torch.optim as optim
@@ -38,21 +38,21 @@ class My_KFAC(Optimizer):
                          TInv=T,
                          use_eign = use_eign,
                          )
-        print('lr_cov:', self.lr_cov)
+        print('max lr_cov:', self.lr_cov)
 
     def zero_grad(self, set_to_none: bool = True):
         self._opt.zero_grad(set_to_none)
 
-        # if self._opt.steps <= 500:
-            # step_lr_cov = 1e-6
-        # elif self._opt.steps <= 1000:
-            # step_lr_cov = 1e-5
-        # elif self._opt.steps <= 1500:
-            # step_lr_cov = 1e-4
-        # elif self._opt.steps <= 2000:
-            # step_lr_cov = 1e-3
-        # else:
-        step_lr_cov = self.lr_cov
+        if self._opt.steps <= 500:
+            step_lr_cov = self.lr_cov/10000.0
+        elif self._opt.steps <= 1000:
+            step_lr_cov = self.lr_cov/1000.0
+        elif self._opt.steps <= 1500:
+            step_lr_cov = self.lr_cov/100.0
+        elif self._opt.steps <= 2000:
+            step_lr_cov = self.lr_cov/10.0
+        else:
+            step_lr_cov = self.lr_cov
 
         self._opt.stat_decay =  1.0 - step_lr_cov
 
