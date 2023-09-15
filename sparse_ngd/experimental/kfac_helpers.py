@@ -41,6 +41,7 @@ class My_KFAC(Optimizer):
                          )
         self.warmup_factor = warmup_factor
         print('max lr_cov:', self.lr_cov)
+        print('warmup_factor:', warmup_factor)
 
     def zero_grad(self, set_to_none: bool = True):
         self._opt.zero_grad(set_to_none)

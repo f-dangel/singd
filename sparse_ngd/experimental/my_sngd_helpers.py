@@ -86,6 +86,7 @@ class My_SNGD(Optimizer):
         self.param_groups = self._other_opt.param_groups
         self.warmup_factor = warmup_factor
         print('max lr_cov', self.lr_cov)
+        print('warmup_factor:', warmup_factor)
 
     def zero_grad(self, set_to_none: bool = True):
         self._other_opt.zero_grad(set_to_none)
