@@ -92,13 +92,13 @@ class My_SNGD(Optimizer):
         self._other_opt.zero_grad(set_to_none)
         self._sngd_opt.zero_grad(set_to_none)
 
-        if self._sngd_opt.steps <= 50*warmup_factor:
+        if self._sngd_opt.steps <= 50*self.warmup_factor:
             step_lr_cov = self.lr_cov/10000.0
-        elif self._sngd_opt.steps <= 100*warmup_factor:
+        elif self._sngd_opt.steps <= 100*self.warmup_factor:
             step_lr_cov = self.lr_cov/100.0
-        elif self._sngd_opt.steps <= 150*warmup_factor:
+        elif self._sngd_opt.steps <= 150*self.warmup_factor:
             step_lr_cov = self.lr_cov/10.0
-        elif self._sngd_opt.steps <= 200*warmup_factor:
+        elif self._sngd_opt.steps <= 200*self.warmup_factor:
             step_lr_cov = self.lr_cov/10.0
         else:
             step_lr_cov = self.lr_cov
