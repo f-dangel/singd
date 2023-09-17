@@ -1,6 +1,7 @@
 import sys, os
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../wang2019kfac/'))
 from optimizers import KFACOptimizer
+
 import torch
 import torch.optim as optim
 from torch.nn import Conv2d, Linear
@@ -17,9 +18,9 @@ class My_KFAC(Optimizer):
         weight_decay,
         T,
         lr_cov,
-        # use_eign = True,
         use_eign = False,
         warmup_factor = 10,
+        using_adamw = False,
     ):
         if use_eign:
             print('using eign')
@@ -38,21 +39,23 @@ class My_KFAC(Optimizer):
                          TCov=T,
                          TInv=T,
                          use_eign = use_eign,
+                         using_adamw = using_adamw,
                          )
         self.warmup_factor = warmup_factor
+        self.param_groups = self._opt.param_groups
         print('max lr_cov:', self.lr_cov)
         print('warmup_factor:', warmup_factor)
 
     def zero_grad(self, set_to_none: bool = True):
         self._opt.zero_grad(set_to_none)
 
-        if self._sngd_opt.steps <= 50*self.warmup_factor:
+        if self._opt.steps <= 50*self.warmup_factor:
             step_lr_cov = self.lr_cov/10000.0
-        elif self._sngd_opt.steps <= 100*self.warmup_factor:
+        elif self._opt.steps <= 100*self.warmup_factor:
+            step_lr_cov = self.lr_cov/1000.0
+        elif self._opt.steps <= 150*self.warmup_factor:
             step_lr_cov = self.lr_cov/100.0
-        elif self._sngd_opt.steps <= 150*self.warmup_factor:
-            step_lr_cov = self.lr_cov/10.0
-        elif self._sngd_opt.steps <= 200*self.warmup_factor:
+        elif self._opt.steps <= 200*self.warmup_factor:
             step_lr_cov = self.lr_cov/10.0
         else:
             step_lr_cov = self.lr_cov
