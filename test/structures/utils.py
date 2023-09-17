@@ -1,10 +1,14 @@
 """Utility functions for testing the interface of structured matrices."""
 
 from abc import ABC, abstractmethod
+from os import makedirs, path
 from test.utils import DEVICE_IDS, DEVICES, report_nonclose
 from typing import Callable, Type, Union
 
 import torch
+from imageio import mimsave
+from imageio.v2 import imread
+from matplotlib import pyplot as plt
 from pytest import mark
 from torch import Tensor, device, manual_seed, rand, zeros
 
@@ -494,3 +498,45 @@ class _TestStructuredMatrix(ABC):
 
         mat = rand((10, 10), device=dev, dtype=dtype)
         _test_trace(mat, self.STRUCTURED_MATRIX_CLS)
+
+    @mark.expensive
+    def test_visual(self):
+        """Create pictures and animations of the structure.
+
+        This serves to verify the edge cases where a matrix is too small to fit
+        all the structural components.
+        """
+        manual_seed(0)
+        dims = [1, 2, 4, 8, 16, 32, 64, 128]
+
+        HEREDIR = path.dirname(path.abspath(__file__))
+        structure_name = self.STRUCTURED_MATRIX_CLS.__name__
+        FIGDIR = path.join(HEREDIR, "fig", structure_name)
+        makedirs(FIGDIR, exist_ok=True)
+
+        frames = []
+
+        for d in dims:
+            dense = symmetrize(rand(d, d))
+            structured = self.STRUCTURED_MATRIX_CLS.from_dense(dense).to_dense()
+
+            # share limits
+            vmin = min(dense.min(), structured.min())
+            vmax = max(dense.max(), structured.max())
+
+            fig, (ax1, ax2) = plt.subplots(1, 2)
+            plt.tight_layout()
+            fig.suptitle(f"Dimension: {d}")
+            ax1.set_title("Dense")
+            ax1.imshow(dense, vmin=vmin, vmax=vmax)
+            ax2.set_title(structure_name)
+            ax2.imshow(structured, vmin=vmin, vmax=vmax)
+
+            savepath = path.join(FIGDIR, f"dim_{d:05d}.png")
+            fig.savefig(savepath)
+            plt.close(fig)
+            frames.append(savepath)
+
+        # create gif
+        images = [imread(frame) for frame in frames]
+        mimsave(path.join(FIGDIR, "animated.gif"), images, duration=1_000, loop=0)

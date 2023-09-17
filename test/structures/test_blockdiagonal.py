@@ -2,6 +2,7 @@
 
 from abc import ABC
 from test.structures.utils import _TestStructuredMatrix
+from typing import Type
 
 from torch import Tensor, zeros_like
 
@@ -15,7 +16,7 @@ from sparse_ngd.structures.blockdiagonal import (
 class _TestBlockDiagonalMatrix(_TestStructuredMatrix, ABC):
     """Test suite for classes created with ``BlockDiagonalMatrixTemplate``."""
 
-    STRUCTURED_MATRIX_CLS: BlockDiagonalMatrixTemplate
+    STRUCTURED_MATRIX_CLS: Type[BlockDiagonalMatrixTemplate]
 
     def project(self, sym_mat: Tensor) -> Tensor:
         """Project a symmetric matrix onto a block diagonal matrix.

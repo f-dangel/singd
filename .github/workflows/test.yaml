@@ -36,4 +36,4 @@ jobs:
         make install-test
     - name: Run test
       run: |
-        make test
+        make test-light
