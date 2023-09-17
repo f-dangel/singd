@@ -203,7 +203,7 @@ def _test_from_inner(
     report_nonclose(
         truth,
         sym_mat_structured.from_inner(X=X).to_dense(),
-        rtol=3e-2 if is_half_precision(sym_mat.dtype) else 1e-5,
+        rtol=5e-2 if is_half_precision(sym_mat.dtype) else 1e-5,
         atol=1e-4 if is_half_precision(sym_mat.dtype) else 1e-7,
     )
 

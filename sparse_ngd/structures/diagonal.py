@@ -106,7 +106,7 @@ class DiagonalMatrix(StructuredMatrix):
                 diagonal matrix.
 
         Returns:
-            The transpose of the represented matrix.
+            The result of the multiplication with the represented matrix's transpose.
         """
         return self @ mat
 

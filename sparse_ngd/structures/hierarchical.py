@@ -150,7 +150,7 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
 
         mat[: self.K1, : self.K1] = self.A
         mat[: self.K1, self.K1 :] = self.B
-        diag_idx = arange(self.K1, self.K1 + self.diag_dim)
+        diag_idx = arange(self.K1, self.K1 + self.diag_dim, device=self.A.device)
         mat[diag_idx, diag_idx] = self.C
         mat[self.K1 + self.diag_dim :, self.K1 : self.K1 + self.diag_dim] = self.D
         mat[self.K1 + self.diag_dim :, self.K1 + self.diag_dim :] = self.E

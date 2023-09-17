@@ -8,6 +8,7 @@ from torch import (
     arange,
     bfloat16,
     device,
+    einsum,
     eye,
     float16,
     float32,
@@ -99,6 +100,40 @@ def supported_trace(input: Tensor) -> Tensor:
         return input.to(float32).trace().to(original)
     else:
         return input.trace()
+
+
+def supported_einsum(equation, *operands: Tensor) -> Tensor:
+    """Compute an ``einsum`` with the same or higher numerical precision.
+
+    If the ``einsum`` is not supported on the hardware,
+    carry out the multiplication in single precision.
+
+    Args:
+        equation: The ``einsum`` equation.
+        operands: The operands to the ``einsum``.
+
+    Returns:
+        The result of the ``einsum`` in the original precision.
+
+    Raises:
+        RuntimeError: If the operands are not on the same device.
+    """
+    devices = {m.device for m in operands}
+    if len(devices) > 1:
+        raise RuntimeError("Operands must be on the same device.")
+    dev = devices.pop()
+
+    # Use the first tensor's data type as the result's data type.
+    # The tensors may have different data types if ``autocast`` was used.
+    dtype = operands[0].dtype
+
+    # @ not supported on CPU for float16 (bfloat16 is supported)
+    convert = dtype == float16 and str(dev) == "cpu"
+
+    operands = tuple(m.to(float32) if convert else m for m in operands)
+    result = einsum(equation, *operands)
+
+    return result.to(dtype) if convert else result
 
 
 def all_traces(mat: Tensor) -> Tensor:
