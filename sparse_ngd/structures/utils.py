@@ -15,6 +15,7 @@ from torch import (
     get_default_dtype,
     zeros,
 )
+from torch.nn.functional import conv1d
 
 
 def is_half_precision(dtype: torch.dtype) -> bool:
@@ -163,3 +164,77 @@ def all_traces(mat: Tensor) -> Tensor:
     traces.scatter_add_(0, idxs, mat.flatten())
 
     return traces
+
+
+def supported_conv1d(
+    input: Tensor, weight: Tensor, padding: int = 0, groups: int = 1
+) -> Tensor:
+    """Same as PyTorch's ``conv1d``, but uses higher precision if unsupported.
+
+    For now, we don't support bias and non-default hyper-parameters.
+
+    Args:
+        input: The input of the convolution. Has shape ``[N, C_in, I_1]``.
+        weight: The kernel of the convolution. Has shape ``[C_out, C_in // G, K_1]``.
+        padding: The amount of padding on both sides of the input. Default: ``0``.
+        groups: The number of groups ``G``. Default: ``1``.
+
+    Returns:
+        The output of the convolution in the same precision as ``input``.
+        Has shape ``[N, C_out, O_1]``, where ``O_1 = I_1 - K_1 + 1``.
+
+    Raises:
+        RuntimeError: If input and kernel are not on the same device.
+    """
+    devices = {input.device, weight.device}
+    if len(devices) > 1:
+        raise RuntimeError("Input and kernel must be on the same device.")
+    dev = devices.pop()
+
+    # Use the input's data type as the result's data type.
+    # Input and kernel may have different data types if ``autocast`` was used.
+    dtype = input.dtype
+
+    # 'slow_conv2d_cpu' not implemented for 'Half' (bfloat16 is supported)
+    if dtype == float16 and str(dev) == "cpu":
+        return conv1d(
+            input.to(float32), weight.to(float32), padding=padding, groups=groups
+        ).to(dtype)
+    else:
+        return conv1d(input, weight, padding=padding, groups=groups)
+
+
+def toeplitz_matmul(coeffs: Tensor, mat: Tensor) -> Tensor:
+    """Compute the product of a Toeplitz matrix and a matrix.
+
+    Let ``N`` denote the expanded Toeplitz matrix dimension.
+
+    Args:
+        coeffs: A tensor of shape ``[2 * N - 1]`` containing the elements on the
+            Toeplitz matrix's diagonals, starting from most negative (bottom left)
+            to top right, that is the central element contains the value of the
+            Toeplitz matrix's main diagonal.
+        mat: A matrix of shape ``[N, M]``.
+
+    Returns:
+        The product of the Toeplitz matrix and the matrix. Has shape ``[N, M]``.
+
+    Raises:
+        RuntimeError: If the specified tensors have incorrect shape.
+    """
+    toeplitz_dim = (coeffs.shape[0] + 1) // 2
+    if toeplitz_dim != mat.shape[0]:
+        raise RuntimeError(f"Toeplitz dim={toeplitz_dim}, but `mat` is {mat.shape}.")
+
+    num_rows = mat.shape[0]
+    num_cols = mat.shape[1]
+    padding = num_rows - 1
+
+    # columns act as channels
+    conv_input = mat.T
+    conv_weight = coeffs.unsqueeze(0).unsqueeze(0).expand(num_cols, -1, -1)
+    conv_result = supported_conv1d(
+        conv_input, conv_weight, padding=padding, groups=num_cols
+    )
+
+    return conv_result.T

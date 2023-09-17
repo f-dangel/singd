@@ -106,7 +106,7 @@ class DiagonalMatrix(StructuredMatrix):
                 diagonal matrix.
 
         Returns:
-            The result of the multiplication with the represented matrix's transpose.
+            The result of ``self.T @ mat``.
         """
         return self @ mat
 
@@ -163,7 +163,7 @@ class DiagonalMatrix(StructuredMatrix):
         dim: int,
         dtype: Union[torch.dtype, None] = None,
         device: Union[torch.device, None] = None,
-    ) -> StructuredMatrix:
+    ) -> DiagonalMatrix:
         """Create a structured matrix representing the zero matrix.
 
         Args:

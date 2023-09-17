@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Tuple, Union
+from typing import Set, Tuple, Union
 from warnings import warn
 
 import torch
@@ -30,9 +30,15 @@ class StructuredMatrix(ABC):
             of this base class. This indicates a method that should be implemented to
             save memory and run time by considering the represented structure.
             Default: ``True``.
+        WARN_NAIVE_EXCEPTIONS: Set of methods that should not trigger a warning even
+            if ``WARN_NAIVE`` is ``True``. This can be used to silence warnings for
+            methods for which it is too complicated to leverage a specific structure
+            and which should therefore call out to this class's implementation without
+            performance warnings.
     """
 
     WARN_NAIVE: bool = True
+    WARN_NAIVE_EXCEPTIONS: Set[str] = set()
 
     @property
     def _tensors_to_sync(self) -> Union[None, Tuple[Union[None, Tensor], ...]]:
@@ -170,7 +176,7 @@ class StructuredMatrix(ABC):
         Args:
             fn_name: Name of the function whose naive version is being called.
         """
-        if cls.WARN_NAIVE:
+        if cls.WARN_NAIVE and fn_name not in cls.WARN_NAIVE_EXCEPTIONS:
             cls_name = cls.__name__
             warn(
                 f"Calling naive implementation of {cls_name}.{fn_name}."
@@ -239,9 +245,7 @@ class StructuredMatrix(ABC):
             The structured matrix extracted from ``self.T @ X @ X^T @ self``.
         """
         self._warn_naive_implementation("from_inner")
-        S_dense = self.to_dense().T
-        if X is not None:
-            S_dense = supported_matmul(S_dense, X)
+        S_dense = self.to_dense().T if X is None else self.rmatmat(X)
         return self.from_dense(supported_matmul(S_dense, S_dense.T))
 
     # NOTE This operation should be removed long-term as implementing IF-KFAC
