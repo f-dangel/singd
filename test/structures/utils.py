@@ -509,6 +509,40 @@ class _TestStructuredMatrix(ABC):
             mat = rand((dim, dim), device=dev, dtype=dtype)
             _test_trace(mat, self.STRUCTURED_MATRIX_CLS)
 
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_diag_add_(self, dev: device, dtype: torch.dtype, value: float = -1.23):
+        """Test in-place addition onto the diagonal of a structured dense matrix.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+            value: The value to add to the diagonal. Default: ``-1.23``
+        """
+        tolerances = {
+            "rtol": 1e-2 if is_half_precision(dtype) else 1e-5,
+            "atol": 1e-4 if is_half_precision(dtype) else 1e-7,
+        }
+
+        for dim in self.DIMS:
+            manual_seed(0)
+            sym_mat = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+
+            truth = self.project(sym_mat.clone())
+            for d in range(dim):
+                truth[d, d] += value
+
+            # Call in-place operation without assigning the return to a variable
+            structured = self.STRUCTURED_MATRIX_CLS.from_dense(sym_mat.clone())
+            structured.diag_add_(value)
+            report_nonclose(truth, structured.to_dense(), **tolerances)
+
+            # Call in-place operation and assign the return to a variable
+            structured = self.STRUCTURED_MATRIX_CLS.from_dense(sym_mat.clone())
+            updated_structured = structured.diag_add_(value)
+            assert structured is updated_structured  # point to same object in memory
+            report_nonclose(truth, updated_structured.to_dense(), **tolerances)
+
     @mark.expensive
     def test_visual(self):
         """Create pictures and animations of the structure.

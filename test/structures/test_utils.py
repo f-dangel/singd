@@ -1,9 +1,19 @@
 """Test utility functions of ``sparse_ngd.structures``."""
 
 from pytest import raises
-from torch import Tensor, allclose, bfloat16, device, eye, float16, zeros
+from torch import (
+    Tensor,
+    allclose,
+    bfloat16,
+    device,
+    eye,
+    float16,
+    manual_seed,
+    rand,
+    zeros,
+)
 
-from sparse_ngd.structures.utils import all_traces
+from sparse_ngd.structures.utils import all_traces, diag_add_
 
 
 def test_cpu_float16_matmul_unsupported():
@@ -57,3 +67,26 @@ def test_all_traces():
     )
     traces = Tensor([3.0, 9.0, 18.0, 15.0, 13.0, 8.0])
     assert allclose(all_traces(B), traces)
+
+
+def test_diag_add_():
+    """Test in-place addition to the diagonal of a matrix."""
+    manual_seed(0)
+    dim = 10
+    mat = rand(dim, dim)
+    value = -1.23
+
+    truth = mat.clone()
+    for d in range(dim):
+        truth[d, d] += value
+
+    # call in-place op and do not assign to a variable
+    result = mat.clone()
+    diag_add_(result, value)
+    assert allclose(result, truth)
+
+    # call in-place op and assign to a new variable
+    result = mat.clone()
+    new_result = diag_add_(result, value)
+    assert result is new_result  # both point to the same object in memory
+    assert allclose(result, truth)

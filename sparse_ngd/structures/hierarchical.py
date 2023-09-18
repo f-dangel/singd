@@ -9,6 +9,7 @@ from torch import Tensor, arange, cat, ones, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
 from sparse_ngd.structures.utils import (
+    diag_add_,
     supported_einsum,
     supported_eye,
     supported_matmul,
@@ -316,6 +317,20 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
             The trace of the represented matrix.
         """
         return supported_trace(self.A) + self.C.sum() + supported_trace(self.E)
+
+    def diag_add_(self, value: float) -> HierarchicalMatrixTemplate:
+        """In-place add a value to the diagonal of the represented matrix.
+
+        Args:
+            value: Value to add to the diagonal.
+
+        Returns:
+            A reference to the updated matrix.
+        """
+        diag_add_(self.A, value)
+        self.C.add_(value)
+        diag_add_(self.E, value)
+        return self
 
     ###############################################################################
     #                      Special initialization operations                      #

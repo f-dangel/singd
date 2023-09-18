@@ -401,39 +401,29 @@ class SNGD(Optimizer):
 
         p, d = self.preconditioner_dims(module)
 
-        # TODO These don't need to be computed for KFAC-like, but at the moment we
-        # need their device and dtype to create the ``eye_like``s below
-        tr_H_C = H_C.trace()
-        tr_H_K = H_K.trace()
-
         # hyper-parameters for parameter group of module
         kfac_like = self._get_param_group_entry(module, "kfac_like")
         damping = self._get_param_group_entry(module, "damping")
-        structures = self._get_param_group_entry(module, "structures")
-        K_cls = self.SUPPORTED_STRUCTURES[structures[0]]
-        C_cls = self.SUPPORTED_STRUCTURES[structures[1]]
 
         # step for m_K
         if kfac_like:
             first_term = H_K
             second_term = K_tK * damping
         else:
-            first_term = H_K * (tr_H_C / d)
+            first_term = H_K * (H_C.trace() / d)
             c_squared = damping * C_tC.trace()
             second_term = K_tK * (c_squared / d)
-        third_term = K_cls.eye(p, dtype=tr_H_K.dtype, device=tr_H_K.device)
-        new_m_K = (first_term + second_term - third_term) * 0.5
+        new_m_K = (first_term + second_term).diag_add_(-1.0) * 0.5
 
         # step for m_C
         if kfac_like:
             first_term = H_C
             second_term = C_tC
         else:
-            first_term = H_C * (tr_H_K / p)
+            first_term = H_C * (H_K.trace() / p)
             kappa_squared = damping * K_tK.trace()
             second_term = C_tC * (kappa_squared / p)
-        third_term = C_cls.eye(d, dtype=tr_H_C.dtype, device=tr_H_C.device)
-        new_m_C = (first_term + second_term - third_term) * 0.5
+        new_m_C = (first_term + second_term).diag_add_(-1.0) * 0.5
 
         # 2) APPLY UPDATE
         alpha1 = self._get_param_group_entry(module, "alpha1")

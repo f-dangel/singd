@@ -150,6 +150,10 @@ class TriuToeplitzMatrix(StructuredMatrix):
         coeffs = cat([row.flip(0), zeros(dim - 1, device=row.device, dtype=row.dtype)])
         return toeplitz_matmul(coeffs, mat)
 
+    ###############################################################################
+    #                        Special operations for IF-KFAC                       #
+    ###############################################################################
+
     def trace(self) -> Tensor:
         """Compute the trace of the represented matrix.
 
@@ -158,6 +162,18 @@ class TriuToeplitzMatrix(StructuredMatrix):
         """
         dim = self._mat_row.shape[0]
         return self._mat_row[0] * dim
+
+    def diag_add_(self, value: float) -> TriuToeplitzMatrix:
+        """In-place add a value to the diagonal of the represented matrix.
+
+        Args:
+            value: Value to add to the diagonal.
+
+        Returns:
+            A reference to the updated matrix.
+        """
+        self._mat_row[0].add_(value)
+        return self
 
     ###############################################################################
     #                      Special initialization operations                      #

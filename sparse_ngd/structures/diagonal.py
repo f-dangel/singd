@@ -154,6 +154,18 @@ class DiagonalMatrix(StructuredMatrix):
         """
         return self._mat_diag.sum()
 
+    def diag_add_(self, value: float) -> DiagonalMatrix:
+        """In-place add a value to the diagonal of the represented matrix.
+
+        Args:
+            value: Value to add to the diagonal.
+
+        Returns:
+            A reference to the updated matrix.
+        """
+        self._mat_diag.add_(value)
+        return self
+
     ###############################################################################
     #                      Special initialization operations                      #
     ###############################################################################

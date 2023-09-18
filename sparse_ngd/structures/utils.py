@@ -238,3 +238,26 @@ def toeplitz_matmul(coeffs: Tensor, mat: Tensor) -> Tensor:
     )
 
     return conv_result.T
+
+
+def diag_add_(mat: Tensor, value: float) -> Tensor:
+    """In-place add a value to the main diagonal of a matrix.
+
+    Args:
+        mat: A square matrix of shape ``[N, N]``.
+        value: The value to add to the main diagonal.
+
+    Raises:
+        ValueError: If the specified tensor is not square.
+
+    Returns:
+        The input matrix with the value added to the main diagonal.
+    """
+    if mat.dim() != 2 or mat.shape[0] != mat.shape[1]:
+        raise ValueError(f"Expected square matrix, but got {mat.shape}.")
+
+    dim = mat.shape[0]
+    idxs = arange(dim, device=mat.device)
+    mat[idxs, idxs] += value
+
+    return mat

@@ -264,6 +264,23 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
         """
         return supported_einsum("nii->", self._blocks) + supported_trace(self._last)
 
+    def diag_add_(self, value: float) -> BlockDiagonalMatrixTemplate:
+        """In-place add a value to the diagonal of the represented matrix.
+
+        Args:
+            value: Value to add to the diagonal.
+
+        Returns:
+            A reference to the updated matrix.
+        """
+        idxs = arange(self.BLOCK_DIM, device=self._blocks.device)
+        self._blocks[:, idxs, idxs] += value
+
+        idxs = arange(self._last.shape[0], device=self._last.device)
+        self._last[idxs, idxs] += value
+
+        return self
+
     ###############################################################################
     #                      Special initialization operations                      #
     ###############################################################################

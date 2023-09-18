@@ -154,6 +154,10 @@ class TrilToeplitzMatrix(StructuredMatrix):
         coeffs = cat([zeros(dim - 1, device=col.device, dtype=col.dtype), col])
         return toeplitz_matmul(coeffs, mat)
 
+    ###############################################################################
+    #                        Special operations for IF-KFAC                       #
+    ###############################################################################
+
     def trace(self) -> Tensor:
         """Compute the trace of the represented matrix.
 
@@ -162,6 +166,18 @@ class TrilToeplitzMatrix(StructuredMatrix):
         """
         dim = self._mat_column.shape[0]
         return self._mat_column[0] * dim
+
+    def diag_add_(self, value: float) -> TrilToeplitzMatrix:
+        """In-place add a value to the diagonal of the represented matrix.
+
+        Args:
+            value: Value to add to the diagonal.
+
+        Returns:
+            A reference to the updated matrix.
+        """
+        self._mat_column[0].add_(value)
+        return self
 
     ###############################################################################
     #                      Special initialization operations                      #

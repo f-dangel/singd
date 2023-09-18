@@ -10,7 +10,12 @@ import torch
 import torch.distributed as dist
 from torch import Tensor, zeros
 
-from sparse_ngd.structures.utils import supported_eye, supported_matmul, supported_trace
+from sparse_ngd.structures.utils import (
+    diag_add_,
+    supported_eye,
+    supported_matmul,
+    supported_trace,
+)
 
 
 class StructuredMatrix(ABC):
@@ -41,7 +46,7 @@ class StructuredMatrix(ABC):
     WARN_NAIVE_EXCEPTIONS: Set[str] = set()
 
     @property
-    def _tensors_to_sync(self) -> Union[None, Tuple[Union[None, Tensor], ...]]:
+    def _tensors_to_sync(self) -> Union[None, Tuple[Tensor, ...]]:
         """Tensors that need to be synchronized across devices.
 
         This is used to support distributed data parallel training. If ``None``,
@@ -217,14 +222,13 @@ class StructuredMatrix(ABC):
             )
         handles = []
         for tensor in self._tensors_to_sync:
-            if tensor is not None:
-                tensor = tensor.contiguous()
-                if async_op:
-                    handles.append(
-                        dist.all_reduce(tensor, op=op, group=group, async_op=True)
-                    )
-                else:
-                    dist.all_reduce(tensor, op=op, group=group, async_op=False)
+            tensor = tensor.contiguous()
+            if async_op:
+                handles.append(
+                    dist.all_reduce(tensor, op=op, group=group, async_op=True)
+                )
+            else:
+                dist.all_reduce(tensor, op=op, group=group, async_op=False)
         if async_op:
             return tuple(handles)
 
@@ -273,6 +277,26 @@ class StructuredMatrix(ABC):
         """
         self._warn_naive_implementation("trace")
         return supported_trace(self.to_dense())
+
+    def diag_add_(self, value: float) -> StructuredMatrix:
+        """In-place add a value to the diagonal of the represented matrix.
+
+        Args:
+            value: Value to add to the diagonal.
+
+        Returns:
+            A reference to the updated matrix.
+        """
+        self._warn_naive_implementation("diag_add_")
+        dense = self.to_dense()
+        diag_add_(dense, value)
+
+        # NOTE `self` is immutable, so we have to update its state with the following
+        # hack (otherwise, the call ``a.diag_add_(b)`` will not modify ``a``). See
+        # https://stackoverflow.com/a/37658673 and https://stackoverflow.com/q/1015592.
+        new = self.from_dense(dense)
+        self.__dict__.update(new.__dict__)
+        return self
 
     ###############################################################################
     #                      Special initialization operations                      #
