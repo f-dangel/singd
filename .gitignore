@@ -13,6 +13,7 @@ models/pytorch-image-models/output/
 models/standalone_optimizers/standalone_optimizers
 test/optim/data
 test/structures/fig
+*.out
 
 
 
