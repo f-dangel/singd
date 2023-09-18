@@ -21,6 +21,7 @@ class My_KFAC(Optimizer):
         use_eign = False,
         warmup_factor = 10,
         using_adamw = False,
+        cast_dtype = torch.float32,
     ):
         if use_eign:
             print('using eign')
@@ -40,6 +41,7 @@ class My_KFAC(Optimizer):
                          TInv=T,
                          use_eign = use_eign,
                          using_adamw = using_adamw,
+                         cast_dtype=cast_dtype,
                          )
         self.warmup_factor = warmup_factor
         self.param_groups = self._opt.param_groups
