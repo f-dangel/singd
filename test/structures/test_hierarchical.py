@@ -72,4 +72,10 @@ class TestHierarchical15_15Matrix(_TestHierarchicalMatrix):
 class TestHierarchical3_2Matrix(_TestHierarchicalMatrix):
     """Test suite for ``Hierarchical3_2Matrix`` class."""
 
+    DIMS = [
+        3,  # only A
+        4,  # A, smaller E, smaller B, no D, no C
+        5,  # A, normal B, no D, no C
+        6,  # A, B, C, D, E
+    ]
     STRUCTURED_MATRIX_CLS = Hierarchical3_2Matrix

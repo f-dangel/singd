@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from os import makedirs, path
 from test.utils import DEVICE_IDS, DEVICES, report_nonclose
-from typing import Callable, Type, Union
+from typing import Callable, List, Type, Union
 
 import torch
 from imageio import mimsave
@@ -340,11 +340,11 @@ class _TestStructuredMatrix(ABC):
 
     Attributes:
         STRUCTURED_MATRIX_CLS: The class of the structured matrix that is tested.
-        PROJECT: A function which converts a symmetric square matrix into the structured
-            tested matrix.
+        DIMS: A list of dimensions of the matrices to be tested.
     """
 
     STRUCTURED_MATRIX_CLS: Type[StructuredMatrix]
+    DIMS: List[int] = [10]
 
     @abstractmethod
     def project(self, sym_mat: Tensor) -> Tensor:
@@ -367,10 +367,11 @@ class _TestStructuredMatrix(ABC):
             dev: The device on which to run the test.
             dtype: The data type of the matrices.
         """
-        manual_seed(0)
-        sym_mat1 = symmetrize(rand((10, 10), device=dev, dtype=dtype))
-        sym_mat2 = symmetrize(rand((10, 10), device=dev, dtype=dtype))
-        _test_add(sym_mat1, sym_mat2, self.STRUCTURED_MATRIX_CLS, self.project)
+        for dim in self.DIMS:
+            manual_seed(0)
+            sym_mat1 = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+            sym_mat2 = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+            _test_add(sym_mat1, sym_mat2, self.STRUCTURED_MATRIX_CLS, self.project)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
@@ -381,10 +382,11 @@ class _TestStructuredMatrix(ABC):
             dev: The device on which to run the test.
             dtype: The data type of the matrices.
         """
-        manual_seed(0)
-        sym_mat1 = symmetrize(rand((10, 10), device=dev, dtype=dtype))
-        sym_mat2 = symmetrize(rand((10, 10), device=dev, dtype=dtype))
-        _test_sub(sym_mat1, sym_mat2, self.STRUCTURED_MATRIX_CLS, self.project)
+        for dim in self.DIMS:
+            manual_seed(0)
+            sym_mat1 = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+            sym_mat2 = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+            _test_sub(sym_mat1, sym_mat2, self.STRUCTURED_MATRIX_CLS, self.project)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
@@ -395,10 +397,11 @@ class _TestStructuredMatrix(ABC):
             dev: The device on which to run the test.
             dtype: The data type of the matrices.
         """
-        manual_seed(0)
-        sym_mat1 = symmetrize(rand((10, 10), device=dev, dtype=dtype))
-        mat2 = rand((10, 10), device=dev, dtype=dtype)
-        _test_matmul(sym_mat1, mat2, self.STRUCTURED_MATRIX_CLS, self.project)
+        for dim in self.DIMS:
+            manual_seed(0)
+            sym_mat1 = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+            mat2 = rand((dim, dim), device=dev, dtype=dtype)
+            _test_matmul(sym_mat1, mat2, self.STRUCTURED_MATRIX_CLS, self.project)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
@@ -409,10 +412,11 @@ class _TestStructuredMatrix(ABC):
             dev: The device on which to run the test.
             dtype: The data type of the matrices.
         """
-        manual_seed(0)
-        sym_mat = symmetrize(rand((10, 10), device=dev, dtype=dtype))
-        factor = 0.3
-        _test_mul(sym_mat, factor, self.STRUCTURED_MATRIX_CLS, self.project)
+        for dim in self.DIMS:
+            manual_seed(0)
+            sym_mat = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+            factor = 0.3
+            _test_mul(sym_mat, factor, self.STRUCTURED_MATRIX_CLS, self.project)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
@@ -423,10 +427,11 @@ class _TestStructuredMatrix(ABC):
             dev: The device on which to run the test.
             dtype: The data type of the matrices.
         """
-        manual_seed(0)
-        sym_mat1 = symmetrize(rand((10, 10), device=dev, dtype=dtype))
-        mat2 = rand((10, 20), device=dev, dtype=dtype)
-        _test_rmatmat(sym_mat1, mat2, self.STRUCTURED_MATRIX_CLS, self.project)
+        for dim in self.DIMS:
+            manual_seed(0)
+            sym_mat1 = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+            mat2 = rand((dim, 2 * dim), device=dev, dtype=dtype)
+            _test_rmatmat(sym_mat1, mat2, self.STRUCTURED_MATRIX_CLS, self.project)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
@@ -437,15 +442,16 @@ class _TestStructuredMatrix(ABC):
             dev: The device on which to run the test.
             dtype: The data type of the matrices.
         """
-        manual_seed(0)
+        for dim in self.DIMS:
+            manual_seed(0)
 
-        sym_mat = symmetrize(rand((10, 10), device=dev, dtype=dtype))
-        X = None
-        _test_from_inner(sym_mat, self.STRUCTURED_MATRIX_CLS, self.project, X)
+            sym_mat = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+            X = None
+            _test_from_inner(sym_mat, self.STRUCTURED_MATRIX_CLS, self.project, X)
 
-        sym_mat = symmetrize(rand((10, 10), device=dev, dtype=dtype))
-        X = rand((10, 20), device=dev, dtype=dtype)
-        _test_from_inner(sym_mat, self.STRUCTURED_MATRIX_CLS, self.project, X)
+            sym_mat = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+            X = rand((dim, 2 * dim), device=dev, dtype=dtype)
+            _test_from_inner(sym_mat, self.STRUCTURED_MATRIX_CLS, self.project, X)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
@@ -456,12 +462,13 @@ class _TestStructuredMatrix(ABC):
             dev: The device on which to run the test.
             dtype: The data type of the matrices.
         """
-        manual_seed(0)
+        for dim in self.DIMS:
+            manual_seed(0)
 
-        sym_mat = symmetrize(rand((10, 10), device=dev, dtype=dtype))
-        X = rand((10, 20), device=dev, dtype=dtype)
-        XXT = supported_matmul(X, X.T)
-        _test_from_inner2(sym_mat, self.STRUCTURED_MATRIX_CLS, self.project, XXT)
+            sym_mat = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+            X = rand((dim, 2 * dim), device=dev, dtype=dtype)
+            XXT = supported_matmul(X, X.T)
+            _test_from_inner2(sym_mat, self.STRUCTURED_MATRIX_CLS, self.project, XXT)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
@@ -472,7 +479,8 @@ class _TestStructuredMatrix(ABC):
             dev: The device on which to run the test.
             dtype: The data type of the matrices.
         """
-        _test_eye(self.STRUCTURED_MATRIX_CLS, 10, dtype=dtype, device=dev)
+        for dim in self.DIMS:
+            _test_eye(self.STRUCTURED_MATRIX_CLS, dim, dtype=dtype, device=dev)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
@@ -483,7 +491,8 @@ class _TestStructuredMatrix(ABC):
             dev: The device on which to run the test.
             dtype: The data type of the matrices.
         """
-        _test_zeros(self.STRUCTURED_MATRIX_CLS, 10, dtype=dtype, device=dev)
+        for dim in self.DIMS:
+            _test_zeros(self.STRUCTURED_MATRIX_CLS, dim, dtype=dtype, device=dev)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
@@ -494,10 +503,11 @@ class _TestStructuredMatrix(ABC):
             dev: The device on which to run the test.
             dtype: The data type of the matrices.
         """
-        manual_seed(0)
+        for dim in self.DIMS:
+            manual_seed(0)
 
-        mat = rand((10, 10), device=dev, dtype=dtype)
-        _test_trace(mat, self.STRUCTURED_MATRIX_CLS)
+            mat = rand((dim, dim), device=dev, dtype=dtype)
+            _test_trace(mat, self.STRUCTURED_MATRIX_CLS)
 
     @mark.expensive
     def test_visual(self):

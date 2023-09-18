@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Tuple, Union
 
-from torch import Tensor, arange, zeros
+import torch
+from torch import Tensor, arange, cat, ones, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
+from sparse_ngd.structures.utils import (
+    supported_einsum,
+    supported_eye,
+    supported_matmul,
+    supported_trace,
+)
 
 
 class HierarchicalMatrixTemplate(StructuredMatrix):
@@ -42,7 +49,6 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
 
     MAX_K1: int
     MAX_K2: int
-    WARN_NAIVE: bool = False  # TODO Implement optimized interface functions
 
     def __init__(self, A: Tensor, B: Tensor, C: Tensor, D: Tensor, E: Tensor):
         """Store the structural components internally.
@@ -124,13 +130,7 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
                 f"Expected square matrix. Got tensor shape {sym_mat.shape}."
             )
         dim = sym_mat.shape[0]
-
-        if dim <= cls.MAX_K1:
-            K1, diag_dim = dim, 0
-        elif dim <= cls.MAX_K1 + cls.MAX_K2:
-            K1, diag_dim = cls.MAX_K1, 0
-        else:
-            K1, diag_dim = cls.MAX_K1, dim - cls.MAX_K1 - cls.MAX_K2
+        K1, diag_dim, _ = cls._compute_block_dims(dim)
 
         A = sym_mat[:K1, :K1]
         B = sym_mat[:K1, K1:]
@@ -156,6 +156,246 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
         mat[self.K1 + self.diag_dim :, self.K1 + self.diag_dim :] = self.E
 
         return mat
+
+    def __matmul__(
+        self, other: Union[HierarchicalMatrixTemplate, Tensor]
+    ) -> Union[HierarchicalMatrixTemplate, Tensor]:
+        """Multiply a hierarchical matrix onto another one or a Tensor (@ operator).
+
+        Args:
+            other: A matrix which will be multiplied onto. Can be represented by a
+                PyTorch tensor or a structured matrix.
+
+        Returns:
+            Result of the multiplication. If a PyTorch tensor was passed as argument,
+            the result will be a PyTorch tensor. If a hierarchial matrix was passed,
+            the result will be returned as a ``HierarchicalMatrixTemplate``.
+        """
+        # parts of B that share columns with C, E
+        B_C, B_E = self.B.split([self.diag_dim, self.K2], dim=1)
+
+        if isinstance(other, Tensor):
+            other_top, other_middle, other_bottom = other.split(
+                [self.K1, self.diag_dim, self.K2]
+            )
+
+            top = (
+                supported_matmul(self.A, other_top)
+                + supported_matmul(B_C, other_middle)
+                + supported_matmul(B_E, other_bottom)
+            )
+            middle = supported_einsum("i,ij->ij", self.C, other_middle)
+            bottom = supported_matmul(self.D, other_middle) + supported_matmul(
+                self.E, other_bottom
+            )
+
+            return cat([top, middle, bottom], dim=0)
+
+        else:
+            A_new = supported_matmul(self.A, other.A)
+            C_new = self.C * other.C
+            E_new = supported_matmul(self.E, other.E)
+            D_new = supported_einsum("ij,j->ij", self.D, other.C) + supported_matmul(
+                self.E, other.D
+            )
+
+            B_C_other, B_E_other = other.B.split([other.diag_dim, other.K2], dim=1)
+            B_new = cat(
+                [
+                    supported_matmul(self.A, B_C_other)
+                    + supported_einsum("ij,j->ij", B_C, other.C)
+                    + supported_matmul(B_E, other.D),
+                    supported_matmul(self.A, B_E_other)
+                    + supported_matmul(B_E, other.E),
+                ],
+                dim=1,
+            )
+
+            return self.__class__(A_new, B_new, C_new, D_new, E_new)
+
+    def __add__(self, other: HierarchicalMatrixTemplate) -> HierarchicalMatrixTemplate:
+        """Add with another hierarchical matrix.
+
+        Args:
+            other: Another hierarchical matrix which will be added.
+
+        Returns:
+            A hierarchical matrix resulting from the addition.
+        """
+        return self.__class__(
+            self.A + other.A,
+            self.B + other.B,
+            self.C + other.C,
+            self.D + other.D,
+            self.E + other.E,
+        )
+
+    def __mul__(self, other: float) -> HierarchicalMatrixTemplate:
+        """Multiply with a scalar.
+
+        Args:
+            other: A scalar that will be multiplied onto the hierarchical matrix.
+
+        Returns:
+            A hierarchical matrix resulting from the multiplication.
+        """
+        return self.__class__(
+            self.A * other,
+            self.B * other,
+            self.C * other,
+            self.D * other,
+            self.E * other,
+        )
+
+    def rmatmat(self, mat: Tensor) -> Tensor:
+        """Multiply ``mat`` with the transpose of the structured matrix.
+
+        Args:
+            mat: A matrix which will be multiplied by the transpose of the represented
+                hierarchical matrix.
+
+        Returns:
+            The result of the multiplication with the represented matrix's transpose.
+        """
+        mat_top, mat_middle, mat_bottom = mat.split([self.K1, self.diag_dim, self.K2])
+        # parts of B that share columns with C, E
+        B_C, B_E = self.B.split([self.diag_dim, self.K2], dim=1)
+
+        top = supported_matmul(self.A.T, mat_top)
+        middle = (
+            supported_matmul(B_C.T, mat_top)
+            + supported_einsum("i,ij->ij", self.C, mat_middle)
+            + supported_matmul(self.D.T, mat_bottom)
+        )
+        bottom = supported_matmul(B_E.T, mat_top) + supported_matmul(
+            self.E.T, mat_bottom
+        )
+
+        return cat([top, middle, bottom])
+
+    ###############################################################################
+    #                        Special operations for IF-KFAC                       #
+    ###############################################################################
+
+    def from_inner(self, X: Union[Tensor, None] = None) -> HierarchicalMatrixTemplate:
+        """Represent the hierarchical matrix of ``self.T @ X @ X^T @ self``.
+
+        Args:
+            X: Optional arbitrary 2d tensor. If ``None``, ``X = I`` will be used.
+
+        Returns:
+            A ``HierarchicalMatrix`` representing hierarchical matrix of
+            ``self.T @ X @ X^T @ self``.
+        """
+        if X is None:
+            A_new = supported_matmul(self.A.T, self.A)
+            B_new = supported_matmul(self.A.T, self.B)
+
+            # parts of B that share columns with C, E
+            B_C, B_E = self.B.split([self.diag_dim, self.K2], dim=1)
+
+            C_new = self.C**2 + (B_C**2).sum(0) + (self.D**2).sum(0)
+            D_new = supported_matmul(B_E.T, B_C) + supported_matmul(self.E.T, self.D)
+            E_new = supported_matmul(self.E.T, self.E) + supported_matmul(B_E.T, B_E)
+        else:
+            S_A, S_C, S_E = self.rmatmat(X).split([self.K1, self.diag_dim, self.K2])
+            A_new = supported_matmul(S_A, S_A.T)
+            B_new = cat(
+                [supported_matmul(S_A, S_C.T), supported_matmul(S_A, S_E.T)], dim=1
+            )
+            C_new = (S_C**2).sum(1)
+            D_new = supported_matmul(S_E, S_C.T)
+            E_new = supported_matmul(S_E, S_E.T)
+
+        return self.__class__(A_new, B_new, C_new, D_new, E_new)
+
+    def trace(self) -> Tensor:
+        """Compute the trace of the represented matrix.
+
+        Returns:
+            The trace of the represented matrix.
+        """
+        return supported_trace(self.A) + self.C.sum() + supported_trace(self.E)
+
+    ###############################################################################
+    #                      Special initialization operations                      #
+    ###############################################################################
+
+    @classmethod
+    def zeros(
+        cls,
+        dim: int,
+        dtype: Union[torch.dtype, None] = None,
+        device: Union[torch.device, None] = None,
+    ) -> HierarchicalMatrixTemplate:
+        """Create a structured matrix representing the zero matrix.
+
+        Args:
+            dim: Dimension of the (square) matrix.
+            dtype: Optional data type of the matrix. If not specified, uses the default
+                tensor type.
+            device: Optional device of the matrix. If not specified, uses the default
+                tensor type.
+
+        Returns:
+            A structured matrix representing the zero matrix.
+        """
+        K1, diag_dim, K2 = cls._compute_block_dims(dim)
+
+        A = zeros((K1, K1), dtype=dtype, device=device)
+        B = zeros((K1, diag_dim + K2), dtype=dtype, device=device)
+        C = zeros(diag_dim, dtype=dtype, device=device)
+        D = zeros((K2, diag_dim), dtype=dtype, device=device)
+        E = zeros((K2, K2), dtype=dtype, device=device)
+
+        return cls(A, B, C, D, E)
+
+    @classmethod
+    def eye(
+        cls,
+        dim: int,
+        dtype: Union[torch.dtype, None] = None,
+        device: Union[torch.device, None] = None,
+    ) -> HierarchicalMatrixTemplate:
+        """Create a hierarchical matrix representing the identity matrix.
+
+        Args:
+            dim: Dimension of the (square) matrix.
+            dtype: Optional data type of the matrix. If not specified, uses the default
+                tensor type.
+            device: Optional device of the matrix. If not specified, uses the default
+                tensor type.
+
+        Returns:
+            A hierarchical matrix representing the identity matrix.
+        """
+        K1, diag_dim, K2 = cls._compute_block_dims(dim)
+
+        A = supported_eye(K1, dtype=dtype, device=device)
+        B = zeros((K1, diag_dim + K2), dtype=dtype, device=device)
+        C = ones(diag_dim, dtype=dtype, device=device)
+        D = zeros((K2, diag_dim), dtype=dtype, device=device)
+        E = supported_eye(K2, dtype=dtype, device=device)
+
+        return cls(A, B, C, D, E)
+
+    @classmethod
+    def _compute_block_dims(cls, dim: int) -> Tuple[int, int, int]:
+        """Compute the dimensions of ``A, C, E``.
+
+        Args:
+            dim: Total dimension of the (square) matrix.
+
+        Returns:
+            A tuple of the form ``(K1, diag_dim, K2)``.
+        """
+        if dim <= cls.MAX_K1:
+            K1, diag_dim, K2 = dim, 0, 0
+        elif dim <= cls.MAX_K1 + cls.MAX_K2:
+            K1, diag_dim, K2 = cls.MAX_K1, 0, dim - cls.MAX_K1
+        else:
+            K1, diag_dim, K2 = cls.MAX_K1, dim - cls.MAX_K1 - cls.MAX_K2, cls.MAX_K2
+        return K1, diag_dim, K2
 
 
 class Hierarchical15_15Matrix(HierarchicalMatrixTemplate):
