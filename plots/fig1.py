@@ -11,14 +11,22 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--force_pull', default=False, action='store_true')
 args = parser.parse_args()
 
-METHODS = ['kfac32', 'kfac16', 'ikfac32', 'ikfac16', 'sngd32', 'sngd16']
+METHODS = ['kfac32', 'kfac16', 'ikfac32', 'ikfac16', 'dsngd32', 'dsngd16', 'ssngd32', 'ssngd16']
 METHOD2SWEEP = {
     'kfac32': 'ssngd/cnn-exp/gsj2o87i',
     'kfac16': 'ssngd/cnn-exp/ovoabvma',
     'ikfac32': 'ssngd/cnn-exp/pjhbpnzo',
     'ikfac16': 'ssngd/cnn-exp/4dnmyhsv',
-    'sngd32': 'ssngd/cnn-exp/v0848gp0',
-    'sngd16': 'ssngd/cnn-exp/vvg1in9z',
+    'dsngd32': 'ssngd/cnn-exp/v0848gp0',
+    'dsngd16': 'ssngd/cnn-exp/vvg1in9z',
+    'ssngd32': 'ssngd/cnn-exp/p3tgw44f',
+    'ssngd16': 'ssngd/cnn-exp/k3nd2osx',
+}
+METHODS2LEGEND = {
+    'kfac': 'KFAC',
+    'ikfac': r'IKFAC*',
+    'dsngd': 'LocalCov',
+    'ssngd': r'SNGD*',
 }
 FP2LINESTYLE = {
     '32': 'solid',
@@ -28,7 +36,8 @@ COLORS = sns.color_palette('colorblind')
 METHOD2COLOR = {
     'kfac': COLORS[0],
     'ikfac': COLORS[1],
-    'sngd': COLORS[2],
+    'dsngd': COLORS[2],
+    'ssngd': COLORS[3],
 }
 MARKERS = ['o', '*']
 FP2MARKER = {
@@ -99,7 +108,7 @@ else:
     results = np.load(f'{dir_name}/{fname}', allow_pickle=True).item()
 
 # PLOT
-fig, axs = plt.subplots(1, 2, constrained_layout=True, sharex=True)
+fig, axs = plt.subplots(1, 3, constrained_layout=True, sharex=True)
 fig.set_size_inches(1*WIDTH, 0.15*HEIGHT)
 
 colors = []
@@ -109,46 +118,60 @@ for method in METHODS:
     x = results[method]['test_acc'].index
     y = results[method]['test_acc']
 
-    label = method[:-2].upper() if '32' in method else None
+    # Column 0 for fp32, column 1 for fp16
+    ax_idx = 0 if '32' in method else 1
+
+    label = method[:-2] if '32' in method else None
+    if label is not None:
+        label = METHODS2LEGEND[label]
+
     color = METHOD2COLOR[method[:-2]]
     if label is not None:
         colors.append(color)
 
-    axs[0].plot(
+    axs[ax_idx].plot(
         x+1, y, alpha=1,
-        label=label, c=color, ls=FP2LINESTYLE[method[-2:]]
+        label=label, c=color, ls=FP2LINESTYLE[method[-2:]],
     )
 
     # Right plot
     runtime = results[method]['time_elapsed']
     peak_mem = results[method]['peak_gpu_mem']
-    axs[1].scatter(
+    axs[2].scatter(
         runtime, peak_mem,
         color=METHOD2COLOR[method[:-2]],
         marker=FP2MARKER[method[-2:]]
     )
 
-axs[0].set_xlim(1, 121)
-axs[0].set_xlabel('Epoch')
-axs[0].set_yticks([0, 25, 50, 75])
-axs[0].set_ylabel('Test acc. (\%)')
-# axs[0].legend()
+for ax in axs[:2]:
+    ax.set_xlim(1, 121)
+    ax.set_xlabel('Epoch')
+    ax.set_yticks([0, 25, 50, 75])
+    ax.set_ylabel('Test acc. (\%)')
 
-dummy_lines = []
-for _, v in FP2LINESTYLE:
-    dummy_lines.append(axs[0].plot([],[], c='black', ls=v)[0])
-lines = axs[0].get_lines()
-legend1 = plt.legend(lines, ['KFAC', 'IKFAC', 'SNGD'])
-legend2 = plt.legend([dummy_lines[i] for i in [0,1]], ["b = 0.5", "b = 0.8"])
-axs[0].add_artist(legend1)
+axs[0].legend()
+axs[0].set_title(r'\texttt{float32}')
+axs[1].set_title(r'\texttt{bfloat16}')
+axs[2].set_title('Costs')
 
-axs[1].set_xlabel('Training time (min)')
-axs[1].set_ylabel('Peak mem (GB)')
+# dummy_lines = []
+# for _, v in FP2LINESTYLE.items():
+#     dummy_lines.append(axs[0].plot([], [], c='black', ls=v)[0])
+# lines = axs[0].get_lines()
+# legend1 = plt.legend(lines, ['KFAC', 'IKFAC', 'SNGD-D', 'SNGD-S'])
+# legend2 = plt.legend([dummy_lines[i] for i in [0,1]], ["b = 0.5", "b = 0.8"])
+# axs[0].add_artist(legend1)
+
+axs[2].set_xlabel('Training time (min)')
+axs[2].set_ylabel('Peak mem (GB)')
 
 f = lambda m,c: plt.plot([],[],marker=m, color=c, ls="none")[0]
-handles = [f('s', colors[i]) for i in range(3)]
+# handles = [f('s', colors[i]) for i in range(len(METHOD2COLOR.keys()))]
+handles = []
 handles += [f(list(FP2MARKER.values())[i], 'k') for i in range(2)]
-labels = ['KFAC', 'IKFAC', 'SNGD', 'FP-32', 'FP-16']
-axs[1].legend(handles, labels)
+# labels = list(METHODS2LEGEND.values())
+labels = []
+labels += ['FP-32', 'FP-16']
+axs[2].legend(handles, labels, loc='lower right')
 
 plt.savefig('figs/fig1.pdf')
