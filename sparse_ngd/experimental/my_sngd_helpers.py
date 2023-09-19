@@ -65,7 +65,7 @@ class My_SNGD(Optimizer):
         linear_group = {"params": linear_params, **sngd_hyperparams}
 
         param_groups = [conv_group, linear_group]
-        self._sngd_opt = SNGD(model, params=param_groups)
+        self._sngd_opt = SNGD(model, params=param_groups, init_grad_scale=65536.0)
 
         if using_adamw:
             self._other_opt = optim.AdamW(
