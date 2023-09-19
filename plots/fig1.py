@@ -22,11 +22,19 @@ METHOD2SWEEP = {
     'ssngd32': 'ssngd/cnn-exp/p3tgw44f',
     'ssngd16': 'ssngd/cnn-exp/k3nd2osx',
 }
+BASELINE2RUN = {
+    'sgd32': 'ssngd/cnn-exp/runs/onwmkz5n',
+    'sgd16': 'ssngd/cnn-exp/runs/4136ay1r',
+    'adamw32': 'ssngd/cnn-exp/runs/ku1s4pr1',
+    'adamw16': 'ssngd/cnn-exp/runs/ur5bh9l4'
+}
 METHODS2LEGEND = {
     'kfac': 'KFAC',
     'ikfac': r'IKFAC*',
     'dsngd': 'LocalCov',
     'ssngd': r'SNGD*',
+    'sgd': 'SGD',
+    'adamw': 'ADAMW'
 }
 FP2LINESTYLE = {
     '32': 'solid',
@@ -38,6 +46,8 @@ METHOD2COLOR = {
     'ikfac': COLORS[1],
     'dsngd': COLORS[2],
     'ssngd': COLORS[3],
+    'sgd': COLORS[4],
+    'adamw': COLORS[5],
 }
 MARKERS = ['o', '*']
 FP2MARKER = {
@@ -103,12 +113,25 @@ if not os.path.exists(f'{dir_name}/{fname}') or args.force_pull:
             'peak_gpu_mem': gpu_mem.max() / 1e9  # GB
         }
 
+    # SGD & ADAMW for comparing costs
+    for method, run_id in BASELINE2RUN.items():
+        run = api.run(run_id)
+        time_elapsed = best_run.summary['_runtime']
+        system_metrics = best_run.history(stream='events')
+        gpu_mem = system_metrics['system.gpu.0.memoryAllocatedBytes']
+
+        results[method] = {
+            'test_acc': None,
+            'time_elapsed': time_elapsed / 60,  # Minutes
+            'peak_gpu_mem': gpu_mem.max() / 1e9  # GB
+        }
+
     np.save(f'{dir_name}/{fname}', results)
 else:
     results = np.load(f'{dir_name}/{fname}', allow_pickle=True).item()
 
 # PLOT
-fig, axs = plt.subplots(1, 3, constrained_layout=True, sharex=True)
+fig, axs = plt.subplots(1, 3, constrained_layout=True)
 fig.set_size_inches(1*WIDTH, 0.15*HEIGHT)
 
 colors = []
@@ -135,13 +158,22 @@ for method in METHODS:
     )
 
     # Right plot
-    runtime = results[method]['time_elapsed']
-    peak_mem = results[method]['peak_gpu_mem']
-    axs[2].scatter(
-        runtime, peak_mem,
-        color=METHOD2COLOR[method[:-2]],
-        marker=FP2MARKER[method[-2:]]
-    )
+    for method in METHODS:
+        runtime = results[method]['time_elapsed']
+        peak_mem = results[method]['peak_gpu_mem']
+        axs[2].scatter(
+            runtime, peak_mem,
+            color=METHOD2COLOR[method[:-2]],
+            marker=FP2MARKER[method[-2:]]
+        )
+
+# Right plot; SGD & ADAMW baselines
+# for method in ['adamw16', 'adamw32']:
+method = 'adamw16'
+runtime = results[method]['time_elapsed']
+peak_mem = results[method]['peak_gpu_mem']
+axs[2].axvline(runtime, c='k', ls='dashed', alpha=0.5, zorder=-1)
+axs[2].axhline(peak_mem, c='k', ls='dashed', alpha=0.5, zorder=-1)
 
 for ax in axs[:2]:
     ax.set_xlim(1, 121)
@@ -154,19 +186,13 @@ axs[0].set_title(r'\texttt{float32}')
 axs[1].set_title(r'\texttt{bfloat16}')
 axs[2].set_title('Costs')
 
-# dummy_lines = []
-# for _, v in FP2LINESTYLE.items():
-#     dummy_lines.append(axs[0].plot([], [], c='black', ls=v)[0])
-# lines = axs[0].get_lines()
-# legend1 = plt.legend(lines, ['KFAC', 'IKFAC', 'SNGD-D', 'SNGD-S'])
-# legend2 = plt.legend([dummy_lines[i] for i in [0,1]], ["b = 0.5", "b = 0.8"])
-# axs[0].add_artist(legend1)
-
 axs[2].set_xlabel('Training time (min)')
 axs[2].set_ylabel('Peak mem (GB)')
+axs[2].set_xlim(25, 120)
+axs[2].set_ylim(2, 6)
 
 f = lambda m,c: plt.plot([],[],marker=m, color=c, ls="none")[0]
-# handles = [f('s', colors[i]) for i in range(len(METHOD2COLOR.keys()))]
+# handles = [f('s', COLORS[i]) for i in range(len(METHOD2COLOR.keys()))]
 handles = []
 handles += [f(list(FP2MARKER.values())[i], 'k') for i in range(2)]
 # labels = list(METHODS2LEGEND.values())
