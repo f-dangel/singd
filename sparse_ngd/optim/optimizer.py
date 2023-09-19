@@ -15,8 +15,12 @@ from torch.utils.hooks import RemovableHandle
 from sparse_ngd.optim.accumulator import BatchAccumulator
 from sparse_ngd.optim.utils import process_grad_output, process_input
 from sparse_ngd.structures.base import StructuredMatrix
+from sparse_ngd.structures.blockdiagonal import Block30DiagonalMatrix
 from sparse_ngd.structures.dense import DenseMatrix
 from sparse_ngd.structures.diagonal import DiagonalMatrix
+from sparse_ngd.structures.hierarchical import Hierarchical15_15Matrix
+from sparse_ngd.structures.triltoeplitz import TrilToeplitzMatrix
+from sparse_ngd.structures.triutoeplitz import TriuToeplitzMatrix
 
 
 class SNGD(Optimizer):
@@ -52,6 +56,10 @@ class SNGD(Optimizer):
     SUPPORTED_STRUCTURES: Dict[str, Type[StructuredMatrix]] = {
         "dense": DenseMatrix,
         "diagonal": DiagonalMatrix,
+        "block30diagonal": Block30DiagonalMatrix,
+        "hierarchical15_15": Hierarchical15_15Matrix,
+        "triltoeplitz": TrilToeplitzMatrix,
+        "triutoeplitz": TriuToeplitzMatrix,
     }
     SUPPORTED_MODULES: Tuple[Type[Module], ...] = (Linear, Conv2d)
     _step_supports_amp_scaling = True  # do not modify this name (PyTorch convention)!
@@ -68,7 +76,7 @@ class SNGD(Optimizer):
         T: int = 10,  # T in the paper
         batch_averaged: bool = True,
         lr_cov: Union[float, Callable[[int], float]] = 1e-2,  # β₁ in the paper
-        structures: Tuple[str, str] = ("diagonal", "dense"),
+        structures: Tuple[str, str] = ("dense", "dense"),
         warn_unsupported: bool = True,
         kfac_like: bool = False,
         preconditioner_dtype: Tuple[Union[dtype, None], Union[dtype, None]] = (
@@ -106,8 +114,10 @@ class SNGD(Optimizer):
                 Default is ``1e-2``. Also allows for a callable which takes the current
                 step and returns the current value for ``lr_cov``.
             structures: A 2-tuple of strings specifying the structure of the
-                factorizations of ``K`` and ``C``. Possible values are
-                (``'dense'``, ``'diagonal'``). Default is (``'dense'``, ``'dense'``).
+                factorizations of ``K`` and ``C``. Possible values for each entry are
+                ``'dense'``, ``'diagonal'``, ``'block30diagonal'``,
+                ``'hierarchical15_15'``, ``'triltoeplitz'``, and ``'triutoeplitz'``.
+                Default is (``'dense'``, ``'dense'``).
             warn_unsupported: Only relevant if ``params`` is unspecified. Whether to
                 warn if ``model`` contains parameters of layers that are not supported.
                 These parameters will not be trained by the optimizer.

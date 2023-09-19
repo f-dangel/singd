@@ -10,6 +10,7 @@ from torch import Tensor, arange, cat, ones, zeros
 from sparse_ngd.structures.base import StructuredMatrix
 from sparse_ngd.structures.utils import (
     diag_add_,
+    lowest_precision,
     supported_einsum,
     supported_eye,
     supported_matmul,
@@ -263,9 +264,14 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
         B_C, B_E = self.B.split([self.diag_dim, self.K2], dim=1)
 
         top = supported_matmul(self.A.T, mat_top)
+
+        compute_dtype = lowest_precision(self.C.dtype, mat_middle.dtype)
+        out_dtype = self.C.dtype
         middle = (
             supported_matmul(B_C.T, mat_top)
-            + supported_einsum("i,ij->ij", self.C, mat_middle)
+            + supported_einsum(
+                "i,ij->ij", self.C.to(compute_dtype), mat_middle.to(compute_dtype)
+            ).to(out_dtype)
             + supported_matmul(self.D.T, mat_bottom)
         )
         bottom = supported_matmul(B_E.T, mat_top) + supported_matmul(

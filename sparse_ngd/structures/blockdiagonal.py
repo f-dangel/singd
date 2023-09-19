@@ -10,6 +10,7 @@ from torch import Tensor, arange, cat, zeros
 
 from sparse_ngd.structures.base import StructuredMatrix
 from sparse_ngd.structures.utils import (
+    lowest_precision,
     supported_einsum,
     supported_eye,
     supported_matmul,
@@ -163,16 +164,26 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
                 [num_blocks * self.BLOCK_DIM, last_dim]
             )
 
+            out_dtype = self._blocks.dtype
+            compute_dtype = lowest_precision(self._blocks.dtype, other_blocks.dtype)
             dims = {"block": num_blocks, "row": self.BLOCK_DIM}
             other_blocks = rearrange(
                 other_blocks, "(block row) col -> block row col", **dims
             )
-            result_blocks = supported_einsum("nij,njk->nik", self._blocks, other_blocks)
+            result_blocks = supported_einsum(
+                "nij,njk->nik",
+                self._blocks.to(compute_dtype),
+                other_blocks.to(compute_dtype),
+            ).to(out_dtype)
             result_blocks = rearrange(
                 result_blocks, "block row col -> (block row) col", **dims
             )
 
-            result_last = supported_matmul(self._last, other_last)
+            out_dtype = self._last.dtype
+            compute_dtype = lowest_precision(self._last.dtype, other_last.dtype)
+            result_last = supported_matmul(
+                self._last.to(compute_dtype), other_last.to(compute_dtype)
+            ).to(out_dtype)
 
             return cat([result_blocks, result_last])
 

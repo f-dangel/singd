@@ -19,6 +19,7 @@ exclude = '''
     | sparse_ngd_exp
     | sparse_ngd/experimental
     | wang2019kfac
+    | plots
   )/
 )
 '''

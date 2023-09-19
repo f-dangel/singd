@@ -261,3 +261,23 @@ def diag_add_(mat: Tensor, value: float) -> Tensor:
     mat[idxs, idxs] += value
 
     return mat
+
+
+def lowest_precision(*dtypes: torch.dtype) -> torch.dtype:
+    """Return the data type of lowest precision.
+
+    Args:
+        *dtypes: The data types to compare.
+
+    Returns:
+        The data type of lowest precision (``float16 < bfloat16 < float32``).
+
+    Raises:
+        NotImplementedError: If any of the specified data types is not supported.
+    """
+    supported = [float16, bfloat16, float32]
+    if any(dtype not in supported for dtype in dtypes):
+        unsupported = [dtype for dtype in dtypes if dtype not in supported]
+        raise NotImplementedError(f"Unsupported data type(s): {unsupported}.")
+    min_score = min(supported.index(dtype) for dtype in dtypes)
+    return supported[min_score]

@@ -1,7 +1,10 @@
 """Tests ``sparse_ngd.optim.optimizer`` functionality."""
 
 
-from test.optim.utils import check_preconditioner_dtypes
+from test.optim.utils import (
+    check_preconditioner_dtypes,
+    check_preconditioner_structures,
+)
 from test.utils import DEVICE_IDS, DEVICES
 from typing import Tuple, Union
 
@@ -120,7 +123,9 @@ PRECONDITIONER_DTYPE_IDS = [
     f"{'-'.join([str(d) for d in dtypes])}".replace("torch.", "")
     for dtypes in PRECONDITIONER_DTYPES
 ]
-STRUCTURES = [("dense", "dense"), ("diagonal", "diagonal")]
+STRUCTURES = [(s, s) for s in SNGD.SUPPORTED_STRUCTURES.keys()]
+# mixed structure
+STRUCTURES.append(("dense", "diagonal"))
 STRUCTURE_IDS = [f"{'-'.join(structures)}" for structures in STRUCTURES]
 
 
@@ -194,6 +199,8 @@ def test_SNGD_preconditioner_dtype(
 
         # check that dtype of pre-conditioner remains the same
         check_preconditioner_dtypes(optim)
+        # check that correct structure is used
+        check_preconditioner_structures(optim, structures)
 
         if batch_idx >= MAX_STEPS:
             break

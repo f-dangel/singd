@@ -9,7 +9,12 @@ from torch import Tensor, arange, cat, triu_indices, zeros
 from torch.nn.functional import pad
 
 from sparse_ngd.structures.base import StructuredMatrix
-from sparse_ngd.structures.utils import all_traces, supported_conv1d, toeplitz_matmul
+from sparse_ngd.structures.utils import (
+    all_traces,
+    lowest_precision,
+    supported_conv1d,
+    toeplitz_matmul,
+)
 
 
 class TriuToeplitzMatrix(StructuredMatrix):
@@ -148,7 +153,12 @@ class TriuToeplitzMatrix(StructuredMatrix):
         row = self._mat_row
         dim = row.shape[0]
         coeffs = cat([row.flip(0), zeros(dim - 1, device=row.device, dtype=row.dtype)])
-        return toeplitz_matmul(coeffs, mat)
+
+        out_dtype = row.dtype
+        compute_dtype = lowest_precision(row.dtype, mat.dtype)
+        return toeplitz_matmul(coeffs.to(compute_dtype), mat.to(compute_dtype)).to(
+            out_dtype
+        )
 
     ###############################################################################
     #                        Special operations for IF-KFAC                       #

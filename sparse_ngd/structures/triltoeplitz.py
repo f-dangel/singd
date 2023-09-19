@@ -9,7 +9,12 @@ from torch import Tensor, arange, cat, zeros
 from torch.nn.functional import pad
 
 from sparse_ngd.structures.base import StructuredMatrix
-from sparse_ngd.structures.utils import all_traces, supported_conv1d, toeplitz_matmul
+from sparse_ngd.structures.utils import (
+    all_traces,
+    lowest_precision,
+    supported_conv1d,
+    toeplitz_matmul,
+)
 
 
 class TrilToeplitzMatrix(StructuredMatrix):
@@ -152,7 +157,12 @@ class TrilToeplitzMatrix(StructuredMatrix):
         col = self._mat_column
         dim = col.shape[0]
         coeffs = cat([zeros(dim - 1, device=col.device, dtype=col.dtype), col])
-        return toeplitz_matmul(coeffs, mat)
+
+        out_dtype = col.dtype
+        compute_dtype = lowest_precision(col.dtype, mat.dtype)
+        return toeplitz_matmul(coeffs.to(compute_dtype), mat.to(compute_dtype)).to(
+            out_dtype
+        )
 
     ###############################################################################
     #                        Special operations for IF-KFAC                       #
