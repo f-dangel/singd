@@ -2,7 +2,7 @@
 
 from math import sqrt
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
-from warnings import warn
+from warnings import simplefilter, warn
 
 import torch.distributed as dist
 from torch import Tensor, cat, dtype, is_grad_enabled, zeros_like
@@ -604,6 +604,9 @@ class SNGD(Optimizer):
     def step(self, closure: Union[None, Callable[[], Tensor]] = None):
         """Compute natural gradients and update parameters.
 
+        Warn the user when the step is skipped because ``inf``s were found in
+        the gradients.
+
         Args:
             closure: Optional closure that evaluates the loss. Not supported.
 
@@ -631,8 +634,23 @@ class SNGD(Optimizer):
 
         found_inf = getattr(self, "found_inf", False)
         if found_inf:
-            raise NotImplementedError("Encountered inf in .grad. No policy defined.")
+            # Skip the update step if ``inf``s were encountered in the gradients.
+            # The ``GradScaler`` will adjust the scale in this case.
+            simplefilter("always", UserWarning)  # Warn every time this happens.
+            warn("Encountered inf in gradients. Skipping update.")
+             # Also, empty the accumulators because this step will be skipped.
+            for module in self.modules:
+                del self.H_Ks[module], self.H_Cs[module]
+        else:
+            self._step()
 
+        self.steps += 1
+
+        # remove ``grad_scale``s that are not required anymore
+        self._remove_used_grad_scales()
+
+    def _step(self):
+        """Compute natural gradients and update parameters."""
         for module in self.modules:
             self._update_preconditioner(module)
             natural_gradients = self._compute_natural_gradient(module)
@@ -663,11 +681,6 @@ class SNGD(Optimizer):
                     p_step = p_momentum
 
                 p.data.add_(p_step, alpha=-lr)
-
-        self.steps += 1
-
-        # remove ``grad_scale``s that are not required anymore
-        self._remove_used_grad_scales()
 
     def _get_grad_scale(self, t: int) -> float:
         """Get the gradient scale used in the backpropagation of step ``t``.
