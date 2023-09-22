@@ -25,6 +25,7 @@ class My_KFAC(Optimizer):
         adamw_eps = 1e-8,
         adamw_beta1 = 0.9,
         adamw_beta2 = 0.999,
+        using_constant_adamw_lr = False,
     ):
         if use_eign:
             print('using eign')
@@ -48,6 +49,7 @@ class My_KFAC(Optimizer):
                          adamw_eps = adamw_eps,
                          adamw_beta1 = adamw_beta1,
                          adamw_beta2 = adamw_beta2,
+                         using_constant_adamw_lr = using_constant_adamw_lr,
                          )
         self.warmup_factor = warmup_factor
         self.param_groups = self._opt.param_groups
