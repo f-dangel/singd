@@ -130,11 +130,11 @@ class My_LRScheduler:
     def __init__(self, optimizer, scheduler_class, **kwargs):
         if isinstance(optimizer, My_SNGD):
             sngd_lr = scheduler_class(optimizer._sngd_opt, **kwargs)
-            other_lr = scheduler_class(optimizer._other_opt, **kwargs)
-            self._lr = [sngd_lr, other_lr]  #descrease the step-size of adamw
+            other_lr = scheduler_class(optimizer._other_opt, **kwargs) #use learning rate scheduling for adamw
+            self._lr = [sngd_lr, other_lr]
 
 #############################################################################
-            # self._lr = [sngd_lr,] #do not descrease the step-size of adamw
+            # self._lr = [sngd_lr,] #use a constant learning rate for adamw
 #############################################################################
 
         elif isinstance(optimizer, My_KFAC):
