@@ -4,6 +4,7 @@ import torch
 import torch.optim as optim
 from torch.nn import Conv2d, Linear
 from torch.optim import Optimizer
+# from .myadamw import MyAdamW as AdamW
 
 from sparse_ngd.optim.optimizer import SNGD
 from sparse_ngd.experimental.kfac_helpers import My_KFAC
@@ -68,6 +69,7 @@ class My_SNGD(Optimizer):
         self._sngd_opt = SNGD(model, params=param_groups, init_grad_scale=65536.0)
 
         if using_adamw:
+            # param_others = [{'params': other_params},]
             self._other_opt = optim.AdamW(
                 other_params,
                 eps=adamw_eps,
@@ -83,7 +85,8 @@ class My_SNGD(Optimizer):
                 momentum=momentum,
             )
 
-        self.param_groups = self._other_opt.param_groups
+        # self.param_groups = self._other_opt.param_groups
+        self.param_groups = self._sngd_opt.param_groups
         self.warmup_factor = warmup_factor
         print('max lr_cov', self.lr_cov)
         print('warmup_factor:', warmup_factor)
@@ -92,14 +95,21 @@ class My_SNGD(Optimizer):
         self._other_opt.zero_grad(set_to_none)
         self._sngd_opt.zero_grad(set_to_none)
 
-        if self._sngd_opt.steps <= 50*self.warmup_factor:
-            step_lr_cov = self.lr_cov/10000.0
-        elif self._sngd_opt.steps <= 100*self.warmup_factor:
-            step_lr_cov = self.lr_cov/100.0
-        elif self._sngd_opt.steps <= 150*self.warmup_factor:
-            step_lr_cov = self.lr_cov/10.0
-        elif self._sngd_opt.steps <= 200*self.warmup_factor:
-            step_lr_cov = self.lr_cov/10.0
+        # if self._sngd_opt.steps <= 50*self.warmup_factor:
+            # step_lr_cov = self.lr_cov/10000.0
+        # elif self._sngd_opt.steps <= 100*self.warmup_factor:
+            # step_lr_cov = self.lr_cov/100.0
+        # elif self._sngd_opt.steps <= 150*self.warmup_factor:
+            # step_lr_cov = self.lr_cov/10.0
+        # elif self._sngd_opt.steps <= 200*self.warmup_factor:
+            # step_lr_cov = self.lr_cov/10.0
+        # else:
+            # step_lr_cov = self.lr_cov
+
+        if self._sngd_opt.steps <= 100:
+            step_lr_cov = 2e-4
+        elif self._sngd_opt.steps < 500:
+            step_lr_cov = 2e-3
         else:
             step_lr_cov = self.lr_cov
 
@@ -114,8 +124,8 @@ class My_SNGD(Optimizer):
         for group in self._sngd_opt.param_groups:
             group["weight_decay"] = step_weight_decay
 
-        for group in self._other_opt.param_groups:
-            group["weight_decay"] = step_weight_decay
+        # for group in self._other_opt.param_groups:
+            # group["weight_decay"] = step_weight_decay
 
     def step(self, closure=None):
         assert closure is None
@@ -127,8 +137,14 @@ class My_LRScheduler:
     def __init__(self, optimizer, scheduler_class, **kwargs):
         if isinstance(optimizer, My_SNGD):
             sngd_lr = scheduler_class(optimizer._sngd_opt, **kwargs)
-            other_lr = scheduler_class(optimizer._other_opt, **kwargs)
-            self._lr = [sngd_lr, other_lr]
+
+#############################################################################
+            # other_lr = scheduler_class(optimizer._other_opt, **kwargs)
+            # self._lr = [sngd_lr, other_lr]  #descrease the step-size of adamw
+#############################################################################
+
+            self._lr = [sngd_lr,] #do not descrease the step-size of adamw
+
         elif isinstance(optimizer, My_KFAC):
             self._lr = [scheduler_class(optimizer._opt, **kwargs)]
         else:
