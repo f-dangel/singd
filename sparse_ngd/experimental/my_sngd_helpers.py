@@ -30,6 +30,7 @@ class My_SNGD(Optimizer):
         adamw_beta1 = 0.9,
         adamw_beta2 = 0.999,
         warmup_factor = 10,
+        using_costant_adamw_lr = False,
     ):
         conv_params = [
             p for m in model.modules() if isinstance(m, Conv2d) for p in m.parameters()
@@ -77,6 +78,7 @@ class My_SNGD(Optimizer):
                 lr=lr,
                 weight_decay=weight_decay,
             )
+            self.using_costant_adamw_lr = using_costant_adamw_lr
         else:
             self._other_opt = optim.SGD(
                 other_params,
@@ -130,12 +132,13 @@ class My_LRScheduler:
     def __init__(self, optimizer, scheduler_class, **kwargs):
         if isinstance(optimizer, My_SNGD):
             sngd_lr = scheduler_class(optimizer._sngd_opt, **kwargs)
-            other_lr = scheduler_class(optimizer._other_opt, **kwargs) #use learning rate scheduling for adamw
-            self._lr = [sngd_lr, other_lr]
 
-#############################################################################
-            # self._lr = [sngd_lr,] #use a constant learning rate for adamw
-#############################################################################
+            if optimizer.using_adamw and optimizer.using_costant_adamw_lr:
+                self._lr = [sngd_lr,] #use a constant learning rate for adamw
+            else:
+                other_lr = scheduler_class(optimizer._other_opt, **kwargs) #use learning rate scheduling for adamw
+                self._lr = [sngd_lr, other_lr]
+
 
         elif isinstance(optimizer, My_KFAC):
             self._lr = [scheduler_class(optimizer._opt, **kwargs)]
