@@ -51,8 +51,12 @@ class My_KFAC(Optimizer):
                          adamw_beta2 = adamw_beta2,
                          using_constant_adamw_lr = using_constant_adamw_lr,
                          )
+        self.using_adamw = using_adamw
+        self.using_constant_adamw_lr = using_constant_adamw_lr
         self.warmup_factor = warmup_factor
         self.param_groups = self._opt.param_groups
+        if using_adamw:
+            self.opt_others = self._opt.opt_others
         print('max lr_cov:', self.lr_cov)
         print('warmup_factor:', warmup_factor)
 
