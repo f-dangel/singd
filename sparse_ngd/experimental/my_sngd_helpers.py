@@ -70,6 +70,7 @@ class My_SNGD(Optimizer):
         self._sngd_opt = SNGD(model, params=param_groups, init_grad_scale=65536.0)
 
         if using_adamw:
+            self.using_adamw = using_adamw
             # param_others = [{'params': other_params},]
             self._other_opt = optim.AdamW(
                 other_params,
