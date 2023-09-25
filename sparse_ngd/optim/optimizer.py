@@ -638,7 +638,7 @@ class SNGD(Optimizer):
             # The ``GradScaler`` will adjust the scale in this case.
             simplefilter("always", UserWarning)  # Warn every time this happens.
             warn("Encountered inf in gradients. Skipping update.")
-             # Also, empty the accumulators because this step will be skipped.
+            # Also, empty the accumulators because this step will be skipped.
             for module in self.modules:
                 del self.H_Ks[module], self.H_Cs[module]
         else:
