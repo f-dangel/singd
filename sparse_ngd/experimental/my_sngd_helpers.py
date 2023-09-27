@@ -225,8 +225,18 @@ class My_Scaler:
             self._scaler[0](loss, optimizer, clip_grad=clip_grad, **kwargs)
 
     def state_dict(self):
-        return self._scaler[0].state_dict()
+        my_dict = {}
+        if len(self._scaler)>1:
+            my_dict['sngd_scaler'] = self._scaler[0].state_dict()
+            my_dict['other_scaler'] = self._scaler[1].state_dict()
+        else:
+            my_dict['other_scaler'] = self._scaler[0].state_dict()
+        return my_dict
 
     def load_state_dict(self, state_dict):
-        assert False
-        # self._scaler[0].load_state_dict(state_dict)
+        assert len(state_dict) == len(self._scaler)
+        if len(self._scaler)>1:
+            self._scaler[0].load_state_dict(my_dict['sngd_scaler'])
+            self._scaler[1].load_state_dict(my_dict['other_scaler'])
+        else:
+            self._scaler[0].load_state_dict(my_dict['other_scaler'])
