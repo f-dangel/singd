@@ -640,7 +640,10 @@ class SNGD(Optimizer):
             warn("Encountered inf in gradients. Skipping update.")
             # Also, empty the accumulators because this step will be skipped.
             for module in self.modules:
-                del self.H_Ks[module], self.H_Cs[module]
+                if module in self.H_Ks:
+                    del self.H_Ks[module]
+                if module in self.H_Cs:
+                    del self.H_Cs[module]
         else:
             self._step()
 
