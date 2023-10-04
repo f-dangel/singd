@@ -135,9 +135,9 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
         K1, diag_dim, _ = cls._compute_block_dims(dim)
 
         A = sym_mat[:K1, :K1]
-        B = sym_mat[:K1, K1:]
+        B = 2 * sym_mat[:K1, K1:]
         C = sym_mat.diag()[K1 : K1 + diag_dim]
-        D = sym_mat[K1 + diag_dim :, K1 : K1 + diag_dim]
+        D = 2 * sym_mat[K1 + diag_dim :, K1 : K1 + diag_dim]
         E = sym_mat[K1 + diag_dim :, K1 + diag_dim :]
 
         return cls(A, B, C, D, E)
@@ -296,22 +296,24 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
         """
         if X is None:
             A_new = supported_matmul(self.A.T, self.A)
-            B_new = supported_matmul(self.A.T, self.B)
+            B_new = 2 * supported_matmul(self.A.T, self.B)
 
             # parts of B that share columns with C, E
             B_C, B_E = self.B.split([self.diag_dim, self.K2], dim=1)
 
             C_new = self.C**2 + (B_C**2).sum(0) + (self.D**2).sum(0)
-            D_new = supported_matmul(B_E.T, B_C) + supported_matmul(self.E.T, self.D)
+            D_new = 2 * (
+                supported_matmul(B_E.T, B_C) + supported_matmul(self.E.T, self.D)
+            )
             E_new = supported_matmul(self.E.T, self.E) + supported_matmul(B_E.T, B_E)
         else:
             S_A, S_C, S_E = self.rmatmat(X).split([self.K1, self.diag_dim, self.K2])
             A_new = supported_matmul(S_A, S_A.T)
-            B_new = cat(
+            B_new = 2 * cat(
                 [supported_matmul(S_A, S_C.T), supported_matmul(S_A, S_E.T)], dim=1
             )
             C_new = (S_C**2).sum(1)
-            D_new = supported_matmul(S_E, S_C.T)
+            D_new = 2 * supported_matmul(S_E, S_C.T)
             E_new = supported_matmul(S_E, S_E.T)
 
         return self.__class__(A_new, B_new, C_new, D_new, E_new)

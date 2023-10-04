@@ -46,15 +46,16 @@ class _TestHierarchicalMatrix(_TestStructuredMatrix, ABC):
 
         # A
         hierarchical[:K1, :K1] = sym_mat[:K1, :K1]
-        # B
-        hierarchical[:K1, K1:] = sym_mat[:K1, K1:]
+        # B, NOTE that we have to sum the elements from the upper and lower block
+        hierarchical[:K1, K1:] = sym_mat[:K1, K1:] + sym_mat[K1:, :K1].T
         # C
         diag_idx = arange(K1, K1 + diag_dim)
         hierarchical[diag_idx, diag_idx] = sym_mat[diag_idx, diag_idx]
-        # D
-        hierarchical[K1 + diag_dim :, K1 : K1 + diag_dim] = sym_mat[
-            K1 + diag_dim :, K1 : K1 + diag_dim
-        ]
+        # D, NOTE that we have to sum the elements from the upper and lower block
+        hierarchical[K1 + diag_dim :, K1 : K1 + diag_dim] = (
+            sym_mat[K1 + diag_dim :, K1 : K1 + diag_dim]
+            + sym_mat[K1 : K1 + diag_dim, K1 + diag_dim :].T
+        )
         # E
         hierarchical[K1 + diag_dim :, K1 + diag_dim :] = sym_mat[
             K1 + diag_dim :, K1 + diag_dim :
