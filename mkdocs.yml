@@ -1,0 +1,41 @@
+site_name: SINGD
+site_url: https://example.com # TODO Provide link to the documentation
+repo_url: https://github.com/yorkerlin/Sparse-NGD/
+repo_name: f-dangel/python-utilities
+site_author: Wu Lin, Runa Eschenhagen, Felix Dangel, Agustinus Kristiadi, Kirill Neklyudov, Richard Turner, Alireza Makhzani
+nav:
+    - Getting Started: index.md
+    - API documentation: api.md
+    - Developer notes: develop.md
+theme:
+    name: material
+    features:
+        - content.code.copy
+copyright: Copyright &copy; 2023 Wu Lin, Runa Eschenhagen, Felix Dangel, Agustinus Kristiadi, Kirill Neklyudov, Richard Turner, Alireza Makhzani
+markdown_extensions:
+    - pymdownx.arithmatex: # LaTeX math
+          generic: true
+    - pymdownx.highlight: # code highlighting
+          anchor_linenums: true
+          line_spans: __span
+          pygments_lang_class: true
+    - pymdownx.inlinehilite # code highlighting
+    - pymdownx.snippets # code highlighting
+    - pymdownx.superfences # code highlighting
+plugins:
+    - mkdocstrings:
+        default_handler: python
+        handlers:
+            python:
+                options:
+                      show_root_heading: true
+                      show_source: true
+                      show_bases: false
+                      show_signature_annotations: true
+                      separate_signature: true
+                      docstring_section_style: list
+                      merge_init_into_class: true
+extra_javascript:
+    - javascripts/mathjax.js # LaTeX math
+    - https://polyfill.io/v3/polyfill.min.js?features=es6 # LaTeX math
+    - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js # LaTeX math

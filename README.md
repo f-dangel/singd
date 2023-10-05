@@ -1,32 +1,26 @@
-# Sparse-NGD
+# SINGD: Structured Inverse-Free Natural Gradient Descent
 
-# Developer guide
+This package contains an implementation of our memory-efficient, numerically
+stable KFAC variant.
 
-## Getting started
+## Installation
 
-We recommend programming in a fresh virtual environment. You can set up the
-`conda` environment and activate it
+TODO Coming soon
 
-```bash
-make conda-env
-conda activate sparse_ngd
+## Usage
+
+TODO Coming soon
+
+## Citation
+
+```bib
+
+@article{lin2023structured,
+  title =        {Structured Inverse-Free Natural Gradient: Memory-Efficient &
+  Numerically-Stable KFAC for Large Nerual Nets},
+  author =       {Lin, Wu and Dangel, Felix and Eschenhagen, Runa and Neklyudov,
+  Kirill and Kristiadi, Agustinus and Turner, Richard E and Makhzani, Alireza},
+  year =         2023,
+}
+
 ```
-
-If you don't use `conda`, set up your preferred environment and run
-```
-pip install -e .[lint,test]
-```
-
-# Continuous integration
-
-In order to standardize the code style and enforce high quality, certain quality
-checks are carried out with Github actions when you push. You can also run them
-locally, as they are managed via `make`:
-
-- Run tests with `make test`
-
-- Run auto-formatting and import sorting with `make black` and `make isort`
-
-- Run linting with `make flake8`
-
-- Run docstring checks with `make pydocstyle-check` and `make darglint-check`
