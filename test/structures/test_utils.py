@@ -6,12 +6,14 @@ from torch import (
     allclose,
     bfloat16,
     device,
+    einsum,
     eye,
     float16,
     manual_seed,
     rand,
     zeros,
 )
+from torch.nn.functional import conv1d
 
 from sparse_ngd.structures.utils import all_traces, diag_add_
 
@@ -41,6 +43,26 @@ def test_cpu_half_precision_trace_unsupported():
         mat = zeros((2, 2), device=cpu).to(dtype)
         with raises(RuntimeError):
             mat.trace()
+
+
+def test_cpu_float16_einsum_unsupported():
+    """Test whether ``einsum`` is unsupported in ``float16`` on CPU."""
+    cpu = device("cpu")
+    mat1 = zeros((2, 2, 2), dtype=float16, device=cpu)
+    mat2 = zeros((2, 2, 2), dtype=float16, device=cpu)
+
+    with raises(RuntimeError):
+        einsum("nij,njk->nik", mat1, mat2)
+
+
+def test_cpu_float16_conv1d_unsupported():
+    """Test whether ``conv1d`` is unsupported in ``float16`` on CPU."""
+    cpu = device("cpu")
+    inputs = zeros((2, 2, 2), dtype=float16, device=cpu)
+    kernel = zeros((2, 2, 1), dtype=float16, device=cpu)
+
+    with raises(RuntimeError):
+        conv1d(inputs, kernel)
 
 
 def test_all_traces():
