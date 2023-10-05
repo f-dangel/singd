@@ -8,18 +8,9 @@ exclude = '''
       \.eggs
     | \.git
     | \.pytest_cache
-    | docs_src
-    | docs
     | build
     | dist
-    | asdl
-    | models
-    | low_numerical
     | lin2023simplifying
-    | sparse_ngd_exp
-    | sparse_ngd/experimental
-    | wang2019kfac
-    | plots
   )/
 )
 '''
