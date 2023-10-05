@@ -3,12 +3,13 @@
 from test.utils import compare_optimizers
 from typing import Tuple
 
-from singd.optim.optimizer import SINGD
 from torch import load, manual_seed, save
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, Module, ReLU, Sequential
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
+
+from singd.optim.optimizer import SINGD
 
 
 def setup() -> Tuple[Sequential, Module, SINGD]:
