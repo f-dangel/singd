@@ -106,47 +106,47 @@ def test_param_groups():
         optim_sep_conv.step()
         optim_sep_linear.step()
 
-        assert len(optim.modules) == len(optim_sep_conv.modules) + len(
-            optim_sep_linear.modules
+        assert len(optim.module_names) == len(optim_sep_conv.module_names) + len(
+            optim_sep_linear.module_names
         )
 
         atol = 1e-7
         rtol = 1e-5
 
         # compare K, C, m_K, m_C on convolution layer
-        for m, m_sep in zip(optim.modules[:1], optim_sep_conv.modules):
-            K = optim.Ks[m].to_dense()
-            K_scale = optim_sep_conv.Ks[m_sep].to_dense()
+        for name in optim_sep_conv.module_names.values():
+            K = optim.Ks[name].to_dense()
+            K_scale = optim_sep_conv.Ks[name].to_dense()
             report_nonclose(K, K_scale, atol=atol, rtol=rtol, name="K")
 
-            m_K = optim.m_Ks[m].to_dense()
-            m_K_sep = optim_sep_conv.m_Ks[m_sep].to_dense()
+            m_K = optim.m_Ks[name].to_dense()
+            m_K_sep = optim_sep_conv.m_Ks[name].to_dense()
             report_nonclose(m_K, m_K_sep, atol=atol, rtol=rtol, name="m_K")
 
-            C = optim.Cs[m].to_dense()
-            C_sep = optim_sep_conv.Cs[m_sep].to_dense()
+            C = optim.Cs[name].to_dense()
+            C_sep = optim_sep_conv.Cs[name].to_dense()
             report_nonclose(C, C_sep, atol=atol, rtol=rtol, name="C")
 
-            m_C = optim.m_Cs[m].to_dense()
-            m_C_sep = optim_sep_conv.m_Cs[m_sep].to_dense()
+            m_C = optim.m_Cs[name].to_dense()
+            m_C_sep = optim_sep_conv.m_Cs[name].to_dense()
             report_nonclose(m_C, m_C_sep, atol=atol, rtol=rtol, name="m_C")
 
         # compare K, C, m_K, m_C on linear layer
-        for m, m_sep in zip(optim.modules[1:], optim_sep_linear.modules):
-            K = optim.Ks[m].to_dense()
-            K_scale = optim_sep_linear.Ks[m_sep].to_dense()
+        for name in optim_sep_linear.module_names.values():
+            K = optim.Ks[name].to_dense()
+            K_scale = optim_sep_linear.Ks[name].to_dense()
             report_nonclose(K, K_scale, atol=atol, rtol=rtol, name="K")
 
-            m_K = optim.m_Ks[m].to_dense()
-            m_K_sep = optim_sep_linear.m_Ks[m_sep].to_dense()
+            m_K = optim.m_Ks[name].to_dense()
+            m_K_sep = optim_sep_linear.m_Ks[name].to_dense()
             report_nonclose(m_K, m_K_sep, atol=atol, rtol=rtol, name="m_K")
 
-            C = optim.Cs[m].to_dense()
-            C_sep = optim_sep_linear.Cs[m_sep].to_dense()
+            C = optim.Cs[name].to_dense()
+            C_sep = optim_sep_linear.Cs[name].to_dense()
             report_nonclose(C, C_sep, atol=atol, rtol=rtol, name="C")
 
-            m_C = optim.m_Cs[m].to_dense()
-            m_C_sep = optim_sep_linear.m_Cs[m_sep].to_dense()
+            m_C = optim.m_Cs[name].to_dense()
+            m_C_sep = optim_sep_linear.m_Cs[name].to_dense()
             report_nonclose(m_C, m_C_sep, atol=atol, rtol=rtol, name="m_C")
 
         # compare parameter values

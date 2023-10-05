@@ -96,6 +96,8 @@ def test_autocast():
             # momentum requires larger tolerance
             atol_momentum=5e-3,
             rtol_momentum=1e-1,
+            # scales are different
+            check_steps_and_grad_scales=False,
         )
 
         if batch_idx >= MAX_STEPS:

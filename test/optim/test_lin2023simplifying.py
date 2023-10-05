@@ -145,8 +145,10 @@ def test_compare_lin2023simplifying():  # noqa: C901
         optim_ours.step()
 
         # compare K, C, m_K, m_C
-        assert len(optim_original.modules) == len(optim_ours.modules)
-        for m_original, m_ours in zip(optim_original.modules, optim_ours.modules):
+        assert len(optim_original.modules) == len(optim_ours.module_names)
+        for m_original, m_ours in zip(
+            optim_original.modules, optim_ours.module_names.values()
+        ):
             K_original = optim_original.A[m_original]
             K_ours = optim_ours.Ks[m_ours].to_dense()
             assert allclose(K_original, K_ours, **tolerances)

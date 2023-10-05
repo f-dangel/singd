@@ -43,6 +43,10 @@ class SNGD(Optimizer):
     Attributes:
         SUPPORTED_STRUCTURES: A string-to-class mapping of supported structures.
         SUPPORTED_MODULES: Supported layers.
+        STATE_ATTRIBUTES: Attributes that belong to the optimizer's state but are
+            not stored inside the ``self.state`` attribute. They will be saved
+            and restored when the optimizer is check-pointed (by calling
+            ``.state_dict()`` and ``.load_state_dict()``).
         _step_supports_amp_scaling: Indicate that `step` handles gradient scaling
             internally if the optimizer is used together with a
             ``torch.cuda.amp.GradScaler``. Before calling this class's ``.step()``,
@@ -180,22 +184,25 @@ class SNGD(Optimizer):
         # for mapping modules to their groups
         self.param_to_group_idx = self._check_param_groups(model)
         # layers whose parameters will be updated
-        self.modules, self.hook_handles = self._install_hooks(model)
+        self.module_names, self.hook_handles = self._install_hooks(model)
+
+        # NOTE We use the module names (strings) as keys as they don't change when a
+        # model is loaded from a checkpoint (unlike the module objects themselves).
 
         # temporarily stores layer inputs during a forward-backward pass
-        self.inputs: Dict[Module, Tensor] = {}
+        self.inputs: Dict[str, Tensor] = {}
 
         # store matrices for the pre-conditioner
-        self.Ks: Dict[Module, StructuredMatrix] = {}
-        self.Cs: Dict[Module, StructuredMatrix] = {}
+        self.Ks: Dict[str, StructuredMatrix] = {}
+        self.Cs: Dict[str, StructuredMatrix] = {}
 
         # store momentum terms for the pre-conditioner matrices
-        self.m_Ks: Dict[Module, StructuredMatrix] = {}
-        self.m_Cs: Dict[Module, StructuredMatrix] = {}
+        self.m_Ks: Dict[str, StructuredMatrix] = {}
+        self.m_Cs: Dict[str, StructuredMatrix] = {}
 
         # accumulators for H_K and H_C
-        self.H_Ks: Dict[Module, BatchAccumulator] = {}
-        self.H_Cs: Dict[Module, BatchAccumulator] = {}
+        self.H_Ks: Dict[str, BatchAccumulator] = {}
+        self.H_Cs: Dict[str, BatchAccumulator] = {}
 
         self._initialize_buffers()
 
@@ -317,7 +324,7 @@ class SNGD(Optimizer):
         ``K, C`` are initialized to identity matrices, their momentum terms
         ``m_K, m_C`` to zero.
         """
-        for module in self.modules:
+        for module, name in self.module_names.items():
             dim_K, dim_C = self.preconditioner_dims(module)
 
             dtype = self._get_param_group_entry(module, "preconditioner_dtype")
@@ -330,13 +337,13 @@ class SNGD(Optimizer):
             K_cls = self.SUPPORTED_STRUCTURES[structures[0]]
             C_cls = self.SUPPORTED_STRUCTURES[structures[1]]
 
-            self.Ks[module] = K_cls.eye(dim_K, dtype=dtype_K, device=device)
-            self.Cs[module] = C_cls.eye(dim_C, dtype=dtype_C, device=device)
+            self.Ks[name] = K_cls.eye(dim_K, dtype=dtype_K, device=device)
+            self.Cs[name] = C_cls.eye(dim_C, dtype=dtype_C, device=device)
 
             alpha1 = self._get_param_group_entry(module, "alpha1")
             if alpha1 != 0.0:
-                self.m_Ks[module] = K_cls.zeros(dim_K, dtype=dtype_K, device=device)
-                self.m_Cs[module] = C_cls.zeros(dim_C, dtype=dtype_C, device=device)
+                self.m_Ks[name] = K_cls.zeros(dim_K, dtype=dtype_K, device=device)
+                self.m_Cs[name] = C_cls.zeros(dim_C, dtype=dtype_C, device=device)
 
     @staticmethod
     def preconditioner_dims(module: Module) -> Tuple[int, int]:
@@ -375,7 +382,8 @@ class SNGD(Optimizer):
         """
         T = self._get_param_group_entry(module, "T")
         if is_grad_enabled() and self.steps % T == 0:
-            self.inputs[module] = inputs[0].data
+            module_name = self.module_names[module]
+            self.inputs[module_name] = inputs[0].data
 
     def _update_preconditioner(self, module: Module):
         """Update the pre-conditioner matrices and their momenta for a layer.
@@ -391,10 +399,11 @@ class SNGD(Optimizer):
         if self.steps % T != 0:
             return
 
-        K, C = self.Ks[module], self.Cs[module]
+        module_name = self.module_names[module]
+        K, C = self.Ks[module_name], self.Cs[module_name]
         # NOTE: Pop such that they will be freed after
-        H_K: StructuredMatrix = self.H_Ks.pop(module).value
-        H_C: StructuredMatrix = self.H_Cs.pop(module).value
+        H_K: StructuredMatrix = self.H_Ks.pop(module_name).value
+        H_C: StructuredMatrix = self.H_Cs.pop(module_name).value
 
         # un-scale ``H_C = structure(C.T @ (grad_scale * g) @ (grad_scale * g).T @ C)``
         prev_grad_scale = self._get_grad_scale(self.steps - 1)
@@ -438,16 +447,16 @@ class SNGD(Optimizer):
         # 2) APPLY UPDATE
         alpha1 = self._get_param_group_entry(module, "alpha1")
         if alpha1 != 0.0:
-            new_m_C += self.m_Cs[module] * alpha1
-            new_m_K += self.m_Ks[module] * alpha1
-            self.m_Cs[module] = new_m_C
-            self.m_Ks[module] = new_m_K
+            new_m_C += self.m_Cs[module_name] * alpha1
+            new_m_K += self.m_Ks[module_name] * alpha1
+            self.m_Cs[module_name] = new_m_C
+            self.m_Ks[module_name] = new_m_K
 
         beta1 = self._get_param_group_entry(module, "lr_cov")
         if isinstance(beta1, Callable):  # scheduled
             beta1 = beta1(self.steps)
-        self.Ks[module] = K - (K @ new_m_K) * beta1
-        self.Cs[module] = C - (C @ new_m_C) * beta1
+        self.Ks[module_name] = K - (K @ new_m_K) * beta1
+        self.Cs[module_name] = C - (C @ new_m_C) * beta1
 
     def _accumulate_H_terms(
         self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]
@@ -469,9 +478,10 @@ class SNGD(Optimizer):
             return
 
         batch_averaged = self._get_param_group_entry(module, "batch_averaged")
+        module_name = self.module_names[module]
 
         # 1) PROCESS INPUTS AND GRAD_OUTPUTS
-        a = self.inputs.pop(module)
+        a = self.inputs.pop(module_name)
         batch_size = a.shape[0]
         # For convolutions, unfold the input, for modules with bias terms, append a 1
         a = process_input(a, module)
@@ -481,7 +491,7 @@ class SNGD(Optimizer):
         g = process_grad_output(g, module, batch_averaged)
 
         # 2) Update H_K, H_C
-        K, C = self.Ks[module], self.Cs[module]
+        K, C = self.Ks[module_name], self.Cs[module_name]
         H_K = K.from_inner(X=a.T)
 
         # use the gradient scale from the previous step because we do not have access
@@ -503,44 +513,44 @@ class SNGD(Optimizer):
             H_C.all_reduce(op=op)
 
         # maybe set up fresh accumulators (they get flushed in `.step`)
-        if module not in self.H_Ks:
-            self.H_Ks[module] = BatchAccumulator(batch_averaged=batch_averaged)
-        if module not in self.H_Cs:
-            self.H_Cs[module] = BatchAccumulator(batch_averaged=batch_averaged)
+        if module_name not in self.H_Ks:
+            self.H_Ks[module_name] = BatchAccumulator(batch_averaged=batch_averaged)
+        if module_name not in self.H_Cs:
+            self.H_Cs[module_name] = BatchAccumulator(batch_averaged=batch_averaged)
 
-        self.H_Ks[module].update(H_K, batch_size)
-        self.H_Cs[module].update(H_C, batch_size)
+        self.H_Ks[module_name].update(H_K, batch_size)
+        self.H_Cs[module_name].update(H_C, batch_size)
 
     def _install_hooks(
         self, model: Module
-    ) -> Tuple[List[Module], List[RemovableHandle]]:
+    ) -> Tuple[Dict[Module, str], List[RemovableHandle]]:
         """Install hooks on supported modules to accumulate pre-conditioner quantities.
 
         Args:
             model: Model whose modules are hooked.
 
         Returns:
-            List of modules that have been hooked and list of the installed hooks'
+            Mapping from hooked modules to their names and list of the installed hooks'
             handles.
         """
         param_ids = [
             p.data_ptr() for group in self.param_groups for p in group["params"]
         ]
-        modules = [
-            m
-            for m in model.modules()
-            if isinstance(m, self.SUPPORTED_MODULES)
-            and any(p.data_ptr() in param_ids for p in m.parameters())
-        ]
+        module_names = {
+            mod: name
+            for (name, mod) in model.named_modules()
+            if isinstance(mod, self.SUPPORTED_MODULES)
+            and any(p.data_ptr() in param_ids for p in mod.parameters())
+        }
         handles = []
-        for module in modules:
+        for module in module_names:
             handles.extend(
                 (
                     module.register_forward_pre_hook(self._save_input),
                     module.register_full_backward_hook(self._accumulate_H_terms),
                 )
             )
-        return modules, handles
+        return module_names, handles
 
     def _compute_natural_gradient(self, module: Module) -> Tuple[Tensor, ...]:
         """Compute the natural gradient with the current pre-conditioner for a layer.
@@ -574,14 +584,15 @@ class SNGD(Optimizer):
             grad_mat = grad_mat / grad_scale
 
         # 2) COMPUTE THE NATURAL GRADIENT IN CONCATENATED MATRIX FORM
+        module_name = self.module_names[module]
 
         # We need to compute ``W @ K @ K^T`` where ``W`` is the weight gradient
         # ``K`` supports ``K @ ...`` and ``K^T @ ...``. Hence, we rewrite into
         # ``W @ K @ K^T = ( K @ (K^T @ W^T) )^T``.
-        K = self.Ks[module]
+        K = self.Ks[module_name]
         nat_grad = (K @ K.rmatmat(grad_mat.T)).T
 
-        C = self.Cs[module]
+        C = self.Cs[module_name]
         nat_grad = C @ (C.rmatmat(nat_grad))
 
         # If DDP is used.
@@ -639,11 +650,11 @@ class SNGD(Optimizer):
             simplefilter("always", UserWarning)  # Warn every time this happens.
             warn("Encountered inf in gradients. Skipping update.")
             # Also, empty the accumulators because this step will be skipped.
-            for module in self.modules:
-                if module in self.H_Ks:
-                    del self.H_Ks[module]
-                if module in self.H_Cs:
-                    del self.H_Cs[module]
+            for name in self.module_names.values():
+                if name in self.H_Ks:
+                    del self.H_Ks[name]
+                if name in self.H_Cs:
+                    del self.H_Cs[name]
         else:
             self._step()
 
@@ -654,7 +665,7 @@ class SNGD(Optimizer):
 
     def _step(self):
         """Compute natural gradients and update parameters."""
-        for module in self.modules:
+        for module in self.module_names:
             self._update_preconditioner(module)
             natural_gradients = self._compute_natural_gradient(module)
             parameters = (
@@ -724,3 +735,42 @@ class SNGD(Optimizer):
                     "`init_grad_scale` when initializing the optimizer as this will "
                     f"improve numerical stability (was initialized to {init_scale})."
                 )
+
+    STATE_ATTRIBUTES: List[str] = [
+        "steps",
+        "_grad_scales",
+        "Ks",
+        "Cs",
+        "m_Ks",
+        "m_Cs",
+        "H_Ks",
+        "H_Cs",
+        "inputs",
+    ]
+
+    def state_dict(self) -> Dict[str, Any]:
+        """Return a save-able state of the optimizer.
+
+        Returns:
+            A dictionary containing the optimizer state.
+        """
+        state_dict = super().state_dict()
+
+        for name in self.STATE_ATTRIBUTES:
+            assert name not in state_dict.keys()
+            state_dict[name] = getattr(self, name)
+
+        return state_dict
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """Load an optimizer state.
+
+        Args:
+            state_dict: A dictionary containing a valid state obtained from this
+                class's ``.state_dict()`` method.
+        """
+        attributes = {name: state_dict.pop(name) for name in self.STATE_ATTRIBUTES}
+        super().load_state_dict(state_dict)
+
+        for name, value in attributes.items():
+            setattr(self, name, value)

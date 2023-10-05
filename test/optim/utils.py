@@ -24,11 +24,11 @@ def check_preconditioner_structures(optim: SNGD, structures: Tuple[str, str]):
     K_cls = SNGD.SUPPORTED_STRUCTURES[structures[0]]
     C_cls = SNGD.SUPPORTED_STRUCTURES[structures[1]]
 
-    for module in optim.modules:
-        assert isinstance(optim.Ks[module], K_cls)
-        assert isinstance(optim.Cs[module], C_cls)
-        assert isinstance(optim.m_Ks[module], K_cls)
-        assert isinstance(optim.m_Cs[module], C_cls)
+    for name in optim.module_names.values():
+        assert isinstance(optim.Ks[name], K_cls)
+        assert isinstance(optim.Cs[name], C_cls)
+        assert isinstance(optim.m_Ks[name], K_cls)
+        assert isinstance(optim.m_Cs[name], C_cls)
 
 
 def check_preconditioner_dtypes(optim: SNGD):
@@ -37,15 +37,15 @@ def check_preconditioner_dtypes(optim: SNGD):
     Args:
         optim: The optimizer to check.
     """
-    for module in optim.modules:
+    for module, name in optim.module_names.items():
         dtype_K, dtype_C = optim._get_param_group_entry(module, "preconditioner_dtype")
         dtype_K = dtype_K if isinstance(dtype_K, torch.dtype) else module.weight.dtype
         dtype_C = dtype_C if isinstance(dtype_C, torch.dtype) else module.weight.dtype
 
-        verify_dtype(optim.Ks[module], dtype_K)
-        verify_dtype(optim.m_Ks[module], dtype_K)
-        verify_dtype(optim.Cs[module], dtype_C)
-        verify_dtype(optim.m_Cs[module], dtype_C)
+        verify_dtype(optim.Ks[name], dtype_K)
+        verify_dtype(optim.m_Ks[name], dtype_K)
+        verify_dtype(optim.Cs[name], dtype_C)
+        verify_dtype(optim.m_Cs[name], dtype_C)
 
 
 def verify_dtype(mat: StructuredMatrix, dtype: torch.dtype):

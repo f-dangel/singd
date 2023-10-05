@@ -127,7 +127,14 @@ def test_scaler(grad_scale_schedule: Callable[[int], float]):
 
         steps += 1
 
-        compare_optimizers(optim, optim_scale, rtol=1e-2, atol=5e-5)
+        compare_optimizers(
+            optim,
+            optim_scale,
+            rtol=1e-2,
+            atol=5e-5,
+            # scales are different
+            check_steps_and_grad_scales=False,
+        )
 
         if steps >= MAX_STEPS:
             break

@@ -43,16 +43,22 @@ def report_nonclose(
             if not isclose(a1, a2, atol=atol, rtol=rtol, equal_nan=equal_nan):
                 mismatch += 1
                 print(f"{a1} ≠ {a2}")
+        print(f"Min entries: {tensor1.min()}, {tensor2.min()}")
+        print(f"Max entries: {tensor1.max()}, {tensor2.max()}")
         raise ValueError(f"{name} values don't match ({mismatch} / {tensor1.numel()}).")
 
 
-def compare_optimizers(
+def compare_optimizers(  # noqa: C901
     optim1: SNGD,
     optim2: SNGD,
     rtol: float = 1e-5,
     atol: float = 1e-8,
     rtol_momentum: Union[float, None] = None,
     atol_momentum: Union[float, None] = None,
+    rtol_hook: Union[float, None] = None,
+    atol_hook: Union[float, None] = None,
+    check_hook_quantities: bool = True,
+    check_steps_and_grad_scales: bool = True,
 ):
     """Compare the states of two structured inverse-free KFAC optimizers.
 
@@ -68,25 +74,63 @@ def compare_optimizers(
             If not specified, uses the same value as ``rtol``.
         atol_momentum: Absolute tolerance used for comparing the momentum buffers.
             If not specified, uses the same value as ``atol``.
+        rtol_hook: Relative tolerance used for comparing the hook quantities.
+            If not specified, uses the same value as ``rtol``.
+        atol_hook: Absolute tolerance used for comparing the hook quantities.
+            If not specified, uses the same value as ``atol``.
+        check_hook_quantities: Whether to check the quantities stored and computed
+            by hooks. Default: ``True``.
+        check_steps_and_grad_scales: Whether to compare the ``steps`` and
+            ``_grad scales`` attributes. Default: ``True``.
     """
+    if check_steps_and_grad_scales:
+        assert optim1.steps == optim2.steps
+        assert optim1._grad_scales == optim2._grad_scales
+
     # compare K, C, m_K, m_C
-    assert len(optim1.modules) == len(optim2.modules)
-    for m1, m2 in zip(optim1.modules, optim2.modules):
-        K1 = optim1.Ks[m1].to_dense()
-        K2 = optim2.Ks[m2].to_dense()
+    assert len(optim1.module_names) == len(optim2.module_names)
+    assert set(optim1.module_names.values()) == set(optim2.module_names.values())
+    for name in optim1.module_names.values():
+        K1 = optim1.Ks[name].to_dense()
+        K2 = optim2.Ks[name].to_dense()
         report_nonclose(K1, K2, atol=atol, rtol=rtol, name="K")
 
-        m_K1 = optim1.m_Ks[m1].to_dense()
-        m_K2 = optim2.m_Ks[m2].to_dense()
+        m_K1 = optim1.m_Ks[name].to_dense()
+        m_K2 = optim2.m_Ks[name].to_dense()
         report_nonclose(m_K1, m_K2, atol=atol, rtol=rtol, name="m_K")
 
-        C1 = optim1.Cs[m1].to_dense()
-        C2 = optim2.Cs[m2].to_dense()
+        C1 = optim1.Cs[name].to_dense()
+        C2 = optim2.Cs[name].to_dense()
         report_nonclose(C1, C2, atol=atol, rtol=rtol, name="C")
 
-        m_C1 = optim1.m_Cs[m1].to_dense()
-        m_C2 = optim2.m_Cs[m2].to_dense()
+        m_C1 = optim1.m_Cs[name].to_dense()
+        m_C2 = optim2.m_Cs[name].to_dense()
         report_nonclose(m_C1, m_C2, atol=atol, rtol=rtol, name="m_C")
+
+    # compare hook quantities
+    atol_hook = atol_hook if atol_hook is not None else atol
+    rtol_hook = rtol_hook if rtol_hook is not None else rtol
+
+    if check_hook_quantities:
+        assert set(optim1.inputs.keys()) == set(optim2.inputs.keys())
+        assert set(optim1.H_Ks.keys()) == set(optim2.H_Ks.keys())
+        assert set(optim1.H_Cs.keys()) == set(optim2.H_Cs.keys())
+
+        for name in optim1.inputs:
+            inputs1, inputs2 = optim1.inputs[name], optim2.inputs[name]
+            report_nonclose(
+                inputs1, inputs2, atol=atol_hook, rtol=rtol_hook, name="inputs"
+            )
+
+        for name in optim1.H_Ks:
+            H_K1 = optim1.H_Ks[name].value.to_dense()
+            H_K2 = optim2.H_Ks[name].value.to_dense()
+            report_nonclose(H_K1, H_K2, atol=atol_hook, rtol=rtol_hook, name="H_K")
+
+        for name in optim1.H_Cs:
+            H_C1 = optim1.H_Cs[name].value.to_dense()
+            H_C2 = optim2.H_Cs[name].value.to_dense()
+            report_nonclose(H_C1, H_C2, atol=atol_hook, rtol=rtol_hook, name="H_C")
 
     # compare momentum buffers
     atol_momentum = atol_momentum if atol_momentum is not None else atol
@@ -96,7 +140,8 @@ def compare_optimizers(
         optim1.param_groups[0]["momentum"] != 0
         or optim2.param_groups[0]["momentum"] != 0
     ):
-        for module1, module2 in zip(optim1.modules, optim2.modules):
+        for module1, module2 in zip(optim1.module_names, optim2.module_names):
+            assert len(list(module1.parameters())) == len(list(module2.parameters()))
             for p1, p2 in zip(module1.parameters(), module2.parameters()):
                 mom1 = optim1.state[p1]["momentum_buffer"]
                 mom2 = optim2.state[p2]["momentum_buffer"]
@@ -109,6 +154,7 @@ def compare_optimizers(
                 )
 
     # compare parameter values
-    for module1, module2 in zip(optim1.modules, optim2.modules):
+    for module1, module2 in zip(optim1.module_names, optim2.module_names):
+        assert len(list(module1.parameters())) == len(list(module2.parameters()))
         for p1, p2 in zip(module1.parameters(), module2.parameters()):
             report_nonclose(p1, p2, atol=atol, rtol=rtol, name="parameters")

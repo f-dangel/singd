@@ -158,3 +158,6 @@ wandb
 .data
 
 *.DS_Store
+
+# checkpoint data
+**_checkpoint_*.pt
