@@ -1,1 +1,1 @@
-"""Test ``sparse_ngd.structures`` module."""
+"""Test ``singd.structures`` module."""

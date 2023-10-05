@@ -12,8 +12,8 @@ from matplotlib import pyplot as plt
 from pytest import mark
 from torch import Tensor, device, manual_seed, rand, zeros
 
-from sparse_ngd.structures.base import StructuredMatrix
-from sparse_ngd.structures.utils import (
+from singd.structures.base import StructuredMatrix
+from singd.structures.utils import (
     is_half_precision,
     supported_eye,
     supported_matmul,

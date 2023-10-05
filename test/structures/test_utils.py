@@ -1,6 +1,7 @@
-"""Test utility functions of ``sparse_ngd.structures``."""
+"""Test utility functions of ``singd.structures``."""
 
 from pytest import raises
+from singd.structures.utils import all_traces, diag_add_
 from torch import (
     Tensor,
     allclose,
@@ -14,8 +15,6 @@ from torch import (
     zeros,
 )
 from torch.nn.functional import conv1d
-
-from sparse_ngd.structures.utils import all_traces, diag_add_
 
 
 def test_cpu_float16_matmul_unsupported():

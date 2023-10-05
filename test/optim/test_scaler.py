@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
 
-from sparse_ngd.optim.optimizer import SNGD
+from singd.optim.optimizer import SINGD
 
 
 def constant_schedule(step: int) -> float:
@@ -91,8 +91,8 @@ def test_scaler(grad_scale_schedule: Callable[[int], float]):
         "structures": ("dense", "dense"),
     }
 
-    optim = SNGD(model, **optim_hyperparams)
-    optim_scale = SNGD(
+    optim = SINGD(model, **optim_hyperparams)
+    optim_scale = SINGD(
         model_scale, **optim_hyperparams, init_grad_scale=grad_scale_schedule(0)
     )
 

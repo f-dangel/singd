@@ -1,4 +1,4 @@
-"""Test ``sparse_ngd.structures.blockdiagonal``."""
+"""Test ``singd.structures.blockdiagonal``."""
 
 from abc import ABC
 from test.structures.utils import _TestStructuredMatrix
@@ -6,7 +6,7 @@ from typing import Type
 
 from torch import Tensor, zeros_like
 
-from sparse_ngd.structures.blockdiagonal import (
+from singd.structures.blockdiagonal import (
     Block3DiagonalMatrix,
     Block30DiagonalMatrix,
     BlockDiagonalMatrixTemplate,

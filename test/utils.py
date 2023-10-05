@@ -4,7 +4,7 @@ from typing import Union
 
 from torch import Tensor, allclose, cuda, device, isclose
 
-from sparse_ngd.optim.optimizer import SNGD
+from singd.optim.optimizer import SINGD
 
 DEVICE_IDS = ["cpu", "cuda"] if cuda.is_available() else ["cpu"]
 DEVICES = [device(name) for name in DEVICE_IDS]
@@ -49,8 +49,8 @@ def report_nonclose(
 
 
 def compare_optimizers(  # noqa: C901
-    optim1: SNGD,
-    optim2: SNGD,
+    optim1: SINGD,
+    optim2: SINGD,
     rtol: float = 1e-5,
     atol: float = 1e-8,
     rtol_momentum: Union[float, None] = None,

@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
 
-from sparse_ngd.optim.optimizer import SNGD
+from singd.optim.optimizer import SINGD
 
 
 def test_integration_kfac_like():
@@ -32,7 +32,7 @@ def test_integration_kfac_like():
     )
     loss_func = CrossEntropyLoss()
 
-    optim = SNGD(model, alpha1=0.0, T=1, kfac_like=True)
+    optim = SINGD(model, alpha1=0.0, T=1, kfac_like=True)
     model.train()
 
     # Loop over each batch from the training set

@@ -1,4 +1,4 @@
-"""Tests ``sparse_ngd.optim.optimizer`` functionality."""
+"""Tests ``singd.optim.optimizer`` functionality."""
 
 
 from test.optim.utils import (
@@ -33,10 +33,10 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
 
-from sparse_ngd.optim.optimizer import SNGD
+from singd.optim.optimizer import SINGD
 
 
-def test_SNGD_get_trainable_params_warning():
+def test_SINGD_get_trainable_params_warning():
     """Test emission of warning if a model contains non-trainable parameters."""
     # NOTE This module contains a nested ``Sequential`` to make it 'challenging'
     # to iterate correctly over all layers and find the un-trainable batch
@@ -66,10 +66,10 @@ def test_SNGD_get_trainable_params_warning():
         "structures": ("dense", "dense"),
     }
     with warns(UserWarning):
-        SNGD(model, **dummy_hyperparams, warn_unsupported=True)
+        SINGD(model, **dummy_hyperparams, warn_unsupported=True)
 
 
-def test_SNGD_check_param_groups():
+def test_SINGD_check_param_groups():
     """Test conflict detection in parameter groups."""
     layer1 = Linear(10, 9)
     layer2 = Linear(9, 8)
@@ -94,7 +94,7 @@ def test_SNGD_check_param_groups():
     ]
 
     with raises(ValueError):
-        SNGD(model, params=param_groups, **dummy_hyperparams)
+        SINGD(model, params=param_groups, **dummy_hyperparams)
 
     # per-layer groups with different structures
     group1 = {"params": [layer1.weight, layer1.bias], "structures": ("dense", "dense")}
@@ -103,14 +103,14 @@ def test_SNGD_check_param_groups():
         "structures": ("diagonal", "diagonal"),
     }
     param_groups = [group1, group2]
-    optim = SNGD(model, params=param_groups, **dummy_hyperparams)
+    optim = SINGD(model, params=param_groups, **dummy_hyperparams)
 
     assert optim.param_groups[0]["structures"] == ("dense", "dense")
     assert optim.param_groups[1]["structures"] == ("diagonal", "diagonal")
 
     # warn user if kfac_like is turned on and alpha1≠0
     with warns(UserWarning):
-        optim = SNGD(model, **dummy_hyperparams, kfac_like=True)
+        optim = SINGD(model, **dummy_hyperparams, kfac_like=True)
 
 
 PRECONDITIONER_DTYPES = [
@@ -123,7 +123,7 @@ PRECONDITIONER_DTYPE_IDS = [
     f"{'-'.join([str(d) for d in dtypes])}".replace("torch.", "")
     for dtypes in PRECONDITIONER_DTYPES
 ]
-STRUCTURES = [(s, s) for s in SNGD.SUPPORTED_STRUCTURES.keys()]
+STRUCTURES = [(s, s) for s in SINGD.SUPPORTED_STRUCTURES.keys()]
 # mixed structure
 STRUCTURES.append(("dense", "diagonal"))
 STRUCTURE_IDS = [f"{'-'.join(structures)}" for structures in STRUCTURES]
@@ -135,7 +135,7 @@ STRUCTURE_IDS = [f"{'-'.join(structures)}" for structures in STRUCTURES]
 @mark.parametrize(
     "preconditioner_dtype", PRECONDITIONER_DTYPES, ids=PRECONDITIONER_DTYPE_IDS
 )
-def test_SNGD_preconditioner_dtype(
+def test_SINGD_preconditioner_dtype(
     structures: Tuple[str, str],
     preconditioner_dtype: Tuple[Union[None, dtype], Union[None, dtype]],
     dev: device,
@@ -169,7 +169,7 @@ def test_SNGD_preconditioner_dtype(
     ).to(dev)
     loss_func = CrossEntropyLoss().to(dev)
 
-    optim = SNGD(
+    optim = SINGD(
         model, T=1, structures=structures, preconditioner_dtype=preconditioner_dtype
     )
     # check that pre-conditioner matrices have correct data type at init
@@ -221,7 +221,7 @@ def test_warning_init_grad_scale():
     loss_func = CrossEntropyLoss()
 
     model.train()
-    optim = SNGD(model)  # ``init_grad_scale`` not supplied by user
+    optim = SINGD(model)  # ``init_grad_scale`` not supplied by user
 
     # one training step
     optim.zero_grad()

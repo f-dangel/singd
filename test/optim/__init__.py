@@ -1,1 +1,1 @@
-"""Test ``sparse_ngd.optim``."""
+"""Test ``singd.optim``."""

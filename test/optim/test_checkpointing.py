@@ -3,16 +3,15 @@
 from test.utils import compare_optimizers
 from typing import Tuple
 
+from singd.optim.optimizer import SINGD
 from torch import load, manual_seed, save
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, Module, ReLU, Sequential
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
 
-from sparse_ngd.optim.optimizer import SNGD
 
-
-def setup() -> Tuple[Sequential, Module, SNGD]:
+def setup() -> Tuple[Sequential, Module, SINGD]:
     """Set up the model, loss function, and optimizer.
 
     Returns:
@@ -36,7 +35,7 @@ def setup() -> Tuple[Sequential, Module, SNGD]:
         for p in m.parameters()
         if p.requires_grad
     ]
-    sngd_hyperparams = {
+    singd_hyperparams = {
         "lr": 5e-4,
         "damping": 1e-4,
         "momentum": 0.9,
@@ -47,11 +46,11 @@ def setup() -> Tuple[Sequential, Module, SNGD]:
         "alpha1": 0.5,
         "structures": ("dense", "dense"),
     }
-    group = {"params": params, **sngd_hyperparams}
+    group = {"params": params, **singd_hyperparams}
     param_groups = [group]
-    sngd = SNGD(model, params=param_groups)
+    singd = SINGD(model, params=param_groups)
 
-    return model, loss_func, sngd
+    return model, loss_func, singd
 
 
 def test_checkpointing():
@@ -65,41 +64,41 @@ def test_checkpointing():
         dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True
     )
 
-    model, loss_func, sngd = setup()
+    model, loss_func, singd = setup()
     checkpoints = [10, 33, 50]
 
     # Loop over each batch from the training set
     for batch_idx, (inputs, target) in enumerate(train_loader):
-        print(f"Step {sngd.steps}")
+        print(f"Step {singd.steps}")
 
         # Save model and optimizer, then restore and compare with original ones
         if batch_idx in checkpoints:
             # keep a reference to compare with restored optimizer
-            original_sngd = sngd
+            original_singd = singd
 
             print("Saving checkpoint")
-            save(sngd.state_dict(), f"sngd_checkpoint_{batch_idx}.pt")
+            save(singd.state_dict(), f"singd_checkpoint_{batch_idx}.pt")
             save(model.state_dict(), f"model_checkpoint_{batch_idx}.pt")
             print("Deleting model and optimizer")
-            del model, sngd
+            del model, singd
 
             print("Loading checkpoint")
-            model, _, sngd = setup()
-            sngd.load_state_dict(load(f"sngd_checkpoint_{batch_idx}.pt"))
+            model, _, singd = setup()
+            singd.load_state_dict(load(f"singd_checkpoint_{batch_idx}.pt"))
             model.load_state_dict(load(f"model_checkpoint_{batch_idx}.pt"))
 
             # compare restored and copied optimizer
-            compare_optimizers(sngd, original_sngd)
+            compare_optimizers(singd, original_singd)
 
         # Zero gradient buffers
-        sngd.zero_grad()
+        singd.zero_grad()
 
         # Backward pass
         loss = loss_func(model(inputs), target)
         loss.backward()
 
         # Update parameters
-        sngd.step()
+        singd.step()
 
         if batch_idx >= MAX_STEPS:
             break

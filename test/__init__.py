@@ -1,1 +1,1 @@
-"""Test for sparse_ngd."""
+"""Test for singd."""

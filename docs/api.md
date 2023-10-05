@@ -1,4 +1,4 @@
-::: sparse_ngd.optim.optimizer.SNGD
+::: singd.optim.optimizer.SINGD
     options:
         members:
             - __init__

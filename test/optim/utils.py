@@ -4,25 +4,25 @@ from typing import Tuple
 
 import torch
 
-from sparse_ngd.optim.optimizer import SNGD
-from sparse_ngd.structures.base import StructuredMatrix
-from sparse_ngd.structures.blockdiagonal import BlockDiagonalMatrixTemplate
-from sparse_ngd.structures.dense import DenseMatrix
-from sparse_ngd.structures.diagonal import DiagonalMatrix
-from sparse_ngd.structures.hierarchical import HierarchicalMatrixTemplate
-from sparse_ngd.structures.triltoeplitz import TrilToeplitzMatrix
-from sparse_ngd.structures.triutoeplitz import TriuToeplitzMatrix
+from singd.optim.optimizer import SINGD
+from singd.structures.base import StructuredMatrix
+from singd.structures.blockdiagonal import BlockDiagonalMatrixTemplate
+from singd.structures.dense import DenseMatrix
+from singd.structures.diagonal import DiagonalMatrix
+from singd.structures.hierarchical import HierarchicalMatrixTemplate
+from singd.structures.triltoeplitz import TrilToeplitzMatrix
+from singd.structures.triutoeplitz import TriuToeplitzMatrix
 
 
-def check_preconditioner_structures(optim: SNGD, structures: Tuple[str, str]):
+def check_preconditioner_structures(optim: SINGD, structures: Tuple[str, str]):
     """Verify that the optimizer's pre-conditioner has the correct structure.
 
     Args:
         optim: The optimizer to check.
         structures: The structure-tuple used to initialize the optimizer.
     """
-    K_cls = SNGD.SUPPORTED_STRUCTURES[structures[0]]
-    C_cls = SNGD.SUPPORTED_STRUCTURES[structures[1]]
+    K_cls = SINGD.SUPPORTED_STRUCTURES[structures[0]]
+    C_cls = SINGD.SUPPORTED_STRUCTURES[structures[1]]
 
     for name in optim.module_names.values():
         assert isinstance(optim.Ks[name], K_cls)
@@ -31,7 +31,7 @@ def check_preconditioner_structures(optim: SNGD, structures: Tuple[str, str]):
         assert isinstance(optim.m_Cs[name], C_cls)
 
 
-def check_preconditioner_dtypes(optim: SNGD):
+def check_preconditioner_dtypes(optim: SINGD):
     """Verify that the optimizer's pre-conditioner has the correct data type.
 
     Args:

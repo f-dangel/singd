@@ -1,4 +1,4 @@
-"""Test ``sparse_ngd.structures.hierarchical``."""
+"""Test ``singd.structures.hierarchical``."""
 
 from abc import ABC
 from test.structures.utils import _TestStructuredMatrix
@@ -6,7 +6,7 @@ from typing import Type
 
 from torch import Tensor, arange, zeros_like
 
-from sparse_ngd.structures.hierarchical import (
+from singd.structures.hierarchical import (
     Hierarchical3_2Matrix,
     Hierarchical15_15Matrix,
     HierarchicalMatrixTemplate,
