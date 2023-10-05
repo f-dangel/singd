@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
 
-from sparse_ngd.optim.optimizer import SNGD
+from singd.optim.optimizer import SINGD
 
 
 def test_micro_batches():
@@ -55,8 +55,8 @@ def test_micro_batches():
         "structures": ("dense", "dense"),
     }
 
-    optim_mini = SNGD(model_mini, **optim_hyperparams)
-    optim_micro = SNGD(model_micro, **optim_hyperparams)
+    optim_mini = SINGD(model_mini, **optim_hyperparams)
+    optim_micro = SINGD(model_micro, **optim_hyperparams)
 
     model_mini.train()
     model_micro.train()

@@ -1,5 +1,6 @@
-"""Demonstrate training MNIST with SNGD and AdamW."""
+"""Demonstrate training MNIST with SINGD and AdamW."""
 
+from singd.optim.optimizer import SINGD
 from torch import cuda, device, manual_seed
 from torch.nn import (
     BatchNorm1d,
@@ -14,8 +15,6 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
-
-from sparse_ngd.optim.optimizer import SNGD
 
 manual_seed(0)  # make deterministic
 MAX_STEPS = 100  # quit training after this many steps
@@ -38,9 +37,9 @@ model = Sequential(
 loss_func = CrossEntropyLoss().to(DEV)
 
 # We will train parameters of convolutions, linear layers, and batch
-# normalizations differently. Convolutions will be trained with ``SNGD`` and
-# dense structures. Linear layers will also be trained with ``SNGD``, but using
-# diagonal structures. BN layers are not supported by ``SNGD``, so we will
+# normalizations differently. Convolutions will be trained with ``SINGD`` and
+# dense structures. Linear layers will also be trained with ``SINGD``, but using
+# diagonal structures. BN layers are not supported by ``SINGD``, so we will
 # train them with ``AdamW``.
 conv_params = [
     p
@@ -61,7 +60,7 @@ other_params = [
     p for p in model.parameters() if p.data_ptr() not in ptrs and p.requires_grad
 ]
 
-sngd_hyperparams = {
+singd_hyperparams = {
     "lr": 5e-4,
     "damping": 1e-4,
     "momentum": 0.9,
@@ -76,12 +75,12 @@ sngd_hyperparams = {
 # To demonstrate using multiple parameter groups, we define separate groups for
 # the parameters in convolution and linear layers. For simplicity, we use the
 # same hyperparameters in each group, but they could be different in practise.
-conv_group = {"params": conv_params, **sngd_hyperparams}
-linear_group = {"params": linear_params, **sngd_hyperparams}
+conv_group = {"params": conv_params, **singd_hyperparams}
+linear_group = {"params": linear_params, **singd_hyperparams}
 linear_group["structures"] = ("diagonal", "diagonal")  # structure of K, C
 
 param_groups = [conv_group, linear_group]
-sngd = SNGD(model, params=param_groups)
+singd = SINGD(model, params=param_groups)
 
 # For the other parameters, we use ``AdamW``
 adamw = AdamW(
@@ -94,11 +93,11 @@ adamw = AdamW(
 
 # Loop over each batch from the training set
 for batch_idx, (inputs, target) in enumerate(train_loader):
-    print(f"Step {sngd.steps}")
+    print(f"Step {singd.steps}")
     inputs, target = inputs.to(DEV), target.to(DEV)
 
     # Zero gradient buffers
-    sngd.zero_grad()
+    singd.zero_grad()
     adamw.zero_grad()
 
     # Backward pass
@@ -106,7 +105,7 @@ for batch_idx, (inputs, target) in enumerate(train_loader):
     loss.backward()
 
     # Update parameters
-    sngd.step()
+    singd.step()
     adamw.step()
 
     if batch_idx >= MAX_STEPS:

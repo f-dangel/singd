@@ -1,4 +1,4 @@
-"""Setup file for sparse_ngd.
+"""Setup file for singd.
 
 Use setup.cfg to configure the project.
 """

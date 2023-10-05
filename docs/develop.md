@@ -9,7 +9,7 @@ We recommend programming in a fresh virtual environment. You can set up the
 
 ```bash
 make conda-env
-conda activate sparse_ngd
+conda activate singd
 ```
 
 If you don't use `conda`, set up your preferred environment and run

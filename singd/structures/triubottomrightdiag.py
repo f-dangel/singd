@@ -6,20 +6,21 @@ from typing import Tuple
 
 from torch import Tensor, arange, zeros
 
-from sparse_ngd.structures.base import StructuredMatrix
+from singd.structures.base import StructuredMatrix
 
 
-class TrilTopLeftDiagonalMatrix(StructuredMatrix):
-    """Sparse lower-triangular matrix with top left diagonal entries.
+class TriuBottomRightDiagonalMatrix(StructuredMatrix):
+    """Sparse upper-triangular matrix with bottom right diagonal entries.
 
     ``
-    [[D,  0],
-    [[r1, r2]]
+    [[r1, r2],
+    [[0,  D]]
     ``
+
     where
+    - ``r1`` is a scalar,
+    - ``r2`` is a row vector, and
     - ``D`` is a diagonal matrix,
-    - ``r1`` is a scalar, and
-    - ``r2`` is a row vector.
     """
 
     # TODO After the below basic functions are implemented, we can tackle the
@@ -31,7 +32,7 @@ class TrilTopLeftDiagonalMatrix(StructuredMatrix):
 
         Args:
             diag: The diagonal elements of the matrix (``diag(D)``).
-            row: The last row of the matrix (concatenation of ``r1`` and ``r2``).
+            row: the first row of the matrix (concatenation of ``r1`` and ``r2``).
         """
         assert diag.size(0) + 1 == row.size(0)
 
@@ -51,20 +52,20 @@ class TrilTopLeftDiagonalMatrix(StructuredMatrix):
         return (self._mat_row, self._mat_diag)
 
     @classmethod
-    def from_dense(cls, mat: Tensor) -> TrilTopLeftDiagonalMatrix:
+    def from_dense(cls, mat: Tensor) -> TriuBottomRightDiagonalMatrix:
         """Construct from a PyTorch tensor.
 
         Args:
             mat: A dense and symmetric square matrix which will be approximated by a
-                ``TrilTopLeftDiagonalMatrix``.
+                ``TriuBottomRightDiagonalMatrix``.
 
         Returns:
-            ``TrilTopLeftDiagonalMatrix`` approximating the passed matrix.
+            ``TriuBottomRightDiagonalMatrix`` approximating the passed matrix.
         """
         diag = mat.diag()
-        row = mat[:, -1] + mat[-1, :]
-        row[-1] = diag[-1]
-        return cls(diag[:-1], row)
+        row = mat[:, 0] + mat[0, :]
+        row[0] = diag[0]
+        return cls(diag[1:], row)
 
     def to_dense(self) -> Tensor:
         """Convert into dense PyTorch tensor.
@@ -74,8 +75,9 @@ class TrilTopLeftDiagonalMatrix(StructuredMatrix):
         """
         dim = self._mat_row.size(0)
         mat = zeros((dim, dim), dtype=self._mat_row.dtype, device=self._mat_row.device)
-        k = arange(dim - 1)
+
+        k = arange(1, dim)
         mat[k, k] = self._mat_diag
-        mat[-1, :] = self._mat_row
+        mat[0, :] = self._mat_row
 
         return mat

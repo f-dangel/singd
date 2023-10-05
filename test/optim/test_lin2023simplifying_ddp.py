@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
 
-from sparse_ngd.optim.optimizer import SNGD
+from singd.optim.optimizer import SINGD
 
 
 def test_compare_lin2023simplifying_ddp():  # noqa: C901
@@ -93,7 +93,7 @@ def test_compare_lin2023simplifying_ddp():  # noqa: C901
         lr_cov=lr_cov,
         batch_averaged=batch_averaged,
     )
-    optim_ours = SNGD(
+    optim_ours = SINGD(
         model_ours,
         params=None,
         lr=lr,

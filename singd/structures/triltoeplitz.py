@@ -8,8 +8,8 @@ import torch
 from torch import Tensor, arange, cat, zeros
 from torch.nn.functional import pad
 
-from sparse_ngd.structures.base import StructuredMatrix
-from sparse_ngd.structures.utils import (
+from singd.structures.base import StructuredMatrix
+from singd.structures.utils import (
     all_traces,
     lowest_precision,
     supported_conv1d,

@@ -6,37 +6,37 @@ from typing import Tuple
 
 from torch import Tensor, arange, zeros
 
-from sparse_ngd.structures.base import StructuredMatrix
+from singd.structures.base import StructuredMatrix
 
 
-class TriuBottomRightDiagonalMatrix(StructuredMatrix):
-    """Sparse upper-triangular matrix with bottom right diagonal entries.
+class TriuTopLeftDiagonalMatrix(StructuredMatrix):
+    """Sparse upper-triangular matrix with top left diagonal entries.
 
     ``
-    [[r1, r2],
-    [[0,  D]]
+    [[D, c1],
+    [[0, c2]]
     ``
 
     where
-    - ``r1`` is a scalar,
-    - ``r2`` is a row vector, and
     - ``D`` is a diagonal matrix,
+    - ``c1`` is a row vector, and
+    - ``c2`` is a scalar.
     """
 
     # TODO After the below basic functions are implemented, we can tackle the
     # specialized ones, then eventually remove this line
     WARN_NAIVE: bool = False  # Fall-back to naive base class implementations OK
 
-    def __init__(self, diag: Tensor, row: Tensor) -> None:
+    def __init__(self, diag: Tensor, col: Tensor) -> None:
         """Store the matrix internally.
 
         Args:
             diag: The diagonal elements of the matrix (``diag(D)``).
-            row: the first row of the matrix (concatenation of ``r1`` and ``r2``).
+            col: The last column of the matrix (concatenation of ``c1`` and ``c2``).
         """
-        assert diag.size(0) + 1 == row.size(0)
+        assert diag.size(0) + 1 == col.size(0)
 
-        self._mat_row = row
+        self._mat_col = col
         self._mat_diag = diag
 
     @property
@@ -49,23 +49,23 @@ class TriuBottomRightDiagonalMatrix(StructuredMatrix):
         Returns:
             A tuple of tensors that need to be synchronized across devices.
         """
-        return (self._mat_row, self._mat_diag)
+        return (self._mat_col, self._mat_diag)
 
     @classmethod
-    def from_dense(cls, mat: Tensor) -> TriuBottomRightDiagonalMatrix:
+    def from_dense(cls, mat: Tensor) -> TriuTopLeftDiagonalMatrix:
         """Construct from a PyTorch tensor.
 
         Args:
             mat: A dense and symmetric square matrix which will be approximated by a
-                ``TriuBottomRightDiagonalMatrix``.
+                ``TriuTopLeftDiagonalMatrix``.
 
         Returns:
-            ``TriuBottomRightDiagonalMatrix`` approximating the passed matrix.
+            ``TriuTopLeftDiagonalMatrix`` approximating the passed matrix.
         """
         diag = mat.diag()
-        row = mat[:, 0] + mat[0, :]
-        row[0] = diag[0]
-        return cls(diag[1:], row)
+        col = mat[:, -1] + mat[-1, :]
+        col[-1] = diag[-1]
+        return cls(diag[:-1], col)
 
     def to_dense(self) -> Tensor:
         """Convert into dense PyTorch tensor.
@@ -73,11 +73,10 @@ class TriuBottomRightDiagonalMatrix(StructuredMatrix):
         Returns:
             The represented matrix as PyTorch tensor.
         """
-        dim = self._mat_row.size(0)
-        mat = zeros((dim, dim), dtype=self._mat_row.dtype, device=self._mat_row.device)
-
-        k = arange(1, dim)
+        dim = self._mat_col.size(0)
+        mat = zeros((dim, dim), dtype=self._mat_col.dtype, device=self._mat_col.device)
+        k = arange(dim - 1)
         mat[k, k] = self._mat_diag
-        mat[0, :] = self._mat_row
+        mat[:, -1] = self._mat_col
 
         return mat

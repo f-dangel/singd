@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from torch import Tensor, allclose, cuda, device, manual_seed, rand
 
-from sparse_ngd.structures.triltoeplitz import TrilToeplitzMatrix
+from singd.structures.triltoeplitz import TrilToeplitzMatrix
 
 
 def old_from_dense(sym_mat: Tensor) -> TrilToeplitzMatrix:

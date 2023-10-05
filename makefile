@@ -2,9 +2,9 @@
 
 help:
 	@echo "install"
-	@echo "        Install sparse_ngd and dependencies"
+	@echo "        Install singd and dependencies"
 	@echo "uninstall"
-	@echo "        Unstall sparse_ngd"
+	@echo "        Unstall singd"
 	@echo "lint"
 	@echo "        Run all linting actions"
 	@echo "install-dev"
@@ -28,7 +28,7 @@ help:
 	@echo "flake8"
 	@echo "        Run flake8 on the project"
 	@echo "conda-env"
-	@echo "        Create conda environment 'sparse_ngd' with dev setup"
+	@echo "        Create conda environment 'singd' with dev setup"
 	@echo "darglint-check"
 	@echo "        Run darglint (docstring check) on the project"
 	@echo "pydocstyle-check"
@@ -42,7 +42,7 @@ install:
 .PHONY: uninstall
 
 uninstall:
-	@pip uninstall sparse_ngd
+	@pip uninstall singd
 
 .PHONY: install-dev
 
@@ -58,10 +58,10 @@ install-test:
 .PHONY: test test-light
 
 test:
-	@pytest -vx --run-optional-tests=expensive --cov=sparse_ngd test
+	@pytest -vx --run-optional-tests=expensive --cov=singd test
 
 test-light:
-	@pytest -vx --cov=sparse_ngd test
+	@pytest -vx --cov=singd test
 
 .PHONY: install-lint
 
@@ -79,11 +79,11 @@ black-check:
 .PHONY: isort isort-check
 
 isort:
-	@isort sparse_ngd
+	@isort singd
 	@isort test
 
 isort-check:
-	@isort sparse_ngd --check --diff
+	@isort singd --check --diff
 	@isort test --check --diff
 
 .PHONY: flake8
@@ -94,7 +94,7 @@ flake8:
 .PHONY: darglint-check
 
 darglint-check:
-	@darglint --verbosity 2 sparse_ngd
+	@darglint --verbosity 2 singd
 
 .PHONY: pydocstyle-check
 

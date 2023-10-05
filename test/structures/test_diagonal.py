@@ -1,10 +1,10 @@
-"""Test ``sparse_ngd.structures.diagonal``."""
+"""Test ``singd.structures.diagonal``."""
 
 from test.structures.utils import _TestStructuredMatrix
 
 from torch import Tensor
 
-from sparse_ngd.structures.diagonal import DiagonalMatrix
+from singd.structures.diagonal import DiagonalMatrix
 
 
 class TestDiagonalMatrix(_TestStructuredMatrix):

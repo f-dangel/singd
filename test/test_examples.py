@@ -9,8 +9,8 @@ HERE_DIR = path.dirname(path.abspath(__file__))
 EXAMPLES_DIR = path.join(HERE_DIR, "..", "examples")
 
 SCRIPTS = [
-    "sngd_and_adamw_simple.py",
-    "sngd_and_adamw_full.py",
+    "singd_and_adamw_simple.py",
+    "singd_and_adamw_full.py",
 ]
 SCRIPT_PATHS = [path.join(EXAMPLES_DIR, script) for script in SCRIPTS]
 

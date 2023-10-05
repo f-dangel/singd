@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
 
-from sparse_ngd.optim.optimizer import SNGD
+from singd.optim.optimizer import SINGD
 
 
 def test_autocast():
@@ -55,8 +55,8 @@ def test_autocast():
     }
 
     GRAD_SCALE = 10_000.0
-    optim_single = SNGD(model_single, **optim_hyperparams)
-    optim_mixed = SNGD(model_mixed, **optim_hyperparams, init_grad_scale=GRAD_SCALE)
+    optim_single = SINGD(model_single, **optim_hyperparams)
+    optim_mixed = SINGD(model_mixed, **optim_hyperparams, init_grad_scale=GRAD_SCALE)
 
     model_single.train()
     model_mixed.train()

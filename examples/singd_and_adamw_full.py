@@ -1,4 +1,4 @@
-"""Demonstrate training MNIST with SNGD and AdamW + bells and whistles.
+"""Demonstrate training MNIST with SINGD and AdamW + bells and whistles.
 
 Uses the following bells and whistles (relevant parts in the code are tagged):
 
@@ -8,6 +8,7 @@ Uses the following bells and whistles (relevant parts in the code are tagged):
 - [ACC] micro batches (gradient accumulation)
 """
 
+from singd.optim.optimizer import SINGD
 from torch import autocast, bfloat16, cuda, device, manual_seed, zeros_like
 from torch.cuda.amp import GradScaler
 from torch.nn import (
@@ -24,8 +25,6 @@ from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, Normalize, ToTensor
-
-from sparse_ngd.optim.optimizer import SNGD
 
 manual_seed(0)  # make deterministic
 MAX_STEPS = 100  # quit training after this many steps
@@ -57,9 +56,9 @@ model = Sequential(
 loss_func = CrossEntropyLoss().to(DEV)
 
 # We will train parameters of convolutions, linear layers, and batch
-# normalizations differently. Convolutions will be trained with ``SNGD`` and
-# dense structures. Linear layers will also be trained with ``SNGD``, but using
-# diagonal structures. BN layers are not supported by ``SNGD``, so we will
+# normalizations differently. Convolutions will be trained with ``SINGD`` and
+# dense structures. Linear layers will also be trained with ``SINGD``, but using
+# diagonal structures. BN layers are not supported by ``SINGD``, so we will
 # train them with ``AdamW``.
 conv_params = [
     p
@@ -80,7 +79,7 @@ other_params = [
     p for p in model.parameters() if p.data_ptr() not in ptrs and p.requires_grad
 ]
 
-sngd_hyperparams = {
+singd_hyperparams = {
     "lr": 5e-4,
     "damping": 1e-4,
     "momentum": 0.9,
@@ -95,8 +94,8 @@ sngd_hyperparams = {
 # To demonstrate using multiple parameter groups, we define separate groups for
 # the parameters in convolution and linear layers. For simplicity, we use the
 # same hyperparameters in each group, but they could be different in practise.
-conv_group = {"params": conv_params, **sngd_hyperparams}
-linear_group = {"params": linear_params, **sngd_hyperparams}
+conv_group = {"params": conv_params, **singd_hyperparams}
+linear_group = {"params": linear_params, **singd_hyperparams}
 linear_group["structures"] = ("diagonal", "diagonal")
 
 param_groups = [conv_group, linear_group]
@@ -104,7 +103,7 @@ param_groups = [conv_group, linear_group]
 # It will also work if you don't tell the optimizer, however there might be
 # numerical issues in the pre-conditioner computation during the first backpropagation
 init_grad_scale = 10_000.0
-sngd = SNGD(
+singd = SINGD(
     model,
     params=param_groups,
     init_grad_scale=init_grad_scale,  # [SCL]
@@ -120,12 +119,12 @@ adamw = AdamW(
 
 # [SCL] We need one scaler per optimizer, as each will handle the ``.grad``s of
 # the parameters in its optimizer (THEY NEED TO BE IDENTICAL!)
-scaler_sngd = GradScaler(init_scale=init_grad_scale)  # [SCL]
+scaler_singd = GradScaler(init_scale=init_grad_scale)  # [SCL]
 scaler_adamw = GradScaler(init_scale=init_grad_scale)  # [SCL]
 
 # [LR] We need one learning rate scheduler per optimizer (THEY CAN BE DIFFERENT)
-scheduler_sngd = ExponentialLR(sngd, gamma=0.999)  # [LR]
-scheduler_adamw = ExponentialLR(sngd, gamma=0.999)  # [LR]
+scheduler_singd = ExponentialLR(singd, gamma=0.999)  # [LR]
+scheduler_adamw = ExponentialLR(singd, gamma=0.999)  # [LR]
 
 # [AMP] Determine device and data type for autocast
 amp_device_type = "cuda" if "cuda" in str(DEV) else "cpu"  # [AMP]
@@ -133,7 +132,7 @@ amp_dtype = bfloat16  # [AMP]
 
 # Loop over each batch from the training set
 for batch_idx, (inputs, target) in enumerate(train_loader):
-    print(f"Step {sngd.steps}")
+    print(f"Step {singd.steps}")
 
     inputs, target = inputs.to(DEV), target.to(DEV)
 
@@ -142,7 +141,7 @@ for batch_idx, (inputs, target) in enumerate(train_loader):
     target_split = target.split(MICRO_BATCH_SIZE)  # [ACC]
 
     # Zero gradient buffers
-    sngd.zero_grad()
+    singd.zero_grad()
     adamw.zero_grad()
 
     # Backward pass
@@ -154,22 +153,22 @@ for batch_idx, (inputs, target) in enumerate(train_loader):
         # [AMP] Backward passes under ``autocast`` are not recommended, see
         # (https://pytorch.org/docs/stable/amp.html#torch.autocast).
         # Therefore, this part happens outside the ``autocast`` context
-        loss = scaler_sngd.scale(loss)  # [SCL]
+        loss = scaler_singd.scale(loss)  # [SCL]
         # [SCL] We also have to call ``.scale`` of the other scaler on some dummy.
         # This sets the optimizer's ``.grad_scale`` argument to the current scale
         _ = scaler_adamw.scale(zeros_like(loss))  # [SCL]
         loss.backward()
 
     # [SCL] Re-scale gradients and update parameters
-    scaler_sngd.step(sngd)  # [SCL]
+    scaler_singd.step(singd)  # [SCL]
     scaler_adamw.step(adamw)  # [SCL]
 
     # [SCL] Update gradient scale for next iteration
-    scaler_sngd.update()  # [SCL]
+    scaler_singd.update()  # [SCL]
     scaler_adamw.update()  # [SCL]
 
     # [LR] Update learning rate schedule
-    scheduler_sngd.step()  # [LR]
+    scheduler_singd.step()  # [LR]
     scheduler_adamw.step()  # [LR]
 
     if batch_idx >= MAX_STEPS:

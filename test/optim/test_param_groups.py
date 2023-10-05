@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
 
-from sparse_ngd.optim.optimizer import SNGD
+from singd.optim.optimizer import SINGD
 
 
 def test_param_groups():
@@ -75,10 +75,10 @@ def test_param_groups():
             **linear_hyperparams,
         },
     ]
-    optim = SNGD(model, params=param_groups)
+    optim = SINGD(model, params=param_groups)
 
-    optim_sep_conv = SNGD(model_sep, params=conv_sep.parameters(), **conv_hyperparams)
-    optim_sep_linear = SNGD(
+    optim_sep_conv = SINGD(model_sep, params=conv_sep.parameters(), **conv_hyperparams)
+    optim_sep_linear = SINGD(
         model_sep,
         params=list(linear1_sep.parameters()) + list(linear2_sep.parameters()),
         **linear_hyperparams,

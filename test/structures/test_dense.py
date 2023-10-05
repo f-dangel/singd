@@ -1,10 +1,10 @@
-"""Test ``sparse_ngd.structures.dense``."""
+"""Test ``singd.structures.dense``."""
 
 from test.structures.utils import _TestStructuredMatrix
 
 from torch import Tensor
 
-from sparse_ngd.structures.dense import DenseMatrix
+from singd.structures.dense import DenseMatrix
 
 
 class TestDenseMatrix(_TestStructuredMatrix):

@@ -10,7 +10,7 @@ import torch
 import torch.distributed as dist
 from torch import Tensor, zeros
 
-from sparse_ngd.structures.utils import (
+from singd.structures.utils import (
     diag_add_,
     supported_eye,
     supported_matmul,

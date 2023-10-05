@@ -7,7 +7,7 @@ from typing import Tuple, Union
 import torch
 from torch import Tensor, einsum, ones, zeros
 
-from sparse_ngd.structures.base import StructuredMatrix
+from singd.structures.base import StructuredMatrix
 
 
 class DiagonalMatrix(StructuredMatrix):

@@ -7,8 +7,8 @@ from typing import Tuple, Union
 import torch
 from torch import Tensor, arange, cat, ones, zeros
 
-from sparse_ngd.structures.base import StructuredMatrix
-from sparse_ngd.structures.utils import (
+from singd.structures.base import StructuredMatrix
+from singd.structures.utils import (
     diag_add_,
     lowest_precision,
     supported_einsum,

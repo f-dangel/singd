@@ -12,18 +12,18 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import Optimizer
 from torch.utils.hooks import RemovableHandle
 
-from sparse_ngd.optim.accumulator import BatchAccumulator
-from sparse_ngd.optim.utils import process_grad_output, process_input
-from sparse_ngd.structures.base import StructuredMatrix
-from sparse_ngd.structures.blockdiagonal import Block30DiagonalMatrix
-from sparse_ngd.structures.dense import DenseMatrix
-from sparse_ngd.structures.diagonal import DiagonalMatrix
-from sparse_ngd.structures.hierarchical import Hierarchical15_15Matrix
-from sparse_ngd.structures.triltoeplitz import TrilToeplitzMatrix
-from sparse_ngd.structures.triutoeplitz import TriuToeplitzMatrix
+from singd.optim.accumulator import BatchAccumulator
+from singd.optim.utils import process_grad_output, process_input
+from singd.structures.base import StructuredMatrix
+from singd.structures.blockdiagonal import Block30DiagonalMatrix
+from singd.structures.dense import DenseMatrix
+from singd.structures.diagonal import DiagonalMatrix
+from singd.structures.hierarchical import Hierarchical15_15Matrix
+from singd.structures.triltoeplitz import TrilToeplitzMatrix
+from singd.structures.triutoeplitz import TriuToeplitzMatrix
 
 
-class SNGD(Optimizer):
+class SINGD(Optimizer):
     """Structured inverse-free KFAC based on the empirical Fisher.
 
     Extends the inverse-free KFAC algorithm from

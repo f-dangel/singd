@@ -1,10 +1,10 @@
-"""Test ``sparse_ngd.structures.triltoeplitz``."""
+"""Test ``singd.structures.triltoeplitz``."""
 
 from test.structures.utils import _TestStructuredMatrix
 
 from torch import Tensor, ones_like, zeros_like
 
-from sparse_ngd.structures.triltoeplitz import TrilToeplitzMatrix
+from singd.structures.triltoeplitz import TrilToeplitzMatrix
 
 
 class TestTrilToeplitzMatrix(_TestStructuredMatrix):

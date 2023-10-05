@@ -6,7 +6,7 @@ from typing import Tuple
 
 from torch import Tensor, arange, zeros
 
-from sparse_ngd.structures.base import StructuredMatrix
+from singd.structures.base import StructuredMatrix
 
 
 class TrilBottomRightDiagonalMatrix(StructuredMatrix):

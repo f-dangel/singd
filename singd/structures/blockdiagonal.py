@@ -8,8 +8,8 @@ import torch
 from einops import rearrange
 from torch import Tensor, arange, cat, zeros
 
-from sparse_ngd.structures.base import StructuredMatrix
-from sparse_ngd.structures.utils import (
+from singd.structures.base import StructuredMatrix
+from singd.structures.utils import (
     lowest_precision,
     supported_einsum,
     supported_eye,

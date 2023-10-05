@@ -1,7 +1,7 @@
 site_name: SINGD
-site_url: https://example.com # TODO Provide link to the documentation
-repo_url: https://github.com/yorkerlin/Sparse-NGD/
-repo_name: f-dangel/python-utilities
+site_url: https://https://readthedocs.org/projects/singd/
+repo_url: https://github.com/f-dangel/singd/
+repo_name: f-dangel/singd
 site_author: Wu Lin, Runa Eschenhagen, Felix Dangel, Agustinus Kristiadi, Kirill Neklyudov, Richard Turner, Alireza Makhzani
 nav:
     - Getting Started: index.md
