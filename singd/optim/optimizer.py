@@ -1,0 +1,776 @@
+"""Implements structured inverse-free KFAC."""
+
+from math import sqrt
+from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
+from warnings import simplefilter, warn
+
+import torch.distributed as dist
+from torch import Tensor, cat, dtype, is_grad_enabled, zeros_like
+from torch.nn import Conv2d, Linear, Module, Parameter
+from torch.nn.parallel import DataParallel as DP
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.optim import Optimizer
+from torch.utils.hooks import RemovableHandle
+
+from singd.optim.accumulator import BatchAccumulator
+from singd.optim.utils import process_grad_output, process_input
+from singd.structures.base import StructuredMatrix
+from singd.structures.blockdiagonal import Block30DiagonalMatrix
+from singd.structures.dense import DenseMatrix
+from singd.structures.diagonal import DiagonalMatrix
+from singd.structures.hierarchical import Hierarchical15_15Matrix
+from singd.structures.triltoeplitz import TrilToeplitzMatrix
+from singd.structures.triutoeplitz import TriuToeplitzMatrix
+
+
+class SINGD(Optimizer):
+    """Structured inverse-free KFAC based on the empirical Fisher.
+
+    Extends the inverse-free KFAC algorithm from
+
+    - Lin et al. (ICML 2023), 'Simplifying Momentum-based Riemannian Submanifold
+      Optimization'
+
+    by allowing for structured matrices. We use their notation in the code.
+
+    Note:
+        The optimizer installs forward and backward hooks on known modules.
+        These hooks compute quantities required for the pre-conditioner and are
+        compatible with gradient accumulation. During `.step`, these quantities
+        will be flushed to update the pre-conditioner, compute the approximate
+        natural gradient, and update the neural network parameters.
+
+    Attributes:
+        SUPPORTED_STRUCTURES: A string-to-class mapping of supported structures.
+        SUPPORTED_MODULES: Supported layers.
+        STATE_ATTRIBUTES: Attributes that belong to the optimizer's state but are
+            not stored inside the ``self.state`` attribute. They will be saved
+            and restored when the optimizer is check-pointed (by calling
+            ``.state_dict()`` and ``.load_state_dict()``).
+        _step_supports_amp_scaling: Indicate that `step` handles gradient scaling
+            internally if the optimizer is used together with a
+            ``torch.cuda.amp.GradScaler``. Before calling this class's ``.step()``,
+            the gradient scaler will store the current gradient scale inside
+            ``.grad_scale``, and whether ``infs`` occur in the gradients in
+            ``.found_inf``. For details, see the implementation of
+            ``torch.cuda.amp.GradScaler.step`` at
+            https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html.
+    """
+
+    SUPPORTED_STRUCTURES: Dict[str, Type[StructuredMatrix]] = {
+        "dense": DenseMatrix,
+        "diagonal": DiagonalMatrix,
+        "block30diagonal": Block30DiagonalMatrix,
+        "hierarchical15_15": Hierarchical15_15Matrix,
+        "triltoeplitz": TrilToeplitzMatrix,
+        "triutoeplitz": TriuToeplitzMatrix,
+    }
+    SUPPORTED_MODULES: Tuple[Type[Module], ...] = (Linear, Conv2d)
+    _step_supports_amp_scaling = True  # do not modify this name (PyTorch convention)!
+
+    def __init__(
+        self,
+        model: Module,
+        params: Union[None, Iterable[Parameter], List[Dict[str, Any]]] = None,
+        lr: float = 0.001,  # β₂ in the paper
+        momentum: float = 0.9,  # α₂ in the paper
+        damping: float = 0.001,  # λ in the paper
+        alpha1: float = 0.5,  # α₁ in the paper
+        weight_decay: float = 0.0,  # γ in the paper
+        T: int = 10,  # T in the paper
+        batch_averaged: bool = True,
+        lr_cov: Union[float, Callable[[int], float]] = 1e-2,  # β₁ in the paper
+        structures: Tuple[str, str] = ("dense", "dense"),
+        warn_unsupported: bool = True,
+        kfac_like: bool = False,
+        preconditioner_dtype: Tuple[Union[dtype, None], Union[dtype, None]] = (
+            None,
+            None,
+        ),
+        init_grad_scale: float = 1.0,
+    ):
+        """Structured inverse-free KFAC optimizer.
+
+        Uses the empirical Fisher. See Lin et al. (2023) for the notation.
+
+        Args:
+            model: The neural network whose parameters (or a subset thereof) will be
+                trained.
+            params: Used to specify the trainable parameters or parameter groups.
+                If unspecified, all parameters of ``model`` which are supported by the
+                optimizer will be trained. If a list of ``Parameters`` is passed,
+                only these parameters will be trained. If a list of dictionaries is
+                passed, these will be used as parameter groups.
+            lr: (β₂ in the paper) Learning rate for the parameter updates.
+                Default: ``0.001``.
+            momentum: (α₂ in the paper) Momentum on the parameter updates.
+                Default: ``0.9``.
+            damping: (λ in the paper) Damping strength used in the updates of
+                ``m_K, m_C``. Default: ``0.001``.
+            alpha1: (α₁ in the paper) Momentum used in the update of ``m_K, m_C``.
+                Default: ``0.5``.
+            weight_decay: (γ in the paper) Weight decay on the parameters.
+                Default: ``0.0``.
+            T: Pre-conditioner update frequency. Default: ``10``.
+            batch_averaged: Whether the loss function is a mean over per-sample
+                losses. Default is ``True``.
+            lr_cov: (β₁ in the paper) Learning rate for the updates of ``m_K, m_C``.
+                Default is ``1e-2``. Also allows for a callable which takes the current
+                step and returns the current value for ``lr_cov``.
+            structures: A 2-tuple of strings specifying the structure of the
+                factorizations of ``K`` and ``C``. Possible values for each entry are
+                ``'dense'``, ``'diagonal'``, ``'block30diagonal'``,
+                ``'hierarchical15_15'``, ``'triltoeplitz'``, and ``'triutoeplitz'``.
+                Default is (``'dense'``, ``'dense'``).
+            warn_unsupported: Only relevant if ``params`` is unspecified. Whether to
+                warn if ``model`` contains parameters of layers that are not supported.
+                These parameters will not be trained by the optimizer.
+            kfac_like: Whether to use an update rule which results in an update close
+                to the KFAC optimizer. Default: ``False``. Please see the theorem in
+                the paper for more details.
+            preconditioner_dtype: Data types used to store the structured
+                pre-conditioner matrices (``K`` and ``C``). If ``None``, will use the
+                same data type as the parameter for both pre-conditioner matrices. If
+                ``(float32, None)``, will use ``float32`` for ``K`` and the same data
+                type as the weight for ``C``. Default: ``(None, None)``.
+            init_grad_scale: Only relevant if using a ``GradScaler``. Initial gradient
+                scale of the scaler or a number of similar magnitude. If unspecified,
+                the optimizer will still work correctly but the pre-conditioner compu-
+                tation in the first backpropagation might be numerically unstable.
+                Default: ``1.0``.
+
+        Raises:
+            TypeError: If DataParallel or DistributedDataParallel model wrappers
+                are used.
+            ValueError: If any of the learning rate and momentum parameters
+                (``lr, lr_cov, alpha1, momentum, weight_decay``) are non-positive.
+        """
+        if isinstance(model, (DP, DDP)):
+            raise TypeError(
+                "DataParallel and DistributedDataParallel wrappers are not supported. "
+                "Use the normal DDP setup without the wrapper for distributed training."
+            )
+
+        for x, name in [
+            (lr, "lr"),
+            (lr_cov, "lr_cov"),
+            (alpha1, "alpha1"),
+            (momentum, "momentum"),
+            (weight_decay, "weight_decay"),
+        ]:
+            if isinstance(x, float) and x < 0.0:
+                raise ValueError(f"{name} must be positive. Got {x}")
+
+        defaults = dict(
+            lr=lr,
+            momentum=momentum,
+            damping=damping,
+            alpha1=alpha1,
+            weight_decay=weight_decay,
+            T=T,
+            batch_averaged=batch_averaged,
+            lr_cov=lr_cov,
+            structures=structures,
+            kfac_like=kfac_like,
+            preconditioner_dtype=preconditioner_dtype,
+        )
+        if params is None:
+            params = self._get_trainable_parameters(
+                model, warn_unsupported=warn_unsupported
+            )
+        super().__init__(params, defaults)
+        self.steps = 0
+
+        # for mapping modules to their groups
+        self.param_to_group_idx = self._check_param_groups(model)
+        # layers whose parameters will be updated
+        self.module_names, self.hook_handles = self._install_hooks(model)
+
+        # NOTE We use the module names (strings) as keys as they don't change when a
+        # model is loaded from a checkpoint (unlike the module objects themselves).
+
+        # temporarily stores layer inputs during a forward-backward pass
+        self.inputs: Dict[str, Tensor] = {}
+
+        # store matrices for the pre-conditioner
+        self.Ks: Dict[str, StructuredMatrix] = {}
+        self.Cs: Dict[str, StructuredMatrix] = {}
+
+        # store momentum terms for the pre-conditioner matrices
+        self.m_Ks: Dict[str, StructuredMatrix] = {}
+        self.m_Cs: Dict[str, StructuredMatrix] = {}
+
+        # accumulators for H_K and H_C
+        self.H_Ks: Dict[str, BatchAccumulator] = {}
+        self.H_Cs: Dict[str, BatchAccumulator] = {}
+
+        self._initialize_buffers()
+
+        # Book-keeping of ``grad_scale``s. We need to keep track of scales of two
+        # consecutive steps because we do not have access to the scale at step ``t``
+        # during its backpropagation, but only when updating the pre-conditioner. Our
+        # solution is to un-scale the gradient with the scale from step ``t-1`` in the
+        # backward hook computations for step ``t``, then undo and use the scale from
+        # step ``t`` in the pre-conditioner update.
+        self._grad_scales: Dict[int, float] = {-1: init_grad_scale}
+
+    def _get_param_group_entry(self, module: Module, entry: str) -> Any:
+        """Get the parameter group that contains the layer's parameters.
+
+        Args:
+            module: A supported layer whose parameter group will be returned.
+            entry: The entry in the parameter group that will be returned.
+
+        Returns:
+            The entry of the parameter group that contains the layer's parameters.
+        """
+        assert isinstance(module, self.SUPPORTED_MODULES)
+        group_idx = self.param_to_group_idx[module.weight.data_ptr()]
+        return self.param_groups[group_idx][entry]
+
+    def _check_param_groups(self, model: Module) -> Dict[int, int]:
+        """Check parameter groups for conflicts.
+
+        For all supported layers, the parameters must be in the same group because
+        we compute and update the pre-conditioner per layer.
+
+        Args:
+            model: The model whose layers will be checked.
+
+        Raises:
+            ValueError: If parameters in a supported layer are in different groups.
+
+        Returns:
+            A dictionary mapping parameter IDs (``.data_ptr()``) to group indices.
+        """
+        # if KFAC-like update is employed, alpha1 will be ignored
+        for idx, group in enumerate(self.param_groups):
+            if group["kfac_like"] and group["alpha1"] != 0.0:
+                warn(
+                    f"Parameter group {idx} has kfac_like=True but was initialized "
+                    + f"with non-zero Riemannian momentum (alpha1={group['alpha1']}). "
+                    + "Setting alpha' to zero."
+                )
+                group["alpha1"] = 0.0
+
+        # Find out which parameter is in which group
+        param_to_group_idx = {}
+        for group_idx, group in enumerate(self.param_groups):
+            for param in group["params"]:
+                param_to_group_idx[param.data_ptr()] = group_idx
+
+        param_ids = [
+            param.data_ptr() for group in self.param_groups for param in group["params"]
+        ]
+        # check that parameters in a supported module are in the same group
+        # all layers that are not containers
+        modules = [
+            m
+            for m in model.modules()
+            if len(list(m.modules())) == 1 and isinstance(m, self.SUPPORTED_MODULES)
+        ]
+        for m in modules:
+            m_param_ids = [
+                p.data_ptr() for p in m.parameters() if p.data_ptr() in param_ids
+            ]
+            m_groups = [param_to_group_idx[p_id] for p_id in m_param_ids]
+            if len(set(m_groups)) not in [0, 1]:
+                raise ValueError(
+                    "Parameters of a layer are in different parameter groups. "
+                    + f"Layer: {m}. Group index of parameters: {m_groups}."
+                )
+
+        return param_to_group_idx
+
+    def _get_trainable_parameters(
+        self, model: Module, warn_unsupported: bool
+    ) -> List[Parameter]:
+        """Return a list containing the model parameters that can be trained.
+
+        Args:
+            model: The model whose parameters should be trained.
+            warn_unsupported: Whether to warn if ``model`` contains parameters of
+                layers that are not supported.
+
+        Returns:
+            A list of parameters that can be trained.
+        """
+        # all layers that are not containers
+        named_modules = [
+            (name, mod)
+            for name, mod in model.named_modules()
+            if len(list(mod.modules())) == 1
+        ]
+
+        trainable = []
+        for name, mod in named_modules:
+            mod_trainable = [param for param in mod.parameters() if param.requires_grad]
+            if isinstance(mod, self.SUPPORTED_MODULES):
+                trainable.extend(mod_trainable)
+            elif mod_trainable and warn_unsupported:
+                warn(
+                    "Found un-supported parameter(s) that will not be trained in "
+                    + f"layer {name}: {mod}. To disable this warning, construct the "
+                    "optimizer with `warn_unsupported=False`."
+                )
+
+        return trainable
+
+    def _initialize_buffers(self):
+        """Initialize buffers for ``K, C, m_K, m_C``.
+
+        Writes to ``self.Ks, self.Cs, self.m_Ks, self.m_Cs``.
+
+        ``K, C`` are initialized to identity matrices, their momentum terms
+        ``m_K, m_C`` to zero.
+        """
+        for module, name in self.module_names.items():
+            dim_K, dim_C = self.preconditioner_dims(module)
+
+            dtype = self._get_param_group_entry(module, "preconditioner_dtype")
+            dtype_K = dtype[0] if dtype[0] is not None else module.weight.dtype
+            dtype_C = dtype[1] if dtype[1] is not None else module.weight.dtype
+            device = module.weight.device
+
+            # use the structure specified for the parameter group
+            structures = self._get_param_group_entry(module, "structures")
+            K_cls = self.SUPPORTED_STRUCTURES[structures[0]]
+            C_cls = self.SUPPORTED_STRUCTURES[structures[1]]
+
+            self.Ks[name] = K_cls.eye(dim_K, dtype=dtype_K, device=device)
+            self.Cs[name] = C_cls.eye(dim_C, dtype=dtype_C, device=device)
+
+            alpha1 = self._get_param_group_entry(module, "alpha1")
+            if alpha1 != 0.0:
+                self.m_Ks[name] = K_cls.zeros(dim_K, dtype=dtype_K, device=device)
+                self.m_Cs[name] = C_cls.zeros(dim_C, dtype=dtype_C, device=device)
+
+    @staticmethod
+    def preconditioner_dims(module: Module) -> Tuple[int, int]:
+        """Return the dimensions of the pre-conditioner matrices for a layer.
+
+        Args:
+            module: Layer whose pre-conditioner dimensions are returned.
+
+        Returns:
+            Tuple of the form ``(dim_K, dim_C)``.
+
+        Raises:
+            NotImplementedError: If the module is not supported.
+        """
+        if isinstance(module, Linear):
+            dim_C, dim_K = module.weight.shape
+            if module.bias is not None:
+                dim_K += 1
+        elif isinstance(module, Conv2d):
+            dim_K = module.weight.shape[1:].numel()
+            if module.bias is not None:
+                dim_K += 1
+            dim_C = module.weight.shape[0]
+        else:
+            raise NotImplementedError(f"Initialization not implemented for {module}.")
+        return dim_K, dim_C
+
+    def _save_input(self, module: Module, inputs: Tuple[Tensor]):
+        """Internally store input of a layer if triggered by update frequency.
+
+        Saves the input to ``self.inputs``.
+
+        Args:
+            module: Layer whose input is stored.
+            inputs: Inputs to the layer.
+        """
+        T = self._get_param_group_entry(module, "T")
+        if is_grad_enabled() and self.steps % T == 0:
+            module_name = self.module_names[module]
+            self.inputs[module_name] = inputs[0].data
+
+    def _update_preconditioner(self, module: Module):
+        """Update the pre-conditioner matrices and their momenta for a layer.
+
+        Only updates for steps matched by the specified update frequency.
+        Flushes the accumulated quantities ``H_K, H_C``.
+        Updates internal quantities ``K, C, m_K, m_C``.
+
+        Args:
+            module: Layer whose pre-conditioner matrices are updated.
+        """
+        T = self._get_param_group_entry(module, "T")
+        if self.steps % T != 0:
+            return
+
+        module_name = self.module_names[module]
+        K, C = self.Ks[module_name], self.Cs[module_name]
+        # NOTE: Pop such that they will be freed after
+        H_K: StructuredMatrix = self.H_Ks.pop(module_name).value
+        H_C: StructuredMatrix = self.H_Cs.pop(module_name).value
+
+        # un-scale ``H_C = structure(C.T @ (grad_scale * g) @ (grad_scale * g).T @ C)``
+        prev_grad_scale = self._get_grad_scale(self.steps - 1)
+        grad_scale = self._get_grad_scale(self.steps)
+        if grad_scale != 1.0 or prev_grad_scale != 1.0:
+            # In total we have to divide by ``grad_scale ** 2``. The ``H_C`` computed
+            # in the backward pass was already divided by ``prev_grad_scale`` to avoid
+            # overflows. Here, we apply the remaining un-scaling
+            H_C *= prev_grad_scale / grad_scale**2
+
+        # 1) COMPUTE UPDATE
+        K_tK = K.from_inner()
+        C_tC = C.from_inner()
+
+        p, d = self.preconditioner_dims(module)
+
+        # hyper-parameters for parameter group of module
+        kfac_like = self._get_param_group_entry(module, "kfac_like")
+        damping = self._get_param_group_entry(module, "damping")
+
+        # step for m_K
+        if kfac_like:
+            first_term = H_K
+            second_term = K_tK * damping
+        else:
+            first_term = H_K * (H_C.trace() / d)
+            c_squared = damping * C_tC.trace()
+            second_term = K_tK * (c_squared / d)
+        new_m_K = (first_term + second_term).diag_add_(-1.0) * 0.5
+
+        # step for m_C
+        if kfac_like:
+            first_term = H_C
+            second_term = C_tC
+        else:
+            first_term = H_C * (H_K.trace() / p)
+            kappa_squared = damping * K_tK.trace()
+            second_term = C_tC * (kappa_squared / p)
+        new_m_C = (first_term + second_term).diag_add_(-1.0) * 0.5
+
+        # 2) APPLY UPDATE
+        alpha1 = self._get_param_group_entry(module, "alpha1")
+        if alpha1 != 0.0:
+            new_m_C += self.m_Cs[module_name] * alpha1
+            new_m_K += self.m_Ks[module_name] * alpha1
+            self.m_Cs[module_name] = new_m_C
+            self.m_Ks[module_name] = new_m_K
+
+        beta1 = self._get_param_group_entry(module, "lr_cov")
+        if isinstance(beta1, Callable):  # scheduled
+            beta1 = beta1(self.steps)
+        self.Ks[module_name] = K - (K @ new_m_K) * beta1
+        self.Cs[module_name] = C - (C @ new_m_C) * beta1
+
+    def _accumulate_H_terms(
+        self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]
+    ):
+        """Accumulate the current mini-batch's contribution to ``H_K, H_C`` for a layer.
+
+        Updates the ``H_K, H_C`` buffers for the module.
+
+        Only updates for steps matched by the specified update frequency.
+        Requires that the layer inputs have been stored in ``self.inputs``.
+
+        Args:
+            module: Layer whose pre-conditioner is updated.
+            grad_input: Gradients w.r.t. the input.
+            grad_output: Gradients w.r.t. the output.
+        """
+        T = self._get_param_group_entry(module, "T")
+        if self.steps % T != 0:
+            return
+
+        batch_averaged = self._get_param_group_entry(module, "batch_averaged")
+        module_name = self.module_names[module]
+
+        # 1) PROCESS INPUTS AND GRAD_OUTPUTS
+        a = self.inputs.pop(module_name)
+        batch_size = a.shape[0]
+        # For convolutions, unfold the input, for modules with bias terms, append a 1
+        a = process_input(a, module)
+
+        g = grad_output[0].data
+        # Flatten into matrix, add scaling from batch average
+        g = process_grad_output(g, module, batch_averaged)
+
+        # 2) Update H_K, H_C
+        K, C = self.Ks[module_name], self.Cs[module_name]
+        H_K = K.from_inner(X=a.T)
+
+        # use the gradient scale from the previous step because we do not have access
+        # to the actual one during backpropagation
+        prev_grad_scale = self._get_grad_scale(self.steps - 1)
+        if prev_grad_scale != 1.0:
+            # In total we have to divide by ``grad_scale ** 2``. Here, we divide
+            # by ``prev_grad_scale`` and apply the remaining un-scaling by dividing
+            # by ``grad_scale **2 / prev_grad_scale`` later when updating the
+            # pre-conditioner
+            g = g / sqrt(prev_grad_scale)
+        H_C = C.from_inner(X=g.T)
+
+        # If DDP is used.
+        if dist.is_initialized():
+            # all-reduce across devices (computes average by default).
+            op = dist.ReduceOp.AVG if batch_averaged else dist.ReduceOp.SUM
+            H_K.all_reduce(op=op)
+            H_C.all_reduce(op=op)
+
+        # maybe set up fresh accumulators (they get flushed in `.step`)
+        if module_name not in self.H_Ks:
+            self.H_Ks[module_name] = BatchAccumulator(batch_averaged=batch_averaged)
+        if module_name not in self.H_Cs:
+            self.H_Cs[module_name] = BatchAccumulator(batch_averaged=batch_averaged)
+
+        self.H_Ks[module_name].update(H_K, batch_size)
+        self.H_Cs[module_name].update(H_C, batch_size)
+
+    def _install_hooks(
+        self, model: Module
+    ) -> Tuple[Dict[Module, str], List[RemovableHandle]]:
+        """Install hooks on supported modules to accumulate pre-conditioner quantities.
+
+        Args:
+            model: Model whose modules are hooked.
+
+        Returns:
+            Mapping from hooked modules to their names and list of the installed hooks'
+            handles.
+        """
+        param_ids = [
+            p.data_ptr() for group in self.param_groups for p in group["params"]
+        ]
+        module_names = {
+            mod: name
+            for (name, mod) in model.named_modules()
+            if isinstance(mod, self.SUPPORTED_MODULES)
+            and any(p.data_ptr() in param_ids for p in mod.parameters())
+        }
+        handles = []
+        for module in module_names:
+            handles.extend(
+                (
+                    module.register_forward_pre_hook(self._save_input),
+                    module.register_full_backward_hook(self._accumulate_H_terms),
+                )
+            )
+        return module_names, handles
+
+    def _compute_natural_gradient(self, module: Module) -> Tuple[Tensor, ...]:
+        """Compute the natural gradient with the current pre-conditioner for a layer.
+
+        Uses the current value in ``.grad`` to compute the natural gradient.
+
+        Args:
+            module: The layer whose natural gradient will be computed.
+
+        Returns:
+            The natural gradient for the parameters (weights only or weights + bias)
+            of the layer in tuple format.
+
+        Raises:
+            NotImplementedError: If the layer is not supported.
+        """
+        # 1) CONCATENATE GRADIENTS OF WEIGHT AND BIAS AND RESHAPE INTO MATRIX
+        if isinstance(module, Conv2d):
+            grad_mat = module.weight.grad.data.flatten(start_dim=1)
+        elif isinstance(module, Linear):
+            grad_mat = module.weight.grad.data
+        else:
+            raise NotImplementedError(f"Can't get matrix gradient of {module}")
+
+        if module.bias is not None:
+            grad_mat = cat([grad_mat, module.bias.grad.data.unsqueeze(1)], dim=1)
+
+        # un-scale gradients
+        grad_scale = self._get_grad_scale(self.steps)
+        if grad_scale != 1.0:
+            grad_mat = grad_mat / grad_scale
+
+        # 2) COMPUTE THE NATURAL GRADIENT IN CONCATENATED MATRIX FORM
+        module_name = self.module_names[module]
+
+        # We need to compute ``W @ K @ K^T`` where ``W`` is the weight gradient
+        # ``K`` supports ``K @ ...`` and ``K^T @ ...``. Hence, we rewrite into
+        # ``W @ K @ K^T = ( K @ (K^T @ W^T) )^T``.
+        K = self.Ks[module_name]
+        nat_grad = (K @ K.rmatmat(grad_mat.T)).T
+
+        C = self.Cs[module_name]
+        nat_grad = C @ (C.rmatmat(nat_grad))
+
+        # If DDP is used.
+        if dist.is_initialized():
+            # all-reduce across devices.
+            batch_averaged = self._get_param_group_entry(module, "batch_averaged")
+            op = dist.ReduceOp.AVG if batch_averaged else dist.ReduceOp.SUM
+            dist.all_reduce(nat_grad, op=op)
+
+        # 3) UN-CONCATENATE, UN-RESHAPE, AND COPY THE NATURAL GRADIENT TO ``.GRAD``
+        if module.bias is not None:
+            # bias term is stored in last column
+            nat_grad_weight, nat_grad_bias = nat_grad[:, :-1], nat_grad[:, -1]
+            nat_grad_weight = nat_grad_weight.reshape_as(module.weight)
+            nat_grad_bias = nat_grad_bias.reshape_as(module.bias)
+            return nat_grad_weight, nat_grad_bias
+        else:
+            return (nat_grad.reshape_as(module.weight),)
+
+    def step(self, closure: Union[None, Callable[[], Tensor]] = None):
+        """Compute natural gradients and update parameters.
+
+        Warn the user when the step is skipped because ``inf``s were found in
+        the gradients.
+
+        Args:
+            closure: Optional closure that evaluates the loss. Not supported.
+
+        Raises:
+            NotImplementedError: If a closure is supplied or if ``inf``s are
+                encountered by a gradient scaler that is used jointly with the
+                optimizer.
+        """
+        if closure is not None:
+            raise NotImplementedError("Closure not supported.")
+
+        # Set current gradient scale if used with ``torch.cuda.amp.GradScaler``
+        # and store it internally. See the comment on the class attribute
+        # ``_step_supports_amp_scaling`` how gradient scales are communicated to
+        # an optimizer.
+        try:
+            # see if ``grad_scale`` was externally supplied by the user (e.g. when
+            # using gradient clipping via ``torch.cuda.amp.GradScaler.unscale_``)
+            self._get_grad_scale(self.steps)
+        except KeyError:
+            # ``grad_scale`` was supplied to the optimizer via ``scaler.step``,
+            # or no gradient scaler is used.
+            grad_scale = getattr(self, "grad_scale", Tensor([1.0])).item()
+            self.set_current_grad_scale(grad_scale)
+
+        found_inf = getattr(self, "found_inf", False)
+        if found_inf:
+            # Skip the update step if ``inf``s were encountered in the gradients.
+            # The ``GradScaler`` will adjust the scale in this case.
+            simplefilter("always", UserWarning)  # Warn every time this happens.
+            warn("Encountered inf in gradients. Skipping update.")
+            # Also, empty the accumulators because this step will be skipped.
+            for name in self.module_names.values():
+                if name in self.H_Ks:
+                    del self.H_Ks[name]
+                if name in self.H_Cs:
+                    del self.H_Cs[name]
+        else:
+            self._step()
+
+        self.steps += 1
+
+        # remove ``grad_scale``s that are not required anymore
+        self._remove_used_grad_scales()
+
+    def _step(self):
+        """Compute natural gradients and update parameters."""
+        for module in self.module_names:
+            self._update_preconditioner(module)
+            natural_gradients = self._compute_natural_gradient(module)
+            parameters = (
+                [module.weight] if module.bias is None else [module.weight, module.bias]
+            )
+
+            # hyper-parameters for group containing module
+            weight_decay = self._get_param_group_entry(module, "weight_decay")
+            momentum = self._get_param_group_entry(module, "momentum")
+            lr = self._get_param_group_entry(module, "lr")
+
+            for p, p_nat_grad in zip(parameters, natural_gradients):
+                p_step = p_nat_grad
+
+                # add weight decay
+                if weight_decay != 0.0:
+                    p_step.add_(p.data, alpha=weight_decay)
+
+                # momentum on previous updates
+                if momentum != 0.0:
+                    param_state = self.state[p]
+                    if "momentum_buffer" not in param_state:
+                        param_state["momentum_buffer"] = zeros_like(p.data)
+
+                    p_momentum = param_state["momentum_buffer"]
+                    p_momentum.mul_(momentum).add_(p_step)
+                    p_step = p_momentum
+
+                p.data.add_(p_step, alpha=-lr)
+
+    def _get_grad_scale(self, t: int) -> float:
+        """Get the gradient scale used in the backpropagation of step ``t``.
+
+        Args:
+            t: The step for which the gradient scale is requested.
+
+        Returns:
+            The gradient scale at step ``t``.
+        """
+        return self._grad_scales[t]
+
+    def _remove_used_grad_scales(self):
+        """Remove gradient scales that are not required anymore.
+
+        Modifies ``self._grad_scales`` in-place.
+        """
+        drop = [t for t in self._grad_scales if t < self.steps - 1]
+        for t in drop:
+            del self._grad_scales[t]
+
+    def set_current_grad_scale(self, grad_scale: float):
+        """Store the current gradient scale internally.
+
+        Warn the user if ``init_grad_scale`` was not specified but a scaler is used.
+
+        Args:
+            grad_scale: The current gradient scale.
+        """
+        self._grad_scales[self.steps] = grad_scale
+
+        if self.steps == 0:
+            init_scale, this_scale = self._get_grad_scale(-1), self._get_grad_scale(0)
+            if init_scale == 1.0 and this_scale != 1.0:
+                warn(
+                    f"Detected non-zero gradient scaling ({this_scale} at step 0). "
+                    + f"Consider passing a value similar to {this_scale} to "
+                    "`init_grad_scale` when initializing the optimizer as this will "
+                    f"improve numerical stability (was initialized to {init_scale})."
+                )
+
+    STATE_ATTRIBUTES: List[str] = [
+        "steps",
+        "_grad_scales",
+        "Ks",
+        "Cs",
+        "m_Ks",
+        "m_Cs",
+        "H_Ks",
+        "H_Cs",
+        "inputs",
+    ]
+
+    def state_dict(self) -> Dict[str, Any]:
+        """Return a save-able state of the optimizer.
+
+        Returns:
+            A dictionary containing the optimizer state.
+        """
+        state_dict = super().state_dict()
+
+        for name in self.STATE_ATTRIBUTES:
+            assert name not in state_dict.keys()
+            state_dict[name] = getattr(self, name)
+
+        return state_dict
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """Load an optimizer state.
+
+        Args:
+            state_dict: A dictionary containing a valid state obtained from this
+                class's ``.state_dict()`` method.
+        """
+        attributes = {name: state_dict.pop(name) for name in self.STATE_ATTRIBUTES}
+        super().load_state_dict(state_dict)
+
+        for name, value in attributes.items():
+            setattr(self, name, value)
