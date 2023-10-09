@@ -24,37 +24,41 @@ from singd.structures.triutoeplitz import TriuToeplitzMatrix
 
 
 class SINGD(Optimizer):
-    """Structured inverse-free KFAC based on the empirical Fisher.
+    """Structured inverse-free natural gradient descent.
 
-    Extends the inverse-free KFAC algorithm from
-
-    - Lin et al. (ICML 2023), 'Simplifying Momentum-based Riemannian Submanifold
-      Optimization'
-
-    by allowing for structured matrices. We use their notation in the code.
+    The algorithm is introduced in [this paper](TODO Insert arXiv link) and
+    extends the inverse-free KFAC algorithm from [Lin et al. (ICML
+    2023)](https://arxiv.org/abs/2302.09738) with structured pre-conditioner
+    matrices.
 
     Note:
-        The optimizer installs forward and backward hooks on known modules.
-        These hooks compute quantities required for the pre-conditioner and are
-        compatible with gradient accumulation. During `.step`, these quantities
-        will be flushed to update the pre-conditioner, compute the approximate
-        natural gradient, and update the neural network parameters.
+        Uses the empirical Fisher.
+
+    Note:
+        (Implementation concept) The optimizer installs forward and backward hooks on
+        known modules. These hooks compute quantities required for the pre-conditioner.
+        During `.step`, these quantities will be flushed to update the pre-conditioner,
+        compute the approximate natural gradient, and update the network parameters.
 
     Attributes:
         SUPPORTED_STRUCTURES: A string-to-class mapping of supported structures.
         SUPPORTED_MODULES: Supported layers.
         STATE_ATTRIBUTES: Attributes that belong to the optimizer's state but are
-            not stored inside the ``self.state`` attribute. They will be saved
+            not stored inside the `self.state` attribute. They will be saved
             and restored when the optimizer is check-pointed (by calling
-            ``.state_dict()`` and ``.load_state_dict()``).
-        _step_supports_amp_scaling: Indicate that `step` handles gradient scaling
+            [`.state_dict()`](\
+https://pytorch.org/docs/stable/generated/torch.optim.Optimizer.state_dict.html) and
+            [`.load_state_dict()`](\
+https://pytorch.org/docs/stable/generated/torch.optim.Optimizer.load_state_dict.html)).
+        _step_supports_amp_scaling: Indicates that `step` handles gradient scaling
             internally if the optimizer is used together with a
-            ``torch.cuda.amp.GradScaler``. Before calling this class's ``.step()``,
-            the gradient scaler will store the current gradient scale inside
-            ``.grad_scale``, and whether ``infs`` occur in the gradients in
-            ``.found_inf``. For details, see the implementation of
-            ``torch.cuda.amp.GradScaler.step`` at
-            https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html.
+            [`torch.cuda.amp.GradScaler`](\
+https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler).
+            Before calling this class's `.step()`, the gradient scaler will store the
+            current gradient scale inside `.grad_scale`, and whether `infs` occur in
+            the gradients in `.found_inf`. For details, see the implementation of
+            [`torch.cuda.amp.GradScaler.step`](\
+https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html).
     """
 
     SUPPORTED_STRUCTURES: Dict[str, Type[StructuredMatrix]] = {
@@ -89,61 +93,72 @@ class SINGD(Optimizer):
         ),
         init_grad_scale: float = 1.0,
     ):
-        """Structured inverse-free KFAC optimizer.
+        """Structured inverse-free natural gradient descent optimizer.
 
-        Uses the empirical Fisher. See Lin et al. (2023) for the notation.
+        Uses the empirical Fisher. See the [paper](TODO Insert arXiv link) for the
+        notation.
 
         Args:
             model: The neural network whose parameters (or a subset thereof) will be
                 trained.
             params: Used to specify the trainable parameters or parameter groups.
-                If unspecified, all parameters of ``model`` which are supported by the
-                optimizer will be trained. If a list of ``Parameters`` is passed,
+                If unspecified, all parameters of `model` which are supported by the
+                optimizer will be trained. If a list of `Parameters` is passed,
                 only these parameters will be trained. If a list of dictionaries is
-                passed, these will be used as parameter groups.
-            lr: (β₂ in the paper) Learning rate for the parameter updates.
-                Default: ``0.001``.
-            momentum: (α₂ in the paper) Momentum on the parameter updates.
-                Default: ``0.9``.
-            damping: (λ in the paper) Damping strength used in the updates of
-                ``m_K, m_C``. Default: ``0.001``.
-            alpha1: (α₁ in the paper) Momentum used in the update of ``m_K, m_C``.
-                Default: ``0.5``.
-            weight_decay: (γ in the paper) Weight decay on the parameters.
-                Default: ``0.0``.
-            T: Pre-conditioner update frequency. Default: ``10``.
+                passed, these will be used as [parameter groups](\
+https://pytorch.org/docs/stable/optim.html#per-parameter-options).
+            lr: (\\(\\beta_2\\) in the paper) Learning rate for the parameter updates.
+                Default: `0.001`.
+            momentum: (\\(\\alpha_2\\) in the paper) Momentum on the parameter updates.
+                Default: `0.9`.
+            damping: (\\(\\lambda\\) in the paper) Damping strength used in the updates
+                of the pre-conditioner momenta \\(\\mathbf{m}_\\mathbf{K}\\) and
+                \\(\\mathbf{m}_\\mathbf{C}\\). Default: `0.001`.
+            alpha1: (\\(\\alpha_1\\) in the paper) Momentum used in the updates
+                of the pre-conditioner momenta \\(\\mathbf{m}_\\mathbf{K}\\) and
+                \\(\\mathbf{m}_\\mathbf{C}\\). Default: `0.5`.
+            weight_decay: (\\(\\gamma\\) in the paper) Weight decay on the parameters.
+                Default: `0.0`.
+            T: Pre-conditioner update frequency. Default: `10`.
             batch_averaged: Whether the loss function is a mean over per-sample
-                losses. Default is ``True``.
-            lr_cov: (β₁ in the paper) Learning rate for the updates of ``m_K, m_C``.
-                Default is ``1e-2``. Also allows for a callable which takes the current
-                step and returns the current value for ``lr_cov``.
+                losses. Default is `True`. If `False `, the loss function is a sum.
+            lr_cov: (β₁ in the paper) Learning rate for the updates of the pre-
+                conditioner momenta \\(\\mathbf{m}_\\mathbf{K}\\) and
+                \\(\\mathbf{m}_\\mathbf{C}\\). Default is `1e-2`. Also allows for a
+                callable which takes the current step and returns the current value for
+                `lr_cov`.
             structures: A 2-tuple of strings specifying the structure of the
-                factorizations of ``K`` and ``C``. Possible values for each entry are
-                ``'dense'``, ``'diagonal'``, ``'block30diagonal'``,
-                ``'hierarchical15_15'``, ``'triltoeplitz'``, and ``'triutoeplitz'``.
-                Default is (``'dense'``, ``'dense'``).
-            warn_unsupported: Only relevant if ``params`` is unspecified. Whether to
-                warn if ``model`` contains parameters of layers that are not supported.
-                These parameters will not be trained by the optimizer.
-            kfac_like: Whether to use an update rule which results in an update close
-                to the KFAC optimizer. Default: ``False``. Please see the theorem in
-                the paper for more details.
+                pre-conditioner matrices \\(\\mathbf{K}, \\mathbf{C}\\) and their
+                momenta \\(\\mathbf{m}_\\mathbf{K}, \\mathbf{m}_\\mathbf{C}\\).
+                Possible values for each entry are `'dense'`, `'diagonal'`,
+                `'block30diagonal'`, `'hierarchical15_15'`, `'triltoeplitz'`, and
+                `'triutoeplitz'`. Default is (`'dense'`, `'dense'`).
+            warn_unsupported: Only relevant if `params` is unspecified. Whether to
+                warn if `model` contains parameters of layers that are not supported.
+                These parameters will not be trained by the optimizer. Default: `True`
+            kfac_like: Whether to use the modified update rule which results in an
+                update close to the KFAC optimizer (IKFAC). Default: `False`.
+                Please see the theorem in the paper for more details.
             preconditioner_dtype: Data types used to store the structured
-                pre-conditioner matrices (``K`` and ``C``). If ``None``, will use the
-                same data type as the parameter for both pre-conditioner matrices. If
-                ``(float32, None)``, will use ``float32`` for ``K`` and the same data
-                type as the weight for ``C``. Default: ``(None, None)``.
-            init_grad_scale: Only relevant if using a ``GradScaler``. Initial gradient
+                pre-conditioner matrices \\(\\mathbf{K}, \\mathbf{C}\\) and their
+                momenta \\(\\mathbf{m}_\\mathbf{K}, \\mathbf{m}_\\mathbf{C}\\).
+                If `None`, will use the same data type as the parameter for both
+                pre-conditioner matrices and momenta. If `(float32, None)`, will use
+                `float32` for \\(\\mathbf{K}, \\mathbf{m}_\\mathbf{K}\\) and the same
+                data type as the weight for \\(\\mathbf{C}, \\mathbf{m}_\\mathbf{C}\\).
+                Default: `(None, None)`.
+            init_grad_scale: Only relevant if using a [`torch.amp.GradScaler`](\
+https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gradient
                 scale of the scaler or a number of similar magnitude. If unspecified,
                 the optimizer will still work correctly but the pre-conditioner compu-
                 tation in the first backpropagation might be numerically unstable.
-                Default: ``1.0``.
+                Default: `1.0`.
 
         Raises:
-            TypeError: If DataParallel or DistributedDataParallel model wrappers
+            TypeError: If `DataParallel` or `DistributedDataParallel` model wrappers
                 are used.
             ValueError: If any of the learning rate and momentum parameters
-                (``lr, lr_cov, alpha1, momentum, weight_decay``) are non-positive.
+                (`lr, lr_cov, alpha1, momentum, weight_decay`) are non-positive.
         """
         if isinstance(model, (DP, DDP)):
             raise TypeError(
@@ -206,12 +221,12 @@ class SINGD(Optimizer):
 
         self._initialize_buffers()
 
-        # Book-keeping of ``grad_scale``s. We need to keep track of scales of two
-        # consecutive steps because we do not have access to the scale at step ``t``
+        # Book-keeping of `grad_scale`s. We need to keep track of scales of two
+        # consecutive steps because we do not have access to the scale at step `t`
         # during its backpropagation, but only when updating the pre-conditioner. Our
-        # solution is to un-scale the gradient with the scale from step ``t-1`` in the
-        # backward hook computations for step ``t``, then undo and use the scale from
-        # step ``t`` in the pre-conditioner update.
+        # solution is to un-scale the gradient with the scale from step `t-1` in the
+        # backward hook computations for step `t`, then undo and use the scale from
+        # step `t` in the pre-conditioner update.
         self._grad_scales: Dict[int, float] = {-1: init_grad_scale}
 
     def _get_param_group_entry(self, module: Module, entry: str) -> Any:
@@ -241,7 +256,7 @@ class SINGD(Optimizer):
             ValueError: If parameters in a supported layer are in different groups.
 
         Returns:
-            A dictionary mapping parameter IDs (``.data_ptr()``) to group indices.
+            A dictionary mapping parameter IDs (`.data_ptr()`) to group indices.
         """
         # if KFAC-like update is employed, alpha1 will be ignored
         for idx, group in enumerate(self.param_groups):
@@ -289,7 +304,7 @@ class SINGD(Optimizer):
 
         Args:
             model: The model whose parameters should be trained.
-            warn_unsupported: Whether to warn if ``model`` contains parameters of
+            warn_unsupported: Whether to warn if `model` contains parameters of
                 layers that are not supported.
 
         Returns:
@@ -317,12 +332,12 @@ class SINGD(Optimizer):
         return trainable
 
     def _initialize_buffers(self):
-        """Initialize buffers for ``K, C, m_K, m_C``.
+        """Initialize buffers for `K, C, m_K, m_C`.
 
-        Writes to ``self.Ks, self.Cs, self.m_Ks, self.m_Cs``.
+        Writes to `self.Ks, self.Cs, self.m_Ks, self.m_Cs`.
 
-        ``K, C`` are initialized to identity matrices, their momentum terms
-        ``m_K, m_C`` to zero.
+        `K, C` are initialized to identity matrices, their momentum terms
+        `m_K, m_C` to zero.
         """
         for module, name in self.module_names.items():
             dim_K, dim_C = self.preconditioner_dims(module)
@@ -353,7 +368,7 @@ class SINGD(Optimizer):
             module: Layer whose pre-conditioner dimensions are returned.
 
         Returns:
-            Tuple of the form ``(dim_K, dim_C)``.
+            Tuple of the form `(dim_K, dim_C)`.
 
         Raises:
             NotImplementedError: If the module is not supported.
@@ -374,7 +389,7 @@ class SINGD(Optimizer):
     def _save_input(self, module: Module, inputs: Tuple[Tensor]):
         """Internally store input of a layer if triggered by update frequency.
 
-        Saves the input to ``self.inputs``.
+        Saves the input to `self.inputs`.
 
         Args:
             module: Layer whose input is stored.
@@ -389,8 +404,8 @@ class SINGD(Optimizer):
         """Update the pre-conditioner matrices and their momenta for a layer.
 
         Only updates for steps matched by the specified update frequency.
-        Flushes the accumulated quantities ``H_K, H_C``.
-        Updates internal quantities ``K, C, m_K, m_C``.
+        Flushes the accumulated quantities `H_K, H_C`.
+        Updates internal quantities `K, C, m_K, m_C`.
 
         Args:
             module: Layer whose pre-conditioner matrices are updated.
@@ -405,12 +420,12 @@ class SINGD(Optimizer):
         H_K: StructuredMatrix = self.H_Ks.pop(module_name).value
         H_C: StructuredMatrix = self.H_Cs.pop(module_name).value
 
-        # un-scale ``H_C = structure(C.T @ (grad_scale * g) @ (grad_scale * g).T @ C)``
+        # un-scale `H_C = structure(C.T @ (grad_scale * g) @ (grad_scale * g).T @ C)`
         prev_grad_scale = self._get_grad_scale(self.steps - 1)
         grad_scale = self._get_grad_scale(self.steps)
         if grad_scale != 1.0 or prev_grad_scale != 1.0:
-            # In total we have to divide by ``grad_scale ** 2``. The ``H_C`` computed
-            # in the backward pass was already divided by ``prev_grad_scale`` to avoid
+            # In total we have to divide by `grad_scale ** 2`. The `H_C` computed
+            # in the backward pass was already divided by `prev_grad_scale` to avoid
             # overflows. Here, we apply the remaining un-scaling
             H_C *= prev_grad_scale / grad_scale**2
 
@@ -461,12 +476,12 @@ class SINGD(Optimizer):
     def _accumulate_H_terms(
         self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]
     ):
-        """Accumulate the current mini-batch's contribution to ``H_K, H_C`` for a layer.
+        """Accumulate the current mini-batch's contribution to `H_K, H_C` for a layer.
 
-        Updates the ``H_K, H_C`` buffers for the module.
+        Updates the `H_K, H_C` buffers for the module.
 
         Only updates for steps matched by the specified update frequency.
-        Requires that the layer inputs have been stored in ``self.inputs``.
+        Requires that the layer inputs have been stored in `self.inputs`.
 
         Args:
             module: Layer whose pre-conditioner is updated.
@@ -498,9 +513,9 @@ class SINGD(Optimizer):
         # to the actual one during backpropagation
         prev_grad_scale = self._get_grad_scale(self.steps - 1)
         if prev_grad_scale != 1.0:
-            # In total we have to divide by ``grad_scale ** 2``. Here, we divide
-            # by ``prev_grad_scale`` and apply the remaining un-scaling by dividing
-            # by ``grad_scale **2 / prev_grad_scale`` later when updating the
+            # In total we have to divide by `grad_scale ** 2`. Here, we divide
+            # by `prev_grad_scale` and apply the remaining un-scaling by dividing
+            # by `grad_scale **2 / prev_grad_scale` later when updating the
             # pre-conditioner
             g = g / sqrt(prev_grad_scale)
         H_C = C.from_inner(X=g.T)
@@ -555,7 +570,7 @@ class SINGD(Optimizer):
     def _compute_natural_gradient(self, module: Module) -> Tuple[Tensor, ...]:
         """Compute the natural gradient with the current pre-conditioner for a layer.
 
-        Uses the current value in ``.grad`` to compute the natural gradient.
+        Uses the current value in `.grad` to compute the natural gradient.
 
         Args:
             module: The layer whose natural gradient will be computed.
@@ -586,9 +601,9 @@ class SINGD(Optimizer):
         # 2) COMPUTE THE NATURAL GRADIENT IN CONCATENATED MATRIX FORM
         module_name = self.module_names[module]
 
-        # We need to compute ``W @ K @ K^T`` where ``W`` is the weight gradient
-        # ``K`` supports ``K @ ...`` and ``K^T @ ...``. Hence, we rewrite into
-        # ``W @ K @ K^T = ( K @ (K^T @ W^T) )^T``.
+        # We need to compute `W @ K @ K^T` where `W` is the weight gradient
+        # `K` supports `K @ ...` and `K^T @ ...`. Hence, we rewrite into
+        # `W @ K @ K^T = ( K @ (K^T @ W^T) )^T`.
         K = self.Ks[module_name]
         nat_grad = (K @ K.rmatmat(grad_mat.T)).T
 
@@ -602,7 +617,7 @@ class SINGD(Optimizer):
             op = dist.ReduceOp.AVG if batch_averaged else dist.ReduceOp.SUM
             dist.all_reduce(nat_grad, op=op)
 
-        # 3) UN-CONCATENATE, UN-RESHAPE, AND COPY THE NATURAL GRADIENT TO ``.GRAD``
+        # 3) UN-CONCATENATE, UN-RESHAPE, AND COPY THE NATURAL GRADIENT TO `.GRAD`
         if module.bias is not None:
             # bias term is stored in last column
             nat_grad_weight, nat_grad_bias = nat_grad[:, :-1], nat_grad[:, -1]
@@ -615,38 +630,38 @@ class SINGD(Optimizer):
     def step(self, closure: Union[None, Callable[[], Tensor]] = None):
         """Compute natural gradients and update parameters.
 
-        Warn the user when the step is skipped because ``inf``s were found in
+        Warn the user when the step is skipped because `inf`s were found in
         the gradients.
 
         Args:
             closure: Optional closure that evaluates the loss. Not supported.
 
         Raises:
-            NotImplementedError: If a closure is supplied or if ``inf``s are
+            NotImplementedError: If a closure is supplied or if `inf`s are
                 encountered by a gradient scaler that is used jointly with the
                 optimizer.
         """
         if closure is not None:
             raise NotImplementedError("Closure not supported.")
 
-        # Set current gradient scale if used with ``torch.cuda.amp.GradScaler``
+        # Set current gradient scale if used with `torch.cuda.amp.GradScaler`
         # and store it internally. See the comment on the class attribute
-        # ``_step_supports_amp_scaling`` how gradient scales are communicated to
+        # `_step_supports_amp_scaling` how gradient scales are communicated to
         # an optimizer.
         try:
-            # see if ``grad_scale`` was externally supplied by the user (e.g. when
-            # using gradient clipping via ``torch.cuda.amp.GradScaler.unscale_``)
+            # see if `grad_scale` was externally supplied by the user (e.g. when
+            # using gradient clipping via `torch.cuda.amp.GradScaler.unscale_`)
             self._get_grad_scale(self.steps)
         except KeyError:
-            # ``grad_scale`` was supplied to the optimizer via ``scaler.step``,
+            # `grad_scale` was supplied to the optimizer via `scaler.step`,
             # or no gradient scaler is used.
             grad_scale = getattr(self, "grad_scale", Tensor([1.0])).item()
             self.set_current_grad_scale(grad_scale)
 
         found_inf = getattr(self, "found_inf", False)
         if found_inf:
-            # Skip the update step if ``inf``s were encountered in the gradients.
-            # The ``GradScaler`` will adjust the scale in this case.
+            # Skip the update step if `inf`s were encountered in the gradients.
+            # The `GradScaler` will adjust the scale in this case.
             simplefilter("always", UserWarning)  # Warn every time this happens.
             warn("Encountered inf in gradients. Skipping update.")
             # Also, empty the accumulators because this step will be skipped.
@@ -660,7 +675,7 @@ class SINGD(Optimizer):
 
         self.steps += 1
 
-        # remove ``grad_scale``s that are not required anymore
+        # remove `grad_scale`s that are not required anymore
         self._remove_used_grad_scales()
 
     def _step(self):
@@ -697,20 +712,20 @@ class SINGD(Optimizer):
                 p.data.add_(p_step, alpha=-lr)
 
     def _get_grad_scale(self, t: int) -> float:
-        """Get the gradient scale used in the backpropagation of step ``t``.
+        """Get the gradient scale used in the backpropagation of step `t`.
 
         Args:
             t: The step for which the gradient scale is requested.
 
         Returns:
-            The gradient scale at step ``t``.
+            The gradient scale at step `t`.
         """
         return self._grad_scales[t]
 
     def _remove_used_grad_scales(self):
         """Remove gradient scales that are not required anymore.
 
-        Modifies ``self._grad_scales`` in-place.
+        Modifies `self._grad_scales` in-place.
         """
         drop = [t for t in self._grad_scales if t < self.steps - 1]
         for t in drop:
@@ -719,7 +734,7 @@ class SINGD(Optimizer):
     def set_current_grad_scale(self, grad_scale: float):
         """Store the current gradient scale internally.
 
-        Warn the user if ``init_grad_scale`` was not specified but a scaler is used.
+        Warn the user if `init_grad_scale` was not specified but a scaler is used.
 
         Args:
             grad_scale: The current gradient scale.
@@ -767,7 +782,7 @@ class SINGD(Optimizer):
 
         Args:
             state_dict: A dictionary containing a valid state obtained from this
-                class's ``.state_dict()`` method.
+                class's `.state_dict()` method.
         """
         attributes = {name: state_dict.pop(name) for name in self.STATE_ATTRIBUTES}
         super().load_state_dict(state_dict)

@@ -3,6 +3,8 @@ site_url: https://https://readthedocs.org/projects/singd/
 repo_url: https://github.com/f-dangel/singd/
 repo_name: f-dangel/singd
 site_author: Wu Lin, Runa Eschenhagen, Felix Dangel, Agustinus Kristiadi, Kirill Neklyudov, Richard Turner, Alireza Makhzani
+watch:
+  - singd
 nav:
     - Getting Started: index.md
     - API documentation: api.md
