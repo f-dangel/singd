@@ -1,4 +1,6 @@
-"""Demonstrate training MNIST with SINGD and AdamW + bells and whistles.
+"""Advanced usage.
+
+Demonstrate training MNIST with SINGD and AdamW + bells and whistles.
 
 Uses the following bells and whistles (relevant parts in the code are tagged):
 
@@ -6,9 +8,10 @@ Uses the following bells and whistles (relevant parts in the code are tagged):
 - [AMP] mixed-precision operations with autocast
 - [LR] learning rate scheduler
 - [ACC] micro batches (gradient accumulation)
+
+TODO Polish the example introducing using ``mkdocs_gallery`` blocks
 """
 
-from singd.optim.optimizer import SINGD
 from torch import autocast, bfloat16, cuda, device, manual_seed, zeros_like
 from torch.cuda.amp import GradScaler
 from torch.nn import (
@@ -25,6 +28,8 @@ from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, Normalize, ToTensor
+
+from singd.optim.optimizer import SINGD
 
 manual_seed(0)  # make deterministic
 MAX_STEPS = 100  # quit training after this many steps

@@ -5,8 +5,9 @@ repo_name: f-dangel/singd
 site_author: Wu Lin, Runa Eschenhagen, Felix Dangel, Agustinus Kristiadi, Kirill Neklyudov, Richard Turner, Alireza Makhzani
 nav:
     - Getting Started: index.md
-    - API documentation: api.md
-    - Developer notes: develop.md
+    - Code Examples: generated/gallery
+    - API Documentation: api.md
+    - Developer Notes: develop.md
 theme:
     name: material
     features:
@@ -35,6 +36,11 @@ plugins:
                       separate_signature: true
                       docstring_section_style: list
                       merge_init_into_class: true
+    - gallery:
+          conf_script: docs/gallery_conf.py
+          examples_dirs: docs/examples
+          gallery_dirs: docs/generated/gallery
+    - search
 extra_javascript:
     - javascripts/mathjax.js # LaTeX math
     - https://polyfill.io/v3/polyfill.min.js?features=es6 # LaTeX math

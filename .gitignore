@@ -12,3 +12,5 @@ wheels/
 *.egg-info/
 *.egg
 *.DS_Store
+docs/generated
+docs/examples/data
