@@ -24,6 +24,7 @@ markdown_extensions:
     - pymdownx.inlinehilite # code highlighting
     - pymdownx.snippets # code highlighting
     - pymdownx.superfences # code highlighting
+    - footnotes
 plugins:
     - mkdocstrings:
         default_handler: python

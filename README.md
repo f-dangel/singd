@@ -22,7 +22,9 @@ The main feature is a `torch.optim.Optimizer` which works like most PyTorch opti
   accumulation](https://pytorch.org/docs/stable/notes/amp_examples.html#gradient-accumulation)
   (multiple forward-backwards, then take a step)
 
-- Distributed computing
+- [Distributed
+  data-parallel](https://pytorch.org/tutorials/intermediate/ddp_tutorial.html)
+  (DDP) training[^1]
 
 The pre-conditioner matrices support different structures that allow to reduce cost ([overview](TODO Insert link to example)).
 
@@ -60,3 +62,7 @@ If you find this code useful for your research, consider citing the paper:
 }
 
 ```
+
+[^1]: We do support standard DDP with one crucial difference: The model should
+    not be wrapped with the DDP wrapper, but the rest, e.g. using the `torchrun`
+    command stays the same.
