@@ -90,8 +90,7 @@ def conv2d_process_input(input: Tensor, layer: Conv2d) -> Tensor:
         shape = list(a.shape[:-1]) + [1]  # new try
         a = torch.cat([a, a.new_ones(shape)], dim=-1)  # new try
 
-    a = a / spatial_size
-    a = a / np.sqrt(batch_size)  # new try2
+    a = a/(spatial_size * np.sqrt(batch_size))
 
     return a
 
@@ -138,9 +137,7 @@ def linear_process_input(input: Tensor, layer: Linear) -> Tensor:
         # shape = list(b.shape[:-1]) + [1] #new try
         # b = torch.cat([b, b.new_ones(shape)], dim=-1)#new try
 
-    # return b.t() @ (b / batch_size) #new try
     b = b / np.sqrt(batch_size)
-
     return b
 
 
@@ -192,11 +189,12 @@ def conv2d_process_grad_output(
     g = g.transpose(1, 2).transpose(2, 3)  # batch_size, out_h, out_w, n_filters
     g = g.reshape(-1, g.size(-1))  # (batch_size*out_h*out_w, n_filters)
 
+    rescaling = (spatial_size / np.sqrt(g.size(0)) * scaling)
     if batch_averaged:
-        g = g * batch_size
-    g = g * spatial_size
-
-    return g * (scaling / np.sqrt(g.size(0)))
+        g = g * (rescaling* batch_size)
+    else:
+        g = g * rescaling
+    return g
 
 
 def linear_process_grad_output(
