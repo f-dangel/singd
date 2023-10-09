@@ -232,6 +232,19 @@ class StructuredMatrix(ABC):
         if async_op:
             return tuple(handles)
 
+
+    def infinity_norm(self) -> float:
+        """Computes the infinity matrix norm.
+        Note: This assumes that all tensors in ``self._tensors_to_sync`` contain
+        elements of the matrix.
+        Returns:
+            The infinity matrix norm.
+        """
+        max_abs_elements = [
+            tensor.abs().max() for tensor in self._tensors_to_sync
+        ]
+        return max(max_abs_elements)
+
     ###############################################################################
     #                        Special operations for IF-KFAC                       #
     ###############################################################################
