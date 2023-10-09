@@ -432,9 +432,9 @@ class SINGD(Optimizer):
             first_term = H_K
             second_term = K_tK * damping
         else:
-            first_term = H_K * (H_C.trace() / d)
-            c_squared = damping * C_tC.trace()
-            second_term = K_tK * (c_squared / d)
+            first_term = H_K * (H_C * (1.0/d)).trace()
+            c_squared = damping * (C_tC * (1.0/d)).trace()
+            second_term = K_tK * c_squared
 
         if using_matrix_norm:
             new_m_K = (first_term + second_term).diag_add_(-1.0) * ((1.0-alpha1)/2.0)
@@ -446,9 +446,9 @@ class SINGD(Optimizer):
             first_term = H_C
             second_term = C_tC
         else:
-            first_term = H_C * (H_K.trace() / p)
-            kappa_squared = damping * K_tK.trace()
-            second_term = C_tC * (kappa_squared / p)
+            first_term = H_C * (H_K * (1.0/p)).trace()
+            kappa_squared = damping * (K_tK * (1.0/p)).trace()
+            second_term = C_tC * kappa_squared
 
         if using_matrix_norm:
             new_m_C = (first_term + second_term).diag_add_(-1.0) * ((1.0-alpha1)/2.0)
