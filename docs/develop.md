@@ -39,10 +39,15 @@ via `make`:
 
 ## Documentation
 
-To build the documentation, run the following command from the repository root,
+We use the [Google docstring
+convention](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html)
+and `mkdocs` which allows using markdown syntax in a docstring to achieve
+formatting.
+
+To build the documentation, run
 
 ```bash
 mkdocs serve
 ```
 
-and navigate to the displayed address.
+from the repository root and navigate to the displayed address.
