@@ -6,4 +6,4 @@ dependencies:
   - python=3.9.16
   - pip=23.1.2
   - pip:
-    - -e .[lint,test,doc]
+    - -e ."[lint,test,doc]"
