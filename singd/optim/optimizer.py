@@ -92,7 +92,7 @@ https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html).
             None,
         ),
         init_grad_scale: float = 1.0,
-    ):
+    ):  # noqa: D301
         """Structured inverse-free natural gradient descent optimizer.
 
         Uses the empirical Fisher. See the [paper](TODO Insert arXiv link) for the
