@@ -1,6 +1,6 @@
 """Implements structured inverse-free KFAC."""
 
-from math import sqrt
+from math import sqrt, log, exp
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
 from warnings import simplefilter, warn
 
@@ -220,6 +220,9 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
         self.H_Ks: Dict[str, BatchAccumulator] = {}
         self.H_Cs: Dict[str, BatchAccumulator] = {}
 
+        #use for adaptive scaling
+        self.log_scaling: Dict[str, float] = {}
+
         self._initialize_buffers()
 
         # Book-keeping of `grad_scale`s. We need to keep track of scales of two
@@ -356,6 +359,8 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             self.Ks[name] = K_cls.eye(dim_K, dtype=dtype_K, device=device)
             self.Cs[name] = C_cls.eye(dim_C, dtype=dtype_C, device=device)
 
+            self.log_scaling[name] =  0.0
+
             alpha1 = self._get_param_group_entry(module, "alpha1")
             if alpha1 != 0.0:
                 self.m_Ks[name] = K_cls.zeros(dim_K, dtype=dtype_K, device=device)
@@ -430,6 +435,10 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             # overflows. Here, we apply the remaining un-scaling
             H_C *= prev_grad_scale / grad_scale**2
 
+
+        scaling_K = max( [1.0, sqrt( K.infinity_norm() )] )
+        scaling_C = max( [1.0, sqrt( C.infinity_norm() )] )
+        scaling = scaling_K * scaling_C
         # 1) COMPUTE UPDATE
         K_tK = K.from_inner()
         C_tC = C.from_inner()
@@ -444,36 +453,41 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
 
         # step for m_K
         if kfac_like:
-            first_term = H_K
-            second_term = K_tK * damping
+            first_term = H_K * (1.0/scaling)
+            second_term = K_tK * (damping/scaling)
         else:
-            first_term = H_K * (H_C * (1.0/d)).trace()
-            c_squared = damping * (C_tC * (1.0/d)).trace()
+            first_term = H_K * ( (H_C * (1.0/d)).trace()/scaling )
+            c_squared = damping * (C_tC * (1.0/d)).trace()/scaling
             second_term = K_tK * c_squared
 
         if using_matrix_norm:
-            new_m_K = (first_term + second_term).diag_add_(-1.0) * ((1.0-alpha1)/2.0)
+            new_m_K = (first_term + second_term).diag_add_(-1.0/scaling) * ((1.0-alpha1)/2.0)
         else:
-            new_m_K = (first_term + second_term).diag_add_(-1.0) * 0.5
+            new_m_K = (first_term + second_term).diag_add_(-1.0/scaling) * 0.5
 
         # step for m_C
         if kfac_like:
-            first_term = H_C
-            second_term = C_tC
+            first_term = H_C * (1.0/scaling)
+            second_term = C_tC * (damping/scaling)
         else:
-            first_term = H_C * (H_K * (1.0/p)).trace()
-            kappa_squared = damping * (K_tK * (1.0/p)).trace()
+            first_term = H_C * ( (H_K * (1.0/p)).trace()/scaling )
+            kappa_squared = damping * (K_tK * (1.0/p)).trace()/scaling
             second_term = C_tC * kappa_squared
 
         if using_matrix_norm:
-            new_m_C = (first_term + second_term).diag_add_(-1.0) * ((1.0-alpha1)/2.0)
+            new_m_C = (first_term + second_term).diag_add_(-1.0/scaling) * ((1.0-alpha1)/2.0)
         else:
-            new_m_C = (first_term + second_term).diag_add_(-1.0) * 0.5
+            new_m_C = (first_term + second_term).diag_add_(-1.0/scaling) * 0.5
+
+
+        log_scaling = log(scaling)
+        log_scaling_mom = self.log_scaling[module_name] - log_scaling
+        self.log_scaling[module_name] = log_scaling
 
         # 2) APPLY UPDATE
         if alpha1 != 0.0:
-            new_m_C += self.m_Cs[module_name] * alpha1
-            new_m_K += self.m_Ks[module_name] * alpha1
+            new_m_C += self.m_Cs[module_name] * (alpha1 * exp(log_scaling_mom))
+            new_m_K += self.m_Ks[module_name] * (alpha1 * exp(log_scaling_mom))
             self.m_Cs[module_name] = new_m_C
             self.m_Ks[module_name] = new_m_K
 
@@ -481,11 +495,12 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
         if isinstance(beta1, Callable):  # scheduled
             beta1 = beta1(self.steps)
 
-        norm_K = 1.0
-        norm_C = 1.0
+        norm_K = 1.0/scaling
+        norm_C = 1.0/scaling
         if using_matrix_norm:
-            norm_K = max( [1.0, new_m_K.infinity_norm()] )
-            norm_C = max( [1.0, new_m_C.infinity_norm()] )
+            norm_K = max( [norm_K, new_m_K.infinity_norm()] )
+            norm_C = max( [norm_C, new_m_C.infinity_norm()] )
+
         self.Ks[module_name] = K - (K @ new_m_K) * (beta1/norm_K)
         self.Cs[module_name] = C - (C @ new_m_C) * (beta1/norm_C)
 
