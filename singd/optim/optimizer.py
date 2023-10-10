@@ -91,7 +91,8 @@ https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html).
             None,
         ),
         init_grad_scale: float = 1.0,
-        using_matrix_norm: bool = False,
+        enable_matrix_norm: bool = False,
+        enable_adaptive_scaling: bool = False,
     ):  # noqa: D301
         """Structured inverse-free natural gradient descent optimizer
 
@@ -188,7 +189,8 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             structures=structures,
             kfac_like=kfac_like,
             preconditioner_dtype=preconditioner_dtype,
-            using_matrix_norm = using_matrix_norm,
+            enable_matrix_norm = enable_matrix_norm,
+            enable_adaptive_scaling = enable_adaptive_scaling,
         )
         if params is None:
             params = self._get_trainable_parameters(
@@ -436,9 +438,13 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             H_C *= prev_grad_scale / grad_scale**2
 
 
-        scaling_K = max( [1.0, sqrt( K.infinity_norm() )] )
-        scaling_C = max( [1.0, sqrt( C.infinity_norm() )] )
-        scaling = scaling_K * scaling_C
+        scaling = 1.0
+        enable_adaptive_scaling = self._get_param_group_entry(module, "enable_adaptive_scaling")
+        if enable_adaptive_scaling:
+            scaling_K = max( [1.0, sqrt( K.infinity_norm() )] )
+            scaling_C = max( [1.0, sqrt( C.infinity_norm() )] )
+            scaling = scaling_K * scaling_C
+
         # 1) COMPUTE UPDATE
         K_tK = K.from_inner()
         C_tC = C.from_inner()
@@ -449,7 +455,7 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
         kfac_like = self._get_param_group_entry(module, "kfac_like")
         damping = self._get_param_group_entry(module, "damping")
         alpha1 = self._get_param_group_entry(module, "alpha1")
-        using_matrix_norm = self._get_param_group_entry(module, "using_matrix_norm")
+        enable_matrix_norm = self._get_param_group_entry(module, "enable_matrix_norm")
 
         # step for m_K
         if kfac_like:
@@ -460,7 +466,7 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             c_squared = damping * (C_tC * (1.0/d)).trace()/scaling
             second_term = K_tK * c_squared
 
-        if using_matrix_norm:
+        if enable_matrix_norm:
             new_m_K = (first_term + second_term).diag_add_(-1.0/scaling) * ((1.0-alpha1)/2.0)
         else:
             new_m_K = (first_term + second_term).diag_add_(-1.0/scaling) * 0.5
@@ -474,10 +480,11 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             kappa_squared = damping * (K_tK * (1.0/p)).trace()/scaling
             second_term = C_tC * kappa_squared
 
-        if using_matrix_norm:
+        if enable_matrix_norm:
             new_m_C = (first_term + second_term).diag_add_(-1.0/scaling) * ((1.0-alpha1)/2.0)
         else:
             new_m_C = (first_term + second_term).diag_add_(-1.0/scaling) * 0.5
+
 
 
         log_scaling = log(scaling)
@@ -497,7 +504,7 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
 
         norm_K = 1.0/scaling
         norm_C = 1.0/scaling
-        if using_matrix_norm:
+        if enable_matrix_norm:
             norm_K = max( [norm_K, new_m_K.infinity_norm()] )
             norm_C = max( [norm_C, new_m_C.infinity_norm()] )
 
