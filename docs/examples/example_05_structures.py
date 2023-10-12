@@ -76,8 +76,8 @@ vmax = max(dense.max(), structured.max())
 fig, axes = plt.subplots(1, 2)
 plt.tight_layout()
 
-for ax, name, mat in zip(axes, ["original", name], [dense, structured]):
-    ax.set_title(name.capitalize())
+for ax, structure_name, mat in zip(axes, ["original", name], [dense, structured]):
+    ax.set_title(structure_name.capitalize())
     ax.set(xticks=[], yticks=[])  # turn of ticks
     ax.imshow(mat, vmin=vmin, vmax=vmax)
 
