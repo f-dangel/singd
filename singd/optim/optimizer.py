@@ -452,7 +452,7 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
         # step for m_C
         if kfac_like:
             first_term = H_C
-            second_term = C_tC
+            second_term = C_tC * damping
         else:
             first_term = H_C * (H_K.trace() / p)
             kappa_squared = damping * K_tK.trace()
