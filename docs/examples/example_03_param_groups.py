@@ -1,6 +1,6 @@
 """# Per-parameter Options.
 
-Here we demonstrate how to initialize ``SINGD`` from [parameter
+Here we demonstrate how to initialize `SINGD` from [parameter
 groups](https://pytorch.org/docs/stable/optim.html#per-parameter-options) which
 allow training parameters of a neural network differently. We will demonstrate
 this by taking a CNN and training the parameters in the linear layers
@@ -37,8 +37,7 @@ model = Sequential(
     Conv2d(1, 3, kernel_size=5, stride=2),
     ReLU(),
     Flatten(),
-    Linear(432, 200),
-    Linear(200, 50),
+    Linear(432, 50),
     ReLU(),
     Linear(50, 10),
 ).to(DEV)
@@ -146,7 +145,7 @@ for name, module in model.named_modules():
         preconditioner_cls = singd.Ks[name].__class__
         print(f"{name} {module_cls.__name__}: {preconditioner_cls.__name__}")
 
-    # make sure convolutions use ``DenseMatrix``s, linear layers use ``DiagonalMatrix``s
+    # make sure convolutions use `DenseMatrix`s, linear layers use `DiagonalMatrix`s
     if isinstance(module, Linear):
         assert isinstance(singd.Ks[name], DiagonalMatrix)
     elif isinstance(module, Conv2d):
@@ -157,10 +156,10 @@ for name, module in model.named_modules():
 # ## Conclusion
 #
 # Congratulations! You now know how to train each layer of a neural network
-# differently with ``SINGD``.
+# differently with `SINGD`.
 #
 # For example, this may be useful when the network has layers with large
 # pre-conditioner dimensions. One way to reduce cost would be to use a more
-# light-weight pre-conditioner type (like ``DiagonalMatrix``) for such layers.
+# light-weight pre-conditioner type (like `DiagonalMatrix`) for such layers.
 # But of course you can also use this to tweak learning rates, momenta, etc.
 # per layer.
