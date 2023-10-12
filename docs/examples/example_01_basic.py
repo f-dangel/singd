@@ -1,6 +1,6 @@
 """# Basic usage.
 
-This example demonstrates the simplest usage of ``SINGD``. The algorithm works
+This example demonstrates the simplest usage of `SINGD`. The algorithm works
 pretty much like any other
 [`torch.optim.Optimizer`](https://pytorch.org/docs/stable/optim.html#algorithms);
 but there are some additional aspects that are good to know.
