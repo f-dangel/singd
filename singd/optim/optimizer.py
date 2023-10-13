@@ -92,6 +92,7 @@ https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html).
             None,
         ),
         init_grad_scale: float = 1.0,
+        enable_matrix_norm: bool = False,
     ):  # noqa: D301
         """Structured inverse-free natural gradient descent optimizer.
 
@@ -188,6 +189,7 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             structures=structures,
             kfac_like=kfac_like,
             preconditioner_dtype=preconditioner_dtype,
+            enable_matrix_norm = enable_matrix_norm,
         )
         if params is None:
             params = self._get_trainable_parameters(
@@ -438,6 +440,8 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
         # hyper-parameters for parameter group of module
         kfac_like = self._get_param_group_entry(module, "kfac_like")
         damping = self._get_param_group_entry(module, "damping")
+        alpha1 = self._get_param_group_entry(module, "alpha1")
+        enable_matrix_norm = self._get_param_group_entry(module, "enable_matrix_norm")
 
         # step for m_K
         if kfac_like:
@@ -447,7 +451,11 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             first_term = H_K * (H_C.trace() / d)
             c_squared = damping * C_tC.trace()
             second_term = K_tK * (c_squared / d)
-        new_m_K = (first_term + second_term).diag_add_(-1.0) * 0.5
+
+        if enable_matrix_norm:
+            new_m_K = (first_term + second_term).diag_add_(-1.0) * ((1.0-alpha1)/2.0)
+        else:
+            new_m_K = (first_term + second_term).diag_add_(-1.0) * 0.5
 
         # step for m_C
         if kfac_like:
@@ -457,10 +465,13 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             first_term = H_C * (H_K.trace() / p)
             kappa_squared = damping * K_tK.trace()
             second_term = C_tC * (kappa_squared / p)
-        new_m_C = (first_term + second_term).diag_add_(-1.0) * 0.5
+
+        if enable_matrix_norm:
+            new_m_C = (first_term + second_term).diag_add_(-1.0) * ((1.0-alpha1)/2.0)
+        else:
+            new_m_C = (first_term + second_term).diag_add_(-1.0) * 0.5
 
         # 2) APPLY UPDATE
-        alpha1 = self._get_param_group_entry(module, "alpha1")
         if alpha1 != 0.0:
             new_m_C += self.m_Cs[module_name] * alpha1
             new_m_K += self.m_Ks[module_name] * alpha1
@@ -470,8 +481,15 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
         beta1 = self._get_param_group_entry(module, "lr_cov")
         if isinstance(beta1, Callable):  # scheduled
             beta1 = beta1(self.steps)
-        self.Ks[module_name] = K - (K @ new_m_K) * beta1
-        self.Cs[module_name] = C - (C @ new_m_C) * beta1
+
+        norm_K = 1.0
+        norm_C = 1.0
+        if enable_matrix_norm:
+            norm_K = max( [1.0, new_m_K.infinity_norm()] )
+            norm_C = max( [1.0, new_m_C.infinity_norm()] )
+        self.Ks[module_name] = K - (K @ new_m_K) * (beta1/norm_K)
+        self.Cs[module_name] = C - (C @ new_m_C) * (beta1/norm_C)
+
 
     def _accumulate_H_terms(
         self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]
