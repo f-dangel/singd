@@ -444,6 +444,7 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             first_term = H_K
             second_term = K_tK * damping
         else:
+            # scaling before taking the trace is numerically more stable
             first_term = H_K * (H_C * (1.0/d)).trace()
             c_squared = damping * (C_tC * (1.0/d)).trace()
             second_term = K_tK * c_squared
@@ -454,6 +455,7 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             first_term = H_C
             second_term = C_tC * damping
         else:
+            # scaling before taking the trace is numerically more stable
             first_term = H_C * (H_K * (1.0/p)).trace()
             kappa_squared = damping * (K_tK * (1.0/p)).trace()
             second_term = C_tC * kappa_squared
