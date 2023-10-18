@@ -41,7 +41,7 @@ def test_kfac_single_linear_module(
     model = WeightShareModel(
         Linear(in_features=IN_DIM, out_features=OUT_DIM, bias=bias),
     ).to(device)
-    num_params = len(parameters_to_vector(model.parameters()))
+    num_params = sum(p.numel() for p in model.parameters())
 
     # Jacobians.
     Js, f = jacobians_naive(model, x, setting)
@@ -84,8 +84,8 @@ def test_kfac_deep_linear(
         Linear(in_features=IN_DIM, out_features=HID_DIM, bias=bias),
         Linear(in_features=HID_DIM, out_features=OUT_DIM, bias=bias),
     ).to(device)
-    num_params = len(parameters_to_vector(model.parameters()))
-    num_params_layer1 = len(parameters_to_vector(model[0].parameters()))
+    num_params = sum(p.numel() for p in model.parameters())
+    num_params_layer1 = sum(p.numel() for p in model[0].parameters())
 
     # Jacobians.
     Js, f = jacobians_naive(model, x, setting)
@@ -137,8 +137,8 @@ def test_kfac_single_conv2d_module(
         Flatten(start_dim=1),
         Linear(C_out, OUT_DIM, bias=bias),
     ).to(device)
-    num_params = len(parameters_to_vector(model.parameters()))
-    num_conv_params = len(parameters_to_vector(model[0].parameters()))
+    num_params = sum(p.numel() for p in model.parameters())
+    num_conv_params = sum(p.numel() for p in model[0].parameters())
 
     # Jacobians.
     Js, f = jacobians_naive(model, x, setting)
@@ -226,7 +226,7 @@ class KFACMSE:
             # block to match the order of the parameters in the naive Jacobian
             # implementation for all layers but the last one.
             if module.bias is not None and module_nr < num_modules - 1:
-                num_params = len(parameters_to_vector(module.parameters()))
+                num_params = sum(p.numel() for p in module.parameters())
                 in_dim_w = (
                     module.weight.shape[1]
                     if isinstance(module, Linear)
