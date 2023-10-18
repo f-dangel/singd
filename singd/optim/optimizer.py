@@ -135,8 +135,12 @@ https://pytorch.org/docs/stable/optim.html#per-parameter-options).
                 `'block30diagonal'`, `'hierarchical15_15'`, `'triltoeplitz'`, and
                 `'triutoeplitz'`. Default is (`'dense'`, `'dense'`).
             kfac_approx: A string specifying the KFAC approximation that should
-                be used for linear weight-sharing layers, e.g. `Conv2d` modules.
+                be used for linear weight-sharing layers, e.g. `Conv2d` modules
+                or `Linear` modules that process matrix- or higher-dimensional
+                features.
                 Possible values are `'expand'` and `'reduce'`.
+                See [this paper](TODO Insert arXiv link) for an explanation of
+                the two approximations.
             warn_unsupported: Only relevant if `params` is unspecified. Whether to
                 warn if `model` contains parameters of layers that are not supported.
                 These parameters will not be trained by the optimizer. Default: `True`
