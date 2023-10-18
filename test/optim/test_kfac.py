@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 import torch
 from pytest import mark
-from torch import Tensor, is_grad_enabled
+from torch import Tensor, device, is_grad_enabled
 from torch.nn import AdaptiveAvgPool2d, Conv2d, Flatten, Linear, Module, Sequential
 from torch.nn.utils import parameters_to_vector
 from torch.utils.hooks import RemovableHandle
@@ -22,7 +22,6 @@ C_in = 3
 C_out = 2
 H_in = W_in = 16
 K = 4
-DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 @mark.parametrize("setting", ["expand", "reduce"])
@@ -30,15 +29,18 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     "batch_averaged", [True, False], ids=["batch_averaged", "not_averaged"]
 )
 @mark.parametrize("bias", [True, False], ids=["bias", "no_bias"])
-def test_kfac_single_linear_module(setting: str, batch_averaged: bool, bias: bool):
+@mark.parametrize("device", [device("cpu"), device("cuda:0")], ids=["cpu", "gpu"])
+def test_kfac_single_linear_module(
+    setting: str, batch_averaged: bool, bias: bool, device: device
+):
     # Set up inputs x.
-    x = torch.randn((N_SAMPLES, REP_DIM, IN_DIM), device=DEVICE)
+    x = torch.randn((N_SAMPLES, REP_DIM, IN_DIM), device=device)
     n_loss_terms = N_SAMPLES * REP_DIM if setting == "expand" else N_SAMPLES
 
     # Set up one-layer linear network for inputs with additional REP_DIM.
     model = WeightShareModel(
         Linear(in_features=IN_DIM, out_features=OUT_DIM, bias=bias),
-    ).to(DEVICE)
+    ).to(device)
     num_params = len(parameters_to_vector(model.parameters()))
 
     # Jacobians.
@@ -69,16 +71,19 @@ def test_kfac_single_linear_module(setting: str, batch_averaged: bool, bias: boo
     "batch_averaged", [True, False], ids=["batch_averaged", "not_averaged"]
 )
 @mark.parametrize("bias", [True, False], ids=["bias", "no_bias"])
-def test_kfac_deep_linear(setting: str, batch_averaged: bool, bias: bool):
+@mark.parametrize("device", [device("cpu"), device("cuda:0")], ids=["cpu", "gpu"])
+def test_kfac_deep_linear(
+    setting: str, batch_averaged: bool, bias: bool, device: device
+):
     # Set up inputs x.
-    x = torch.randn((N_SAMPLES, REP_DIM, IN_DIM), device=DEVICE)
+    x = torch.randn((N_SAMPLES, REP_DIM, IN_DIM), device=device)
     n_loss_terms = N_SAMPLES * REP_DIM if setting == "expand" else N_SAMPLES
 
     # Set up two-layer linear network for inputs with additional REP_DIM.
     model = WeightShareModel(
         Linear(in_features=IN_DIM, out_features=HID_DIM, bias=bias),
         Linear(in_features=HID_DIM, out_features=OUT_DIM, bias=bias),
-    ).to(DEVICE)
+    ).to(device)
     num_params = len(parameters_to_vector(model.parameters()))
     num_params_layer1 = len(parameters_to_vector(model[0].parameters()))
 
@@ -117,9 +122,12 @@ def test_kfac_deep_linear(setting: str, batch_averaged: bool, bias: bool):
     "batch_averaged", [True, False], ids=["batch_averaged", "not_averaged"]
 )
 @mark.parametrize("bias", [True, False], ids=["bias", "no_bias"])
-def test_kfac_single_conv2d_module(setting: str, batch_averaged: bool, bias: bool):
+@mark.parametrize("device", [device("cpu"), device("cuda:0")], ids=["cpu", "gpu"])
+def test_kfac_single_conv2d_module(
+    setting: str, batch_averaged: bool, bias: bool, device: device
+):
     # Set up inputs x.
-    x = torch.randn((N_SAMPLES, C_in, H_in, W_in), device=DEVICE)
+    x = torch.randn((N_SAMPLES, C_in, H_in, W_in), device=device)
     n_loss_terms = N_SAMPLES  # Only reduce setting.
 
     # Set up model with conv layer, average pooling, and linear output layer.
@@ -128,7 +136,7 @@ def test_kfac_single_conv2d_module(setting: str, batch_averaged: bool, bias: boo
         AdaptiveAvgPool2d(1),
         Flatten(start_dim=1),
         Linear(C_out, OUT_DIM, bias=bias),
-    ).to(DEVICE)
+    ).to(device)
     num_params = len(parameters_to_vector(model.parameters()))
     num_conv_params = len(parameters_to_vector(model[0].parameters()))
 
