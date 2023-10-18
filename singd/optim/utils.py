@@ -55,7 +55,7 @@ def process_input(input: Tensor, module: Module, kfac_approx: str) -> Tensor:
         The processed input.
 
     Raises:
-        AssertionError: If `kfac_approx` neither `'expand'` nor `'reduce'`.
+        AssertionError: If `kfac_approx` is neither `'expand'` nor `'reduce'`.
         NotImplementedError: If the module is not supported.
     """
     assert kfac_approx in ["expand", "reduce"]
@@ -157,7 +157,7 @@ def process_grad_output(
         The processed output gradient.
 
     Raises:
-        AssertionError: If `kfac_approx` neither `'expand'` nor `'reduce'`.
+        AssertionError: If `kfac_approx` is neither `'expand'` nor `'reduce'`.
         NotImplementedError: If the module is not supported.
     """
     assert kfac_approx in ["expand", "reduce"]
