@@ -33,7 +33,6 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
             the maximum dimension of `A` and `C`. For example, `(10, float('inf'))`
             means that `A` will be used for dimensions up to 10, and `C` will be used
             in addition for larger dimensions.
-        MAX_DIM_C: Maximum dimension of the top left block.
         CLS_A: Structured matrix class used for the top left block.
         CLS_B: Structured matrix class used for the the bottom right block.
     """
