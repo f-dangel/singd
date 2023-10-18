@@ -231,7 +231,7 @@ class KFACMSE:
             # When a bias is used we have to reorder the rows and columns of the
             # block to match the order of the parameters in the naive Jacobian
             # implementation for all layers but the last one.
-            if module.bias is not None and module_nr < num_modules - 1:
+            if module.bias is not None:
                 num_params = sum(p.numel() for p in module.parameters())
                 in_dim_w = (
                     module.weight.shape[1]
@@ -274,10 +274,9 @@ class KFACMSE:
         return handles
 
     def _set_a(self, module: Module, inputs: Tuple[Tensor]):
-        if is_grad_enabled():
-            a = inputs[0].data.detach()
-            a = process_input(a, module, kfac_approx=self.setting)
-            module.kfac_a = a
+        a = inputs[0].data.detach()
+        a = process_input(a, module, kfac_approx=self.setting)
+        module.kfac_a = a
 
     def _set_g(
         self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]
