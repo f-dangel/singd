@@ -221,8 +221,7 @@ class KFACMSE:
     def get_kfac_blocks(self) -> List[Tensor]:
         # Compute the K-FAC approximation blocks for each layer.
         blocks = []
-        num_modules = len(list(self.model.modules()))
-        for module_nr, module in enumerate(self.model.modules()):
+        for module in self.model.modules():
             if not isinstance(module, (Linear, Conv2d)):
                 continue
             if not hasattr(module, "kfac_g"):
@@ -243,20 +242,12 @@ class KFACMSE:
                     else module.weight.shape[1:].numel()  # in_dim_w = C_in * K * K
                 )
                 # Get indices of bias parameters.
-                range_b = list(range(in_dim_w, num_params, in_dim_w + 1))
-                # Get rows belonging to bias parameters.
-                block_bias_row = block[range_b]
+                idx_b = list(range(in_dim_w, num_params, in_dim_w + 1))
                 # Get indices of weight parameters.
-                range_w = [n for n in range(num_params) if n not in range_b]
-                # Get rows belonging to weight parameters.
-                block_weight_row = block[range_w]
-                # Reorder rows.
-                block = torch.cat((block_weight_row, block_bias_row))
-                # Get columns belonging to bias and weight parameters.
-                block_bias_col = block[:, range_b]
-                block_weight_col = block[:, range_w]
-                # Reorder columns.
-                block = torch.cat((block_weight_col, block_bias_col), dim=1)
+                idx_w = [n for n in range(num_params) if n not in idx_b]
+                # Reorder rows and columns.
+                idx = idx_w + idx_b
+                block = block[idx][:, idx]
             blocks.append(block)
         return blocks
 
