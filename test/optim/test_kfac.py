@@ -33,6 +33,8 @@ K = 4
 def test_kfac_single_linear_module(
     setting: str, batch_averaged: bool, bias: bool, device: device
 ):
+    # Fix random seed.
+    torch.manual_seed(711)
     # Set up inputs x.
     x = torch.randn((N_SAMPLES, REP_DIM, IN_DIM), device=device)
     n_loss_terms = N_SAMPLES * REP_DIM if setting == "expand" else N_SAMPLES
@@ -75,6 +77,8 @@ def test_kfac_single_linear_module(
 def test_kfac_deep_linear(
     setting: str, batch_averaged: bool, bias: bool, device: device
 ):
+    # Fix random seed.
+    torch.manual_seed(711)
     # Set up inputs x.
     x = torch.randn((N_SAMPLES, REP_DIM, IN_DIM), device=device)
     n_loss_terms = N_SAMPLES * REP_DIM if setting == "expand" else N_SAMPLES
@@ -126,6 +130,8 @@ def test_kfac_deep_linear(
 def test_kfac_single_conv2d_module(
     setting: str, batch_averaged: bool, bias: bool, device: device
 ):
+    # Fix random seed.
+    torch.manual_seed(711)
     # Set up inputs x.
     x = torch.randn((N_SAMPLES, C_in, H_in, W_in), device=device)
     n_loss_terms = N_SAMPLES  # Only reduce setting.
