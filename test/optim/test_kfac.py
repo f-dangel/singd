@@ -49,7 +49,7 @@ def test_kfac_single_linear_module(
     Js, f = jacobians_naive(model, x, setting)
     assert f.shape == (n_loss_terms, OUT_DIM)
     assert Js.shape == (n_loss_terms, OUT_DIM, num_params)
-    Js = Js.reshape(n_loss_terms, -1)
+    Js = Js.flatten(start_dim=1)
 
     # Exact Fisher/GGN.
     exact_F = Js.T @ Js  # regression
@@ -95,7 +95,7 @@ def test_kfac_deep_linear(
     Js, f = jacobians_naive(model, x, setting)
     assert f.shape == (n_loss_terms, OUT_DIM)
     assert Js.shape == (n_loss_terms, OUT_DIM, num_params)
-    Js = Js.reshape(n_loss_terms, -1)
+    Js = Js.flatten(start_dim=1)
 
     # Exact Fisher/GGN.
     exact_F = Js.T @ Js  # regression
@@ -150,7 +150,7 @@ def test_kfac_single_conv2d_module(
     Js, f = jacobians_naive(model, x, setting)
     assert f.shape == (n_loss_terms, OUT_DIM)
     assert Js.shape == (n_loss_terms, OUT_DIM, num_params)
-    Js = Js.reshape(n_loss_terms, -1)
+    Js = Js.flatten(start_dim=1)
 
     # Exact Fisher/GGN.
     exact_F = Js.T @ Js  # regression
