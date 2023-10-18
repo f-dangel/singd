@@ -280,7 +280,8 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
                 group["alpha1"] = 0.0
             if group["kfac_approx"] not in ["expand", "reduce"]:
                 raise ValueError(
-                    "kfac_approx has to be set to either 'expand' or 'reduce'."
+                    "kfac_approx has to be set to either 'expand' or 'reduce', "
+                    f"but was set to {group['kfac_approx']}."
                 )
 
         # Find out which parameter is in which group
