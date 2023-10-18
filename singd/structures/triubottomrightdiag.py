@@ -43,8 +43,7 @@ class TriuBottomRightDiagonalMatrix(StructuredMatrix):
     def _tensors_to_sync(self) -> Tuple[Tensor, Tensor]:
         """Tensors that need to be synchronized across devices.
 
-        This is used to support distributed data parallel training. If ``None``,
-        this structured matrix does not support distributed data parallel training.
+        This is used to support distributed data parallel training.
 
         Returns:
             A tuple of tensors that need to be synchronized across devices.
