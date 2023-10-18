@@ -184,9 +184,13 @@ class WeightShareModel(Sequential):
         assert setting in ["expand", "reduce"]
         x = super().forward(x)
         if setting == "expand":
-            # Example: Transformer for translation.
+            # Example: Transformer for translation
+            # (REP_DIM = sequence length).
+            # (N_SAMPLES, REP_DIM, OUT_DIM) -> (N_SAMPLES * REP_DIM, OUT_DIM)
             return x.view(-1, OUT_DIM)
-        # Example: Vision transformer for image classification.
+        # Example: Vision transformer for image classification
+        # (REP_DIM = image patches).
+        # (N_SAMPLES, REP_DIM, OUT_DIM) -> (N_SAMPLES, OUT_DIM)
         return x.mean(dim=1)
 
 
@@ -230,7 +234,7 @@ class KFACMSE:
             block = torch.kron(g.T @ g, a.T @ a)
             # When a bias is used we have to reorder the rows and columns of the
             # block to match the order of the parameters in the naive Jacobian
-            # implementation for all layers but the last one.
+            # implementation.
             if module.bias is not None:
                 num_params = sum(p.numel() for p in module.parameters())
                 in_dim_w = (
