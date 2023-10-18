@@ -64,7 +64,7 @@ def test_kfac_single_linear_module(
     assert F.shape == (num_params, num_params)
 
     # Compare true Fisher/GGN against K-FAC Fisher/GGN (should be exact).
-    assert torch.allclose(F.diag(), exact_F.diag())  # diagonal comparioson
+    assert torch.allclose(F.diag(), exact_F.diag())  # diagonal comparison
     assert torch.allclose(F, exact_F)  # full comparison
 
 
@@ -110,7 +110,7 @@ def test_kfac_deep_linear(
     assert F.shape == (num_params, num_params)
 
     # Compare true Fisher/GGN against K-FAC Fisher/GGN block diagonal (should be exact).
-    assert torch.allclose(F.diag(), exact_F.diag())  # diagonal comparioson
+    assert torch.allclose(F.diag(), exact_F.diag())  # diagonal comparison
     assert torch.allclose(
         F[:num_params_layer1, :num_params_layer1],
         exact_F[:num_params_layer1, :num_params_layer1],
