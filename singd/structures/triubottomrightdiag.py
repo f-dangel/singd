@@ -1,7 +1,5 @@
 """Toeplitz matrix implemented in the ``StructuredMatrix`` interface."""
 
-from __future__ import annotations
-
 from singd.structures.dense import DenseMatrix
 from singd.structures.diagonal import DiagonalMatrix
 from singd.structures.recursive import RecursiveTopRightMatrixTemplate
@@ -18,7 +16,7 @@ class TriuBottomRightDiagonalMatrix(RecursiveTopRightMatrixTemplate):
     where
     - ``r1`` is a scalar,
     - ``r2`` is a row vector, and
-    - ``D`` is a diagonal matrix,
+    - ``D`` is a diagonal matrix.
     """
 
     MAX_DIMS = (1, float("inf"))
