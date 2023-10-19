@@ -89,9 +89,10 @@ def jacobians_naive(model: Module, data: Tensor, setting: str) -> Tuple[Tensor, 
         f: Tensor = model(data)
     # f: (batch_size/n_loss_terms, ..., out_dim)
     out_dim = f.size(-1)
+    last_f_dim = f.numel() - 1
     jacs = []
     for i, f_i in enumerate(f.flatten()):
-        rg = i != (f.shape[0] - 1)
+        rg = i != last_f_dim
         jac = torch.autograd.grad(f_i, model.parameters(), retain_graph=rg)
         jacs.append(torch.cat([j.flatten() for j in jac]))
     # jacs: (n_loss_terms, out_dim, num_params)

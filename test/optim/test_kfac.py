@@ -15,7 +15,7 @@ from singd.optim.utils import process_grad_output, process_input
 IN_DIM = 3
 HID_DIM = 5
 REP_DIM = 2
-OUT_DIM = 1
+OUT_DIM = 2
 N_SAMPLES = 4
 C_in = 3
 C_out = 2
@@ -63,7 +63,7 @@ def test_kfac_single_linear_module(
     Js, f = jacobians_naive(model, x, setting)
     assert f.shape == (n_loss_terms, OUT_DIM)
     assert Js.shape == (n_loss_terms, OUT_DIM, num_params)
-    Js = Js.flatten(start_dim=1)
+    Js = Js.flatten(end_dim=-2)
 
     # Exact Fisher/GGN.
     exact_F = Js.T @ Js  # regression
@@ -123,7 +123,7 @@ def test_kfac_deep_linear(
     Js, f = jacobians_naive(model, x, setting)
     assert f.shape == (n_loss_terms, OUT_DIM)
     assert Js.shape == (n_loss_terms, OUT_DIM, num_params)
-    Js = Js.flatten(start_dim=1)
+    Js = Js.flatten(end_dim=-2)
 
     # Exact Fisher/GGN.
     exact_F = Js.T @ Js  # regression
@@ -192,7 +192,7 @@ def test_kfac_conv2d_module(
     Js, f = jacobians_naive(model, x, setting)
     assert f.shape == (n_loss_terms, OUT_DIM)
     assert Js.shape == (n_loss_terms, OUT_DIM, num_params)
-    Js = Js.flatten(start_dim=1)
+    Js = Js.flatten(end_dim=-2)
 
     # Exact Fisher/GGN.
     exact_F = Js.T @ Js  # regression
@@ -291,10 +291,16 @@ class KFACMSE:
             else {}
         )
         logits: Tensor = self.model(x, **kwargs)
-        # Backward pass for each output dimension.
+        # Since we only consider the MSE loss, we do not need to explicitly
+        # consider the loss function or labels, as the MSE loss Hessian w.r.t.
+        # the logits is the precision matrix of the Gaussian likelihood.
+        # With other words, we only need to compute the Jacobian of the logits
+        # w.r.t. the parameters. This requires one backward pass per output
+        # dimension.
         n_dims = logits.size(-1)
         for i in range(n_dims):
             logits_i = logits[:, i]
+            # Mean or sum reduction over `n_loss_terms`.
             loss = logits_i.mean() if self.batch_averaged else logits_i.sum()
             loss.backward(retain_graph=i < n_dims - 1)
 
@@ -316,7 +322,7 @@ class KFACMSE:
                 raise ValueError("forward_and_backward() has to be called first.")
             # Get Kronecker factor ingredients stored as module attributes.
             a: Tensor = module.kfac_a
-            g: Tensor = module.kfac_g
+            g: Tensor = torch.cat(module.kfac_g)
             # Compute Kronecker product of both factors.
             block = torch.kron(g.T @ g, a.T @ a)
             # When a bias is used we have to reorder the rows and columns of the
@@ -391,4 +397,7 @@ class KFACMSE:
         g = process_grad_output(
             g, module, batch_averaged=self.batch_averaged, kfac_approx=self.setting
         )
-        module.kfac_g = g
+        if hasattr(module, "kfac_g"):
+            module.kfac_g.append(g)
+        else:
+            module.kfac_g = [g]
