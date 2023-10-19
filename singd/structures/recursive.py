@@ -90,7 +90,7 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
         """
         cls._check_square(sym_mat)
 
-        boundary = cls._get_boundary(sym_mat.shape[0])
+        boundary = _get_boundary(sym_mat.shape[0], cls.MAX_DIMS)
         A = cls.CLS_A.from_dense(sym_mat[:boundary, :boundary])
         B = sym_mat[:boundary, boundary:] + sym_mat[boundary:, :boundary].T
         C = cls.CLS_C.from_dense(sym_mat[boundary:, boundary:])
@@ -141,3 +141,36 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
             )
 
         return boundary
+
+def _get_boundary(
+    dim: int, max_dims: Tuple[Union[int, float], Union[int, float]]
+) -> int:
+    """Determine the boundary index between `A` and `C`.
+
+    Args:
+        dim: Total dimension of the recursive matrix.
+        max_dims: A 2-tuple containing an integer and a `float('inf')` which indicate
+            the maximum dimension of `A` and `C`.
+
+    Returns:
+        The boundary index between `A` and `C`.
+
+    Raises:
+        ValueError: If `max_dims`'s value is invalid.
+    """
+    if len(max_dims) != 2:
+        raise ValueError(f"Invalid `MAX_DIMS` {max_dims}. Expected a 2-tuple.")
+
+    dim_A, dim_C = max_dims
+
+    if dim_A == float("inf") and isinstance(dim_C, int):
+        boundary = max(0, dim - dim_C)
+    elif dim_C == float("inf") and isinstance(dim_A, int):
+        boundary = min(dim_A, dim)
+    else:
+        raise ValueError(
+            f"Invalid `max_dims` {max_dims}. "
+            "One dimension should be `float('inf')`, the other should be `int`."
+        )
+
+    return boundary
