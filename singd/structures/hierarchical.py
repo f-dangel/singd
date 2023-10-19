@@ -72,8 +72,8 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
                 "Invalid tensor dimensions. Expected 2, 2, 1, 2, 2."
                 + f" Got {A.dim()}, {B.dim()}, {C.dim()}, {D.dim()}, {E.dim()}."
             )
-        if A.shape[0] != A.shape[1] or E.shape[0] != E.shape[1]:
-            raise ValueError(f"Expected square A, E. Got {A.shape}, {E.shape}.")
+        self._check_square(A, name="A")
+        self._check_square(E, name="E")
 
         self.K1 = A.shape[0]
         self.K2 = E.shape[0]
@@ -105,8 +105,7 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
     def _tensors_to_sync(self) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """Tensors that need to be synchronized across devices.
 
-        This is used to support distributed data parallel training. If ``None``,
-        this structured matrix does not support distributed data parallel training.
+        This is used to support distributed data parallel training.
 
         Returns:
             A tuple of tensors that needs to be synchronized across devices.
@@ -123,14 +122,8 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
 
         Returns:
             ``HierarchicalMatrix`` representing the passed matrix.
-
-        Raises:
-            ValueError: If the passed tensor is not square.
         """
-        if sym_mat.shape[0] != sym_mat.shape[1] or sym_mat.dim() != 2:
-            raise ValueError(
-                f"Expected square matrix. Got tensor shape {sym_mat.shape}."
-            )
+        cls._check_square(sym_mat)
         dim = sym_mat.shape[0]
         K1, diag_dim, _ = cls._compute_block_dims(dim)
 
