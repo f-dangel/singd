@@ -504,7 +504,6 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             grad_input: Gradients w.r.t. the input.
             grad_output: Gradients w.r.t. the output.
         """
-        del grad_input
         T = self._get_param_group_entry(module, "T")
         if self.steps % T != 0:
             return

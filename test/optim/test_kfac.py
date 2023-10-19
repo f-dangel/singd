@@ -3,10 +3,20 @@
 from test.optim.utils import jacobians_naive
 from typing import List, Tuple
 
-import torch
 from einops import rearrange, reduce
 from pytest import mark
-from torch import Tensor, device
+from torch import (
+    Tensor,
+    allclose,
+    block_diag,
+    cat,
+    device,
+    float64,
+    kron,
+    manual_seed,
+    randn,
+)
+from torch.cuda import is_available
 from torch.nn import AdaptiveAvgPool2d, Conv2d, Flatten, Linear, Module, Sequential
 from torch.utils.hooks import RemovableHandle
 
@@ -22,7 +32,7 @@ C_out = 2
 H_in = W_in = 16
 K = 4
 # Use double dtype to avoid numerical issues.
-DTYPE = torch.float64
+DTYPE = float64
 
 
 @mark.parametrize("setting", ["expand", "reduce"])
@@ -45,12 +55,12 @@ def test_kfac_single_linear_module(
     Raises:
         AssertionError: If the KFAC approximation is not exact.
     """
-    if not torch.cuda.is_available() and device.type == "cuda":
+    if not is_available() and device.type == "cuda":
         return
     # Fix random seed.
-    torch.manual_seed(711)
+    manual_seed(711)
     # Set up inputs x.
-    x = torch.randn((N_SAMPLES, REP_DIM, IN_DIM), dtype=DTYPE, device=device)
+    x = randn((N_SAMPLES, REP_DIM, IN_DIM), dtype=DTYPE, device=device)
     n_loss_terms = N_SAMPLES * REP_DIM if setting == "expand" else N_SAMPLES
 
     # Set up one-layer linear network for inputs with additional REP_DIM.
@@ -62,8 +72,7 @@ def test_kfac_single_linear_module(
     # Jacobians.
     Js, f = jacobians_naive(model, x, setting)
     assert f.shape == (n_loss_terms, OUT_DIM)
-    assert Js.shape == (n_loss_terms, OUT_DIM, num_params)
-    Js = Js.flatten(end_dim=-2)
+    assert Js.shape == (n_loss_terms * OUT_DIM, num_params)
 
     # Exact Fisher/GGN.
     exact_F = Js.T @ Js  # regression
@@ -78,8 +87,8 @@ def test_kfac_single_linear_module(
     assert F.shape == (num_params, num_params)
 
     # Compare true Fisher/GGN against K-FAC Fisher/GGN (should be exact).
-    assert torch.allclose(F.diag(), exact_F.diag())  # diagonal comparison
-    assert torch.allclose(F, exact_F)  # full comparison
+    assert allclose(F.diag(), exact_F.diag())  # diagonal comparison
+    assert allclose(F, exact_F)  # full comparison
 
 
 @mark.parametrize("setting", ["expand", "reduce"])
@@ -103,12 +112,12 @@ def test_kfac_deep_linear(
         AssertionError: If the KFAC approximation is not exact for the block
             diagonal.
     """
-    if not torch.cuda.is_available() and device.type == "cuda":
+    if not is_available() and device.type == "cuda":
         return
     # Fix random seed.
-    torch.manual_seed(711)
+    manual_seed(711)
     # Set up inputs x.
-    x = torch.randn((N_SAMPLES, REP_DIM, IN_DIM), dtype=DTYPE, device=device)
+    x = randn((N_SAMPLES, REP_DIM, IN_DIM), dtype=DTYPE, device=device)
     n_loss_terms = N_SAMPLES * REP_DIM if setting == "expand" else N_SAMPLES
 
     # Set up two-layer linear network for inputs with additional REP_DIM.
@@ -122,8 +131,7 @@ def test_kfac_deep_linear(
     # Jacobians.
     Js, f = jacobians_naive(model, x, setting)
     assert f.shape == (n_loss_terms, OUT_DIM)
-    assert Js.shape == (n_loss_terms, OUT_DIM, num_params)
-    Js = Js.flatten(end_dim=-2)
+    assert Js.shape == (n_loss_terms * OUT_DIM, num_params)
 
     # Exact Fisher/GGN.
     exact_F = Js.T @ Js  # regression
@@ -138,12 +146,12 @@ def test_kfac_deep_linear(
     assert F.shape == (num_params, num_params)
 
     # Compare true Fisher/GGN against K-FAC Fisher/GGN block diagonal (should be exact).
-    assert torch.allclose(F.diag(), exact_F.diag())  # diagonal comparison
-    assert torch.allclose(
+    assert allclose(F.diag(), exact_F.diag())  # diagonal comparison
+    assert allclose(
         F[:num_params_layer1, :num_params_layer1],
         exact_F[:num_params_layer1, :num_params_layer1],
     )  # full comparison layer 1.
-    assert torch.allclose(
+    assert allclose(
         F[num_params_layer1:, num_params_layer1:],
         exact_F[num_params_layer1:, num_params_layer1:],
     )  # full comparison layer 2.
@@ -170,12 +178,12 @@ def test_kfac_conv2d_module(
         AssertionError: If the KFAC-reduce approximation is not exact for the
             diagonal or the Conv2d layer or if it is exact for KFAC-expand.
     """
-    if not torch.cuda.is_available() and device.type == "cuda":
+    if not is_available() and device.type == "cuda":
         return
     # Fix random seed.
-    torch.manual_seed(711)
+    manual_seed(711)
     # Set up inputs x.
-    x = torch.randn((N_SAMPLES, C_in, H_in, W_in), dtype=DTYPE, device=device)
+    x = randn((N_SAMPLES, C_in, H_in, W_in), dtype=DTYPE, device=device)
     n_loss_terms = N_SAMPLES  # Only reduce setting.
 
     # Set up model with conv layer, average pooling, and linear output layer.
@@ -191,8 +199,7 @@ def test_kfac_conv2d_module(
     # Jacobians.
     Js, f = jacobians_naive(model, x, setting)
     assert f.shape == (n_loss_terms, OUT_DIM)
-    assert Js.shape == (n_loss_terms, OUT_DIM, num_params)
-    Js = Js.flatten(end_dim=-2)
+    assert Js.shape == (n_loss_terms * OUT_DIM, num_params)
 
     # Exact Fisher/GGN.
     exact_F = Js.T @ Js  # regression
@@ -209,16 +216,16 @@ def test_kfac_conv2d_module(
     if setting == "reduce":
         # KFAC-reduce should be exact for this setting.
         # Compare true Fisher/GGN against K-FAC Fisher/GGN diagonal.
-        assert torch.allclose(F.diag(), exact_F.diag())
+        assert allclose(F.diag(), exact_F.diag())
         # Compare true Fisher/GGN against K-FAC Fisher/GGN for the Conv2d layer.
-        assert torch.allclose(
+        assert allclose(
             F[:num_conv_params, :num_conv_params],
             exact_F[:num_conv_params, :num_conv_params],
         )
     else:
         # KFAC-expand should not be exact for this setting.
         # Compare true Fisher/GGN against K-FAC Fisher/GGN diagonal.
-        assert not torch.allclose(F.diag(), exact_F.diag())
+        assert not allclose(F.diag(), exact_F.diag())
 
 
 class WeightShareModel(Sequential):
@@ -322,9 +329,9 @@ class KFACMSE:
                 raise ValueError("forward_and_backward() has to be called first.")
             # Get Kronecker factor ingredients stored as module attributes.
             a: Tensor = module.kfac_a
-            g: Tensor = torch.cat(module.kfac_g)
+            g: Tensor = cat(module.kfac_g)
             # Compute Kronecker product of both factors.
-            block = torch.kron(g.T @ g, a.T @ a)
+            block = kron(g.T @ g, a.T @ a)
             # When a bias is used we have to reorder the rows and columns of the
             # block to match the order of the parameters in the naive Jacobian
             # implementation.
@@ -352,7 +359,7 @@ class KFACMSE:
             The full block-diagonal KFAC approximation matrix.
         """
         blocks = self.get_kfac_blocks()
-        return torch.block_diag(*blocks)
+        return block_diag(*blocks)
 
     def _install_hooks(self) -> List[RemovableHandle]:
         """Installs forward and backward hooks to the model.
