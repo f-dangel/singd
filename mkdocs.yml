@@ -10,6 +10,9 @@ nav:
     - Code Examples: generated/gallery
     - API Documentation: api.md
     - Developer Notes: develop.md
+    - Internal:
+      - Structures: structures.md
+      - Templates: templates.md
 theme:
     name: material
     features:
