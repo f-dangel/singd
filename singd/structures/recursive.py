@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Tuple, Type, Union
 
-from torch import Tensor, zeros
+from torch import Tensor, block_diag
 
 from singd.structures.base import StructuredMatrix
 
@@ -105,14 +105,10 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
         """
         A = self.A.to_dense()
         C = self.C.to_dense()
+        mat = block_diag(A, C)
 
-        dim_A, dim_C = A.shape[0], C.shape[0]
-        dim = dim_A + dim_C
-        mat = zeros(dim, dim, dtype=self.B.dtype, device=self.B.device)
-
-        mat[:dim_A, :dim_A] = A
+        dim_A = A.shape[0]
         mat[:dim_A, dim_A:] = self.B
-        mat[dim_A:, dim_A:] = C
 
         return mat
 
