@@ -87,24 +87,10 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
 
         Returns:
             `RecursiveTopRightMatrixTemplate` approximating the passed matrix.
-
-        Raises:
-            ValueError: If the passed tensor is not square.
         """
-        if sym_mat.dim() != 2 or sym_mat.shape[0] != sym_mat.shape[1]:
-            raise ValueError(
-                f"Expected square matrix. Got tensor shape {sym_mat.shape}."
-            )
+        cls._check_square(sym_mat)
 
-        assert len(cls.MAX_DIMS) == 2
-        assert any(dim == float("inf") for dim in cls.MAX_DIMS)
-        assert any(dim != float("inf") for dim in cls.MAX_DIMS)
-
-        if cls.MAX_DIMS[0] == float("inf"):
-            boundary = max(0, sym_mat.shape[0] - cls.MAX_DIMS[1])
-        else:
-            boundary = min(cls.MAX_DIMS[0], sym_mat.shape[0])
-
+        boundary = cls._get_boundary(sym_mat.shape[0])
         A = cls.CLS_A.from_dense(sym_mat[:boundary, :boundary])
         B = sym_mat[:boundary, boundary:] + sym_mat[boundary:, :boundary].T
         C = cls.CLS_C.from_dense(sym_mat[boundary:, boundary:])
@@ -129,3 +115,33 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
         mat[dim_A:, dim_A:] = C
 
         return mat
+
+    @classmethod
+    def _get_boundary(cls, dim: int) -> int:
+        """Determine the boundary index between `A` and `C`.
+
+        Args:
+            dim: Total dimension of the recursive matrix.
+
+        Returns:
+            The boundary index between `A` and `C`.
+
+        Raises:
+            ValueError: If `cls.MAX_DIMS`'s value is invalid.
+        """
+        if len(cls.MAX_DIMS) != 2:
+            raise ValueError(f"Invalid `MAX_DIMS` {cls.MAX_DIMS}. Expected a 2-tuple.")
+
+        dim_A, dim_C = cls.MAX_DIMS
+
+        if dim_A == float("inf") and isinstance(dim_C, int):
+            boundary = max(0, dim - dim_C)
+        elif dim_C == float("inf") and isinstance(dim_A, int):
+            boundary = min(dim_A, dim)
+        else:
+            raise ValueError(
+                f"Invalid `MAX_DIMS` {cls.MAX_DIMS}. "
+                "One dimension should be `float('inf').`, the other should be `int`."
+            )
+
+        return boundary
