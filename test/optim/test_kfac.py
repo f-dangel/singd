@@ -1,6 +1,7 @@
 """Tests for the KFAC approximation of the Fisher/GGN."""
 
 from test.optim.utils import jacobians_naive
+from test.utils import DEVICE_IDS, DEVICES
 from typing import Callable, List, Tuple
 
 from einops import rearrange, reduce
@@ -16,7 +17,6 @@ from torch import (
     manual_seed,
     randn,
 )
-from torch.cuda import is_available
 from torch.nn import AdaptiveAvgPool2d, Conv2d, Flatten, Linear, Module, Sequential
 from torch.utils.hooks import RemovableHandle
 
@@ -61,7 +61,7 @@ MODELS = {
     "batch_averaged", [True, False], ids=["batch_averaged", "not_averaged"]
 )
 @mark.parametrize("bias", [True, False], ids=["bias", "no_bias"])
-@mark.parametrize("device", [device("cpu"), device("cuda:0")], ids=["cpu", "gpu"])
+@mark.parametrize("device", DEVICES, ids=DEVICE_IDS)
 def test_kfac(
     model: Tuple[str, Callable],
     setting: str,
@@ -85,8 +85,6 @@ def test_kfac(
     Raises:
         AssertionError: If the KFAC approximation is not exact.
     """
-    if not is_available() and device.type == "cuda":
-        return
     # Fix random seed.
     manual_seed(711)
     model_name, model_fn = model
