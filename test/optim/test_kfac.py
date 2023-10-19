@@ -4,15 +4,13 @@ from test.optim.utils import jacobians_naive
 from typing import List, Tuple
 
 import torch
+from einops import rearrange, reduce
 from pytest import mark
 from torch import Tensor, device
 from torch.nn import AdaptiveAvgPool2d, Conv2d, Flatten, Linear, Module, Sequential
 from torch.utils.hooks import RemovableHandle
 
 from singd.optim.utils import process_grad_output, process_input
-
-# Set double dtype as default to avoid numerical issues.
-torch.set_default_dtype(torch.float64)
 
 IN_DIM = 3
 HID_DIM = 5
@@ -23,6 +21,8 @@ C_in = 3
 C_out = 2
 H_in = W_in = 16
 K = 4
+# Use double dtype to avoid numerical issues.
+DTYPE = torch.float64
 
 
 @mark.parametrize("setting", ["expand", "reduce"])
@@ -41,20 +41,20 @@ def test_kfac_single_linear_module(
         batch_averaged: Whether to average over the batch dimension.
         bias: Whether to use a bias term.
         device: Device to run the test on.
-    
+
     Raises:
         AssertionError: If the KFAC approximation is not exact.
     """
     # Fix random seed.
     torch.manual_seed(711)
     # Set up inputs x.
-    x = torch.randn((N_SAMPLES, REP_DIM, IN_DIM), device=device)
+    x = torch.randn((N_SAMPLES, REP_DIM, IN_DIM), dtype=DTYPE, device=device)
     n_loss_terms = N_SAMPLES * REP_DIM if setting == "expand" else N_SAMPLES
 
     # Set up one-layer linear network for inputs with additional REP_DIM.
     model = WeightShareModel(
         Linear(in_features=IN_DIM, out_features=OUT_DIM, bias=bias),
-    ).to(device)
+    ).to(device, DTYPE)
     num_params = sum(p.numel() for p in model.parameters())
 
     # Jacobians.
@@ -96,7 +96,7 @@ def test_kfac_deep_linear(
         batch_averaged: Whether to average over the batch dimension.
         bias: Whether to use a bias term.
         device: Device to run the test on.
-    
+
     Raises:
         AssertionError: If the KFAC approximation is not exact for the block
             diagonal.
@@ -104,14 +104,14 @@ def test_kfac_deep_linear(
     # Fix random seed.
     torch.manual_seed(711)
     # Set up inputs x.
-    x = torch.randn((N_SAMPLES, REP_DIM, IN_DIM), device=device)
+    x = torch.randn((N_SAMPLES, REP_DIM, IN_DIM), dtype=DTYPE, device=device)
     n_loss_terms = N_SAMPLES * REP_DIM if setting == "expand" else N_SAMPLES
 
     # Set up two-layer linear network for inputs with additional REP_DIM.
     model = WeightShareModel(
         Linear(in_features=IN_DIM, out_features=HID_DIM, bias=bias),
         Linear(in_features=HID_DIM, out_features=OUT_DIM, bias=bias),
-    ).to(device)
+    ).to(device, DTYPE)
     num_params = sum(p.numel() for p in model.parameters())
     num_params_layer1 = sum(p.numel() for p in model[0].parameters())
 
@@ -155,13 +155,13 @@ def test_kfac_conv2d_module(
     setting: str, batch_averaged: bool, bias: bool, device: device
 ):
     """Test KFAC for a convolutional layer in the reduce setting.
-    
+
     Args:
         setting: KFAC approximation setting.
         batch_averaged: Whether to average over the batch dimension.
         bias: Whether to use a bias term.
         device: Device to run the test on.
-    
+
     Raises:
         AssertionError: If the KFAC-reduce approximation is not exact for the
             diagonal or the Conv2d layer or if it is exact for KFAC-expand.
@@ -169,7 +169,7 @@ def test_kfac_conv2d_module(
     # Fix random seed.
     torch.manual_seed(711)
     # Set up inputs x.
-    x = torch.randn((N_SAMPLES, C_in, H_in, W_in), device=device)
+    x = torch.randn((N_SAMPLES, C_in, H_in, W_in), dtype=DTYPE, device=device)
     n_loss_terms = N_SAMPLES  # Only reduce setting.
 
     # Set up model with conv layer, average pooling, and linear output layer.
@@ -178,7 +178,7 @@ def test_kfac_conv2d_module(
         AdaptiveAvgPool2d(1),
         Flatten(start_dim=1),
         Linear(C_out, OUT_DIM, bias=bias),
-    ).to(device)
+    ).to(device, DTYPE)
     num_params = sum(p.numel() for p in model.parameters())
     num_conv_params = sum(p.numel() for p in model[0].parameters())
 
@@ -217,23 +217,24 @@ def test_kfac_conv2d_module(
 
 class WeightShareModel(Sequential):
     """Sequential model with processing of the weight-sharing dimension.
-    
+
     Wraps a `Sequential` model, but processes the weight-sharing dimension based
     on the `setting` before it returns the output of the sequential model.
     Assumes that the output of the sequential model is of shape
     (N_SAMPLES, REP_DIM, OUT_DIM).
     """
+
     def forward(self, x: Tensor, setting: str):
         """Forward pass with processing of the weight-sharing dimension.
-        
+
         Args:
             x: Input to the forward pass.
             setting: KFAC approximation setting. Possible values are `'expand'`
                 and `'reduce'`.
-        
+
         Returns:
             Output of the sequential model with processed weight-sharing dimension.
-        
+
         Raises:
             AssertionError: If `setting` is neither `'expand'` nor `'reduce'`.
         """
@@ -243,20 +244,21 @@ class WeightShareModel(Sequential):
             # Example: Transformer for translation
             # (REP_DIM = sequence length).
             # (N_SAMPLES, REP_DIM, OUT_DIM) -> (N_SAMPLES * REP_DIM, OUT_DIM)
-            return x.view(-1, OUT_DIM)
+            return rearrange(x, "batch shared features -> (batch shared) features")
         # Example: Vision transformer for image classification
         # (REP_DIM = image patches).
         # (N_SAMPLES, REP_DIM, OUT_DIM) -> (N_SAMPLES, OUT_DIM)
-        return x.mean(dim=1)
+        return reduce(x, "batch shared features -> batch features", "mean")
 
 
 class KFACMSE:
     """Class for computing the KFAC approximation with the MSE loss."""
+
     def __init__(self, model: Module, batch_averaged: bool, setting: str):
         """Initialize the KFAC approximation class.
 
         Installs forward and backward hooks to the model.
-        
+
         Args:
             model: The model.
             batch_averaged: Whether the loss is a mean over per-sample losses.
@@ -272,7 +274,7 @@ class KFACMSE:
 
     def forward_and_backward(self, x: Tensor):
         """Forward and backward pass.
-        
+
         Args:
             x: Input tensor for the forward pass.
         """
@@ -292,7 +294,7 @@ class KFACMSE:
 
     def get_kfac_blocks(self) -> List[Tensor]:
         """Computes the KFAC approximation blocks for each layer.
-        
+
         Returns:
             A list of KFAC approximation blocks for each layer.
 
@@ -333,7 +335,7 @@ class KFACMSE:
 
     def get_full_kfac_matrix(self) -> Tensor:
         """Computes the full block-diagonal KFAC approximation matrix.
-        
+
         Returns:
             The full block-diagonal KFAC approximation matrix.
         """
@@ -342,7 +344,7 @@ class KFACMSE:
 
     def _install_hooks(self) -> List[RemovableHandle]:
         """Installs forward and backward hooks to the model.
-        
+
         Returns:
             A list of handles to the installed hooks.
         """
@@ -360,7 +362,7 @@ class KFACMSE:
 
     def _set_a(self, module: Module, inputs: Tuple[Tensor]):
         """Computes and stores the Kronecker factor ingredient `a`.
-        
+
         Args:
             module: The current layer.
             inputs: Inputs to the layer.
