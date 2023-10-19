@@ -139,8 +139,8 @@ https://pytorch.org/docs/stable/optim.html#per-parameter-options).
                 or `Linear` modules that process matrix- or higher-dimensional
                 features.
                 Possible values are `'expand'` and `'reduce'`.
-                See [this paper](TODO Insert arXiv link) for an explanation of
-                the two approximations.
+                See [Eschenhagen et al., 2023](TODO Insert arXiv link) for an
+                explanation of the two approximations.
             warn_unsupported: Only relevant if `params` is unspecified. Whether to
                 warn if `model` contains parameters of layers that are not supported.
                 These parameters will not be trained by the optimizer. Default: `True`

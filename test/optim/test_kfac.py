@@ -1,7 +1,7 @@
 """Tests for the KFAC approximation of the Fisher/GGN."""
 
 from test.optim.utils import jacobians_naive
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 from einops import rearrange, reduce
 from pytest import mark
@@ -33,21 +33,51 @@ H_in = W_in = 16
 K = 4
 # Use double dtype to avoid numerical issues.
 DTYPE = float64
+# Models for tests.
+MODELS = {
+    # Single linear layer.
+    "single_linear": lambda bias: WeightShareModel(
+        Linear(in_features=IN_DIM, out_features=OUT_DIM, bias=bias),
+    ),
+    # 3-layer deep linear network.
+    "deep_linear": lambda bias: WeightShareModel(
+        Linear(in_features=IN_DIM, out_features=HID_DIM, bias=bias),
+        Linear(in_features=HID_DIM, out_features=HID_DIM, bias=bias),
+        Linear(in_features=HID_DIM, out_features=OUT_DIM, bias=bias),
+    ),
+    # Single convolutional layer + average pooling and linear output layer.
+    "conv2d": lambda bias: Sequential(
+        Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
+        AdaptiveAvgPool2d(1),
+        Flatten(start_dim=1),
+        Linear(C_out, OUT_DIM, bias=bias),
+    ),
+}
 
 
+@mark.parametrize("model", MODELS.items(), ids=MODELS.keys())
 @mark.parametrize("setting", ["expand", "reduce"])
 @mark.parametrize(
     "batch_averaged", [True, False], ids=["batch_averaged", "not_averaged"]
 )
 @mark.parametrize("bias", [True, False], ids=["bias", "no_bias"])
 @mark.parametrize("device", [device("cpu"), device("cuda:0")], ids=["cpu", "gpu"])
-def test_kfac_single_linear_module(
-    setting: str, batch_averaged: bool, bias: bool, device: device
+def test_kfac(
+    model: Tuple[str, Callable],
+    setting: str,
+    batch_averaged: bool,
+    bias: bool,
+    device: device,
 ):
-    """Test KFAC for a single linear layer.
+    """Test KFAC using (deep) linear models with weight sharing and the MSE loss.
+
+    See [Eschenhagen et al., 2023](TODO Insert arXiv link) for more details on
+    the condtions for KFAC being exact.
 
     Args:
-        setting: KFAC approximation setting.
+        model: Tuple of model name and function takes `bias` as input and
+            returns the model.
+        setting: KFAC approximation setting. Either `"expand"` or `"reduce"`.
         batch_averaged: Whether to average over the batch dimension.
         bias: Whether to use a bias term.
         device: Device to run the test on.
@@ -59,15 +89,23 @@ def test_kfac_single_linear_module(
         return
     # Fix random seed.
     manual_seed(711)
+    model_name, model_fn = model
     # Set up inputs x.
-    x = randn((N_SAMPLES, REP_DIM, IN_DIM), dtype=DTYPE, device=device)
-    n_loss_terms = N_SAMPLES * REP_DIM if setting == "expand" else N_SAMPLES
+    if model_name == "conv2d":
+        x = randn((N_SAMPLES, C_in, H_in, W_in), dtype=DTYPE, device=device)
+        n_loss_terms = N_SAMPLES  # Only reduce setting.
+    else:
+        x = randn((N_SAMPLES, REP_DIM, IN_DIM), dtype=DTYPE, device=device)
+        n_loss_terms = N_SAMPLES * REP_DIM if setting == "expand" else N_SAMPLES
 
     # Set up one-layer linear network for inputs with additional REP_DIM.
-    model = WeightShareModel(
-        Linear(in_features=IN_DIM, out_features=OUT_DIM, bias=bias),
-    ).to(device, DTYPE)
-    num_params = sum(p.numel() for p in model.parameters())
+    model: Module = model_fn(bias).to(device, DTYPE)
+    num_params_per_layer = [
+        sum(p.numel() for p in module.parameters())
+        for module in model.modules()
+        if isinstance(module, (Linear, Conv2d))
+    ]
+    num_params = sum(num_params_per_layer)
 
     # Jacobians.
     Js, f = jacobians_naive(model, x, setting)
@@ -86,146 +124,26 @@ def test_kfac_single_linear_module(
     F = kfac.get_full_kfac_matrix()
     assert F.shape == (num_params, num_params)
 
-    # Compare true Fisher/GGN against K-FAC Fisher/GGN (should be exact).
-    assert allclose(F.diag(), exact_F.diag())  # diagonal comparison
-    assert allclose(F, exact_F)  # full comparison
-
-
-@mark.parametrize("setting", ["expand", "reduce"])
-@mark.parametrize(
-    "batch_averaged", [True, False], ids=["batch_averaged", "not_averaged"]
-)
-@mark.parametrize("bias", [True, False], ids=["bias", "no_bias"])
-@mark.parametrize("device", [device("cpu"), device("cuda:0")], ids=["cpu", "gpu"])
-def test_kfac_deep_linear(
-    setting: str, batch_averaged: bool, bias: bool, device: device
-):
-    """Test KFAC for a 2-layer deep linear network.
-
-    Args:
-        setting: KFAC approximation setting.
-        batch_averaged: Whether to average over the batch dimension.
-        bias: Whether to use a bias term.
-        device: Device to run the test on.
-
-    Raises:
-        AssertionError: If the KFAC approximation is not exact for the block
-            diagonal.
-    """
-    if not is_available() and device.type == "cuda":
-        return
-    # Fix random seed.
-    manual_seed(711)
-    # Set up inputs x.
-    x = randn((N_SAMPLES, REP_DIM, IN_DIM), dtype=DTYPE, device=device)
-    n_loss_terms = N_SAMPLES * REP_DIM if setting == "expand" else N_SAMPLES
-
-    # Set up two-layer linear network for inputs with additional REP_DIM.
-    model = WeightShareModel(
-        Linear(in_features=IN_DIM, out_features=HID_DIM, bias=bias),
-        Linear(in_features=HID_DIM, out_features=OUT_DIM, bias=bias),
-    ).to(device, DTYPE)
-    num_params = sum(p.numel() for p in model.parameters())
-    num_params_layer1 = sum(p.numel() for p in model[0].parameters())
-
-    # Jacobians.
-    Js, f = jacobians_naive(model, x, setting)
-    assert f.shape == (n_loss_terms, OUT_DIM)
-    assert Js.shape == (n_loss_terms * OUT_DIM, num_params)
-
-    # Exact Fisher/GGN.
-    exact_F = Js.T @ Js  # regression
-    assert exact_F.shape == (num_params, num_params)
-    if batch_averaged:
-        exact_F /= n_loss_terms
-
-    # K-FAC Fisher/GGN.
-    kfac = KFACMSE(model, batch_averaged, setting)
-    kfac.forward_and_backward(x)
-    F = kfac.get_full_kfac_matrix()
-    assert F.shape == (num_params, num_params)
-
-    # Compare true Fisher/GGN against K-FAC Fisher/GGN block diagonal (should be exact).
-    assert allclose(F.diag(), exact_F.diag())  # diagonal comparison
-    assert allclose(
-        F[:num_params_layer1, :num_params_layer1],
-        exact_F[:num_params_layer1, :num_params_layer1],
-    )  # full comparison layer 1.
-    assert allclose(
-        F[num_params_layer1:, num_params_layer1:],
-        exact_F[num_params_layer1:, num_params_layer1:],
-    )  # full comparison layer 2.
-
-
-@mark.parametrize("setting", ["expand", "reduce"])
-@mark.parametrize(
-    "batch_averaged", [True, False], ids=["batch_averaged", "not_averaged"]
-)
-@mark.parametrize("bias", [True, False], ids=["bias", "no_bias"])
-@mark.parametrize("device", [device("cpu"), device("cuda:0")], ids=["cpu", "gpu"])
-def test_kfac_conv2d_module(
-    setting: str, batch_averaged: bool, bias: bool, device: device
-):
-    """Test KFAC for a convolutional layer in the reduce setting.
-
-    Args:
-        setting: KFAC approximation setting.
-        batch_averaged: Whether to average over the batch dimension.
-        bias: Whether to use a bias term.
-        device: Device to run the test on.
-
-    Raises:
-        AssertionError: If the KFAC-reduce approximation is not exact for the
-            diagonal or the Conv2d layer or if it is exact for KFAC-expand.
-    """
-    if not is_available() and device.type == "cuda":
-        return
-    # Fix random seed.
-    manual_seed(711)
-    # Set up inputs x.
-    x = randn((N_SAMPLES, C_in, H_in, W_in), dtype=DTYPE, device=device)
-    n_loss_terms = N_SAMPLES  # Only reduce setting.
-
-    # Set up model with conv layer, average pooling, and linear output layer.
-    model = Sequential(
-        Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
-        AdaptiveAvgPool2d(1),
-        Flatten(start_dim=1),
-        Linear(C_out, OUT_DIM, bias=bias),
-    ).to(device, DTYPE)
-    num_params = sum(p.numel() for p in model.parameters())
-    num_conv_params = sum(p.numel() for p in model[0].parameters())
-
-    # Jacobians.
-    Js, f = jacobians_naive(model, x, setting)
-    assert f.shape == (n_loss_terms, OUT_DIM)
-    assert Js.shape == (n_loss_terms * OUT_DIM, num_params)
-
-    # Exact Fisher/GGN.
-    exact_F = Js.T @ Js  # regression
-    assert exact_F.shape == (num_params, num_params)
-    if batch_averaged:
-        exact_F /= n_loss_terms
-
-    # K-FAC Fisher/GGN.
-    kfac = KFACMSE(model, batch_averaged, setting)
-    kfac.forward_and_backward(x)
-    F = kfac.get_full_kfac_matrix()
-    assert F.shape == (num_params, num_params)
-
-    if setting == "reduce":
-        # KFAC-reduce should be exact for this setting.
-        # Compare true Fisher/GGN against K-FAC Fisher/GGN diagonal.
-        assert allclose(F.diag(), exact_F.diag())
-        # Compare true Fisher/GGN against K-FAC Fisher/GGN for the Conv2d layer.
-        assert allclose(
-            F[:num_conv_params, :num_conv_params],
-            exact_F[:num_conv_params, :num_conv_params],
-        )
-    else:
+    if model_name == "conv2d" and setting == "expand":
         # KFAC-expand should not be exact for this setting.
         # Compare true Fisher/GGN against K-FAC Fisher/GGN diagonal.
         assert not allclose(F.diag(), exact_F.diag())
+    else:
+        # Compare true Fisher/GGN against K-FAC Fisher/GGN (should be exact).
+        assert allclose(F.diag(), exact_F.diag())  # diagonal comparison
+        # Layer-wise comparison.
+        for i, n_params in enumerate(num_params_per_layer):
+            prev_n_params = sum(num_params_per_layer[:i])
+            assert allclose(
+                F[
+                    prev_n_params : prev_n_params + n_params,
+                    prev_n_params : prev_n_params + n_params,
+                ],
+                exact_F[
+                    prev_n_params : prev_n_params + n_params,
+                    prev_n_params : prev_n_params + n_params,
+                ],
+            )
 
 
 class WeightShareModel(Sequential):
