@@ -1,6 +1,6 @@
 """Tests for the KFAC approximation of the Fisher/GGN."""
 
-from test.optim.utils import jacobians_naive
+from test.optim.utils import jacobians_naive, Transpose
 from test.utils import DEVICE_IDS, DEVICES
 from typing import Callable, List, Tuple
 
@@ -24,13 +24,14 @@ from singd.optim.utils import process_grad_output, process_input
 
 IN_DIM = 3
 HID_DIM = 5
-REP_DIM = 2
+REP_DIM = 2  # weight-sharing dimension
 OUT_DIM = 2
 N_SAMPLES = 4
-C_in = 3
-C_out = 2
-H_in = W_in = 16
-K = 4
+C_in = 3  # input channels
+C_out = 2  # output channels
+H_in = W_in = 16  # input height and width
+H_out, W_out = H_in + 1, W_in + 1  # output height and width
+K = 4  # kernel size
 # Use double dtype to avoid numerical issues.
 DTYPE = float64
 # Models for tests.
@@ -45,8 +46,17 @@ MODELS = {
         Linear(in_features=HID_DIM, out_features=HID_DIM, bias=bias),
         Linear(in_features=HID_DIM, out_features=OUT_DIM, bias=bias),
     ),
-    # Single convolutional layer + average pooling and linear output layer.
-    "conv2d": lambda bias: Sequential(
+    # Single convolutional layer + linear output layer (expand setting).
+    "conv2d_expand": lambda bias: Sequential(
+        Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
+        Flatten(start_dim=2),
+        Transpose(dim0=1, dim1=2),
+        Linear(C_out, OUT_DIM, bias=bias),
+        Flatten(start_dim=0, end_dim=-2),
+    ),
+    # Single convolutional layer + average pooling and linear output layer
+    # (reduce setting).
+    "conv2d_reduce": lambda bias: Sequential(
         Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
         AdaptiveAvgPool2d(1),
         Flatten(start_dim=1),
@@ -89,9 +99,11 @@ def test_kfac(
     manual_seed(711)
     model_name, model_fn = model
     # Set up inputs x.
-    if model_name == "conv2d":
+    if "conv2d" in model_name:
         x = randn((N_SAMPLES, C_in, H_in, W_in), dtype=DTYPE, device=device)
-        n_loss_terms = N_SAMPLES  # Only reduce setting.
+        n_loss_terms = (
+            N_SAMPLES * H_out * W_out if "expand" in model_name else N_SAMPLES
+        )
     else:
         x = randn((N_SAMPLES, REP_DIM, IN_DIM), dtype=DTYPE, device=device)
         n_loss_terms = N_SAMPLES * REP_DIM if setting == "expand" else N_SAMPLES
@@ -122,7 +134,9 @@ def test_kfac(
     F = kfac.get_full_kfac_matrix()
     assert F.shape == (num_params, num_params)
 
-    if model_name == "conv2d" and setting == "expand":
+    if (model_name == "conv2d_expand" and setting == "reduce") or (
+        model_name == "conv2d_reduce" and setting == "expand"
+    ):
         # KFAC-expand should not be exact for this setting.
         # Compare true Fisher/GGN against K-FAC Fisher/GGN diagonal.
         assert not allclose(F.diag(), exact_F.diag())

@@ -351,7 +351,7 @@ class _TestStructuredMatrix(ABC):
         """Project a symmetric dense matrix onto a structured matrix.
 
         Args:
-            mat: A symmetric dense matrix.
+            sym_mat: A symmetric dense matrix.
 
         Returns:
             The same matrix.

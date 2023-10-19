@@ -99,7 +99,7 @@ def jacobians_naive(model: Module, data: Tensor, setting: str) -> Tuple[Tensor, 
         f: Tensor = model(data, setting)
     except TypeError:
         f: Tensor = model(data)
-    # f: (n_loss_terms, ..., out_dim)
+    # f: (n_loss_terms, out_dim)
     last_f_dim = f.numel() - 1
     jacs = []
     for i, f_i in enumerate(f.flatten()):
@@ -108,3 +108,29 @@ def jacobians_naive(model: Module, data: Tensor, setting: str) -> Tuple[Tensor, 
     # jacs: (n_loss_terms * out_dim, num_params)
     jacs = stack(jacs).flatten(end_dim=-2)
     return jacs.detach(), f.detach()
+
+
+class Transpose(Module):
+    """A module that transposes the input tensor."""
+
+    def __init__(self, dim0: int, dim1: int):
+        """Initialize the module.
+
+        Args:
+            dim0: The first dimension to transpose.
+            dim1: The second dimension to transpose.
+        """
+        super().__init__()
+        self.dim0 = dim0
+        self.dim1 = dim1
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Transpose the input tensor.
+
+        Args:
+            x: The input tensor.
+
+        Returns:
+            The transposed tensor.
+        """
+        return x.transpose(self.dim0, self.dim1)

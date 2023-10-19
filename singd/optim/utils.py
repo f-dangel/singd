@@ -206,7 +206,9 @@ def conv2d_process_grad_output(
         # KFAC-reduce approximation
         g = g.sum(1)  # (batch_size, n_filters)
 
-    scaling = scaling * np.sqrt(batch_size) if batch_averaged else scaling
+    # The use of `g.size(0)` assumes that the setting of the loss, i.e. the
+    # number of loss terms, matches the `kfac_approx` that is used.
+    scaling = scaling * np.sqrt(g.size(0)) if batch_averaged else scaling
     return g * scaling
 
 
@@ -238,5 +240,7 @@ def linear_process_grad_output(
             weight_sharing_dims = tuple(range(1, g.ndim - 1))
             g = g.sum(weight_sharing_dims)  # (batch_size, out_dim)
 
+    # The use of `g.size(0)` assumes that the setting of the loss, i.e. the
+    # number of loss terms, matches the `kfac_approx` that is used.
     scaling = scaling * np.sqrt(g.size(0)) if batch_averaged else scaling
     return g * scaling

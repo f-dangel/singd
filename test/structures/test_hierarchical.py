@@ -22,7 +22,7 @@ class _TestHierarchicalMatrix(_TestStructuredMatrix, ABC):
         """Project a symmetric matrix onto a hierarchical matrix.
 
         Args:
-            mat: A symmetric matrix.
+            sym_mat: A symmetric matrix.
 
         Returns:
             A matrix containing the hierarchical matrix.
