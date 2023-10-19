@@ -141,7 +141,7 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
         else:
             raise ValueError(
                 f"Invalid `MAX_DIMS` {cls.MAX_DIMS}. "
-                "One dimension should be `float('inf').`, the other should be `int`."
+                "One dimension should be `float('inf')`, the other should be `int`."
             )
 
         return boundary
