@@ -45,6 +45,8 @@ def test_kfac_single_linear_module(
     Raises:
         AssertionError: If the KFAC approximation is not exact.
     """
+    if not torch.cuda.is_available() and device.type == "cuda":
+        return
     # Fix random seed.
     torch.manual_seed(711)
     # Set up inputs x.
@@ -101,6 +103,8 @@ def test_kfac_deep_linear(
         AssertionError: If the KFAC approximation is not exact for the block
             diagonal.
     """
+    if not torch.cuda.is_available() and device.type == "cuda":
+        return
     # Fix random seed.
     torch.manual_seed(711)
     # Set up inputs x.
@@ -166,6 +170,8 @@ def test_kfac_conv2d_module(
         AssertionError: If the KFAC-reduce approximation is not exact for the
             diagonal or the Conv2d layer or if it is exact for KFAC-expand.
     """
+    if not torch.cuda.is_available() and device.type == "cuda":
+        return
     # Fix random seed.
     torch.manual_seed(711)
     # Set up inputs x.
