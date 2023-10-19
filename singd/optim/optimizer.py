@@ -154,6 +154,8 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
                 the optimizer will still work correctly but the pre-conditioner compu-
                 tation in the first backpropagation might be numerically unstable.
                 Default: `1.0`.
+            enable_matrix_norm: enable more numerically stable updates if this option is `True`.
+                If this option is disabled, we often can not use a constant lr_cov.
 
         Raises:
             TypeError: If `DataParallel` or `DistributedDataParallel` model wrappers
@@ -189,7 +191,7 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             structures=structures,
             kfac_like=kfac_like,
             preconditioner_dtype=preconditioner_dtype,
-            enable_matrix_norm = enable_matrix_norm,
+            enable_matrix_norm=enable_matrix_norm,
         )
         if params is None:
             params = self._get_trainable_parameters(
@@ -452,10 +454,8 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             c_squared = damping * C_tC.trace()
             second_term = K_tK * (c_squared / d)
 
-        if enable_matrix_norm:
-            new_m_K = (first_term + second_term).diag_add_(-1.0) * ((1.0-alpha1)/2.0)
-        else:
-            new_m_K = (first_term + second_term).diag_add_(-1.0) * 0.5
+        scale = ((1.0 - alpha1) / 2.0) if enable_matrix_norm else 0.5
+        new_m_K = (first_term + second_term).diag_add_(-1.0) * scale
 
         # step for m_C
         if kfac_like:
@@ -466,10 +466,7 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             kappa_squared = damping * K_tK.trace()
             second_term = C_tC * (kappa_squared / p)
 
-        if enable_matrix_norm:
-            new_m_C = (first_term + second_term).diag_add_(-1.0) * ((1.0-alpha1)/2.0)
-        else:
-            new_m_C = (first_term + second_term).diag_add_(-1.0) * 0.5
+        new_m_C = (first_term + second_term).diag_add_(-1.0) * scale
 
         # 2) APPLY UPDATE
         if alpha1 != 0.0:
@@ -482,14 +479,10 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
         if isinstance(beta1, Callable):  # scheduled
             beta1 = beta1(self.steps)
 
-        norm_K = 1.0
-        norm_C = 1.0
-        if enable_matrix_norm:
-            norm_K = max( [1.0, new_m_K.infinity_norm()] )
-            norm_C = max( [1.0, new_m_C.infinity_norm()] )
-        self.Ks[module_name] = K - (K @ new_m_K) * (beta1/norm_K)
-        self.Cs[module_name] = C - (C @ new_m_C) * (beta1/norm_C)
-
+        norm_K = max([1.0, new_m_K.infinity_norm()]) if enable_matrix_norm else 1.0
+        norm_C = max([1.0, new_m_C.infinity_norm()]) if enable_matrix_norm else 1.0
+        self.Ks[module_name] = K - (K @ new_m_K) * (beta1 / norm_K)
+        self.Cs[module_name] = C - (C @ new_m_C) * (beta1 / norm_C)
 
     def _accumulate_H_terms(
         self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]
