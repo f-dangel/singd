@@ -343,3 +343,18 @@ class StructuredMatrix(ABC):
         """
         cls._warn_naive_implementation("eye")
         return cls.from_dense(supported_eye(dim, dtype=dtype, device=device))
+
+    @staticmethod
+    def _check_square(t: Tensor, name: str = "tensor"):
+        """Make sure the supplied tensor is a square matrix.
+
+        Args:
+            t: The tensor to be checked.
+            name: Optional name of the tensor to be printed in the error message.
+                Default: `"tensor"`.
+
+        Raises:
+            ValueError: If the tensor is not a square matrix.
+        """
+        if t.ndim != 2 or t.shape[0] != t.shape[1]:
+            raise ValueError(f"{name} must be square matrix. Got shape {t.shape}.")
