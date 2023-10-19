@@ -26,7 +26,7 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
 
     Note:
         This is a template class. To define an actual class, inherit from this class,
-        then specify the attributes `MAX_DIM_A`, `CLS_A`, and `CLS_B`.
+        then specify the attributes `MAX_DIMS`, `CLS_A`, and `CLS_C`.
 
     Attributes:
         MAX_DIMS: A tuple that contains integers and `float('inf')` which indicate
@@ -34,7 +34,7 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
             means that `A` will be used for dimensions up to 10, and `C` will be used
             in addition for larger dimensions.
         CLS_A: Structured matrix class used for the top left block.
-        CLS_B: Structured matrix class used for the the bottom right block.
+        CLS_C: Structured matrix class used for the the bottom right block.
     """
     MAX_DIMS: Tuple[Union[int, float], Union[int, float]]
     CLS_A: Type[StructuredMatrix]
@@ -82,8 +82,8 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
         """Construct from a PyTorch tensor.
 
         Args:
-            sym_mat: A dense and symmetric square matrix which will be approximated
-            by a `RecursiveTopRightMatrixTemplate`.
+            sym_mat: A dense and symmetric matrix which will be approximated
+                by a `RecursiveTopRightMatrixTemplate`.
 
         Returns:
             `RecursiveTopRightMatrixTemplate` approximating the passed matrix.
