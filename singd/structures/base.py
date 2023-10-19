@@ -22,13 +22,17 @@ class StructuredMatrix(ABC):
     """Base class for structured matrices closed under addition and multiplication.
 
     This base class defines the functions that need to be implemented to support
-    a new structured matrix class with inverse-free KFAC.
+    a new structured matrix class with SINGD.
 
     The minimum amount of work to add a new structured matrix class requires
-    implementing the ``to_dense`` and ``from_dense`` methods. The other operations
-    will then use a naive implementation which internally re-constructs unstructured
-    dense matrices. By default, these operations will trigger a warning which can be
-    used to identify functions that can be implemented more efficiently using structure.
+    implementing the `to_dense`, `from_dense` methods.
+    The other operations will then use a naive implementation which internally
+    re-constructs unstructured dense matrices. By default, these operations
+    will trigger a warning which can be used to identify functions that can be
+    implemented more efficiently using structure.
+
+    If you want to support data parallel training, you also have to implement
+    the `tensors_to_sync` method.
 
     Attributes:
         WARN_NAIVE: Warn the user if a method falls back to a naive implementation
@@ -46,17 +50,20 @@ class StructuredMatrix(ABC):
     WARN_NAIVE_EXCEPTIONS: Set[str] = set()
 
     @property
-    def _tensors_to_sync(self) -> Union[None, Tuple[Tensor, ...]]:
+    def _tensors_to_sync(self) -> Tuple[Tensor, ...]:
         """Tensors that need to be synchronized across devices.
 
-        This is used to support distributed data parallel training. If ``None``,
-        this structured matrix does not support distributed data parallel training.
+        This is used to support distributed data parallel training.
+
+        # noqa: DAR202
 
         Returns:
-            A tuple of tensors that need to be synchronized across devices
-            or ``None``.
+            A tuple of tensors that need to be synchronized across devices.
+
+        Raises:
+            NotImplementedError: Must be implemented by a child class.
         """
-        return None
+        raise NotImplementedError
 
     def __matmul__(
         self, other: Union[StructuredMatrix, Tensor]
@@ -211,15 +218,7 @@ class StructuredMatrix(ABC):
         Returns:
             If ``async_op`` is ``True``, a (tuple of) ``torch.distributed.Future``
             object(s), else ``None``.
-
-        Raises:
-            NotImplementedError: If _tensors_to_sync is None all_reduce is not
-                supported.
         """
-        if self._tensors_to_sync is None:
-            raise NotImplementedError(
-                "This structured matrix does not support all_reduce."
-            )
         handles = []
         for tensor in self._tensors_to_sync:
             tensor = tensor.contiguous()
@@ -358,3 +357,18 @@ class StructuredMatrix(ABC):
         """
         cls._warn_naive_implementation("eye")
         return cls.from_dense(supported_eye(dim, dtype=dtype, device=device))
+
+    @staticmethod
+    def _check_square(t: Tensor, name: str = "tensor"):
+        """Make sure the supplied tensor is a square matrix.
+
+        Args:
+            t: The tensor to be checked.
+            name: Optional name of the tensor to be printed in the error message.
+                Default: `"tensor"`.
+
+        Raises:
+            ValueError: If the tensor is not a square matrix.
+        """
+        if t.ndim != 2 or t.shape[0] != t.shape[1]:
+            raise ValueError(f"{name} must be square matrix. Got shape {t.shape}.")
