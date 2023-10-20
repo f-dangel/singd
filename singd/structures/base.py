@@ -298,7 +298,6 @@ class StructuredMatrix(ABC):
         self.__dict__.update(new.__dict__)
         return self
 
-
     def infinity_norm(self) -> float:
         """Computes the infinity matrix norm.
         Note: This assumes that all tensors in ``self._tensors_to_sync`` contain
@@ -306,11 +305,8 @@ class StructuredMatrix(ABC):
         Returns:
             The infinity matrix norm.
         """
-        max_abs_elements = [
-            tensor.abs().max() for tensor in self._tensors_to_sync
-        ]
+        max_abs_elements = [tensor.abs().max() for tensor in self._tensors_to_sync]
         return max(max_abs_elements)
-
 
     ###############################################################################
     #                      Special initialization operations                      #

@@ -189,7 +189,7 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             structures=structures,
             kfac_like=kfac_like,
             preconditioner_dtype=preconditioner_dtype,
-            enable_matrix_norm = enable_matrix_norm,
+            enable_matrix_norm=enable_matrix_norm,
         )
         if params is None:
             params = self._get_trainable_parameters(
@@ -453,7 +453,9 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             second_term = K_tK * (c_squared / d)
 
         if enable_matrix_norm:
-            new_m_K = (first_term + second_term).diag_add_(-1.0) * ((1.0-alpha1)/2.0)
+            new_m_K = (first_term + second_term).diag_add_(-1.0) * (
+                (1.0 - alpha1) / 2.0
+            )
         else:
             new_m_K = (first_term + second_term).diag_add_(-1.0) * 0.5
 
@@ -467,7 +469,9 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             second_term = C_tC * (kappa_squared / p)
 
         if enable_matrix_norm:
-            new_m_C = (first_term + second_term).diag_add_(-1.0) * ((1.0-alpha1)/2.0)
+            new_m_C = (first_term + second_term).diag_add_(-1.0) * (
+                (1.0 - alpha1) / 2.0
+            )
         else:
             new_m_C = (first_term + second_term).diag_add_(-1.0) * 0.5
 
@@ -485,11 +489,10 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
         norm_K = 1.0
         norm_C = 1.0
         if enable_matrix_norm:
-            norm_K = max( [1.0, new_m_K.infinity_norm()] )
-            norm_C = max( [1.0, new_m_C.infinity_norm()] )
-        self.Ks[module_name] = K - (K @ new_m_K) * (beta1/norm_K)
-        self.Cs[module_name] = C - (C @ new_m_C) * (beta1/norm_C)
-
+            norm_K = max([1.0, new_m_K.infinity_norm()])
+            norm_C = max([1.0, new_m_C.infinity_norm()])
+        self.Ks[module_name] = K - (K @ new_m_K) * (beta1 / norm_K)
+        self.Cs[module_name] = C - (C @ new_m_C) * (beta1 / norm_C)
 
     def _accumulate_H_terms(
         self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]
