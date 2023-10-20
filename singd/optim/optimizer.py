@@ -505,8 +505,8 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         # learning rate is the `lr_cov` value specified by the user, but no larger
         # to avoid numerical instabilities.
         if normalize_lr_cov:
-            beta1_K /= max(1.0, new_m_K.infinity_norm())
-            beta1_C /= max(1.0, new_m_C.infinity_norm())
+            beta1_K /= max(1.0, new_m_K.infinity_vector_norm())
+            beta1_C /= max(1.0, new_m_C.infinity_vector_norm())
 
         self.Ks[module_name] = K - (K @ new_m_K) * beta1_K
         self.Cs[module_name] = C - (C @ new_m_C) * beta1_C
