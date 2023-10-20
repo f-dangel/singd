@@ -92,7 +92,7 @@ https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html).
             None,
         ),
         init_grad_scale: float = 1.0,
-        enable_matrix_norm: bool = False,
+        normalize_lr_cov: bool = False,
     ):  # noqa: D301
         """Structured inverse-free natural gradient descent optimizer.
 
@@ -127,7 +127,10 @@ https://pytorch.org/docs/stable/optim.html#per-parameter-options).
                 conditioner momenta \\(\\mathbf{m}_\\mathbf{K}\\) and
                 \\(\\mathbf{m}_\\mathbf{C}\\). Default is `1e-2`. Also allows for a
                 callable which takes the current step and returns the current value for
-                `lr_cov`.
+                `lr_cov`. Using a too large value during the first few steps might lead
+                to instabilities because the pre-conditioner is still warming up. In
+                that case, try using a schedule which gradually ramps up `lr_cov`, or
+                use a constant value and turn on `normalize_lr_cov`.
             structures: A 2-tuple of strings specifying the structure of the
                 pre-conditioner matrices \\(\\mathbf{K}, \\mathbf{C}\\) and their
                 momenta \\(\\mathbf{m}_\\mathbf{K}, \\mathbf{m}_\\mathbf{C}\\).
@@ -154,8 +157,16 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
                 the optimizer will still work correctly but the pre-conditioner compu-
                 tation in the first backpropagation might be numerically unstable.
                 Default: `1.0`.
-            enable_matrix_norm: enable more numerically stable updates if this option is `True`.
-                If this option is disabled, we often can not use a constant lr_cov.
+            normalize_lr_cov: Use [normalized gradient descent](\
+https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enabling this
+                is a good alternative to scheduling `lr_cov` as we found it to improve
+                SINGD's stability in the early phase where the pre-conditioners are
+                still warming up. Default: `False`. Requires an additional matrix norm
+                computation which will be used to adapt `lr_cov`.
+                (Details: To update the pre-conditioner, SINGD performs Riemannian
+                gradient descent (RGD) on the pre-conditioner factors. Since it uses
+                Riemannian normal coordinates RGD reduces to GD. This allows to apply
+                the idea of normalized gradient descent.)
 
         Raises:
             TypeError: If `DataParallel` or `DistributedDataParallel` model wrappers
@@ -191,7 +202,7 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             structures=structures,
             kfac_like=kfac_like,
             preconditioner_dtype=preconditioner_dtype,
-            enable_matrix_norm=enable_matrix_norm,
+            normalize_lr_cov=normalize_lr_cov,
         )
         if params is None:
             params = self._get_trainable_parameters(
@@ -444,8 +455,11 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
         damping = self._get_param_group_entry(module, "damping")
         alpha1 = self._get_param_group_entry(module, "alpha1")
 
-        enable_matrix_norm = self._get_param_group_entry(module, "enable_matrix_norm")
-        scale = 0.5 * (1.0 - alpha1 if enable_matrix_norm else 1.0)
+        normalize_lr_cov = self._get_param_group_entry(module, "normalize_lr_cov")
+        # NOTE If we normalize `lr_cov`, we need to multiply with `1.0 - alpha1`
+        # to avoid that the update leads to a strictly increasing largest value
+        # in `m_K, m_C`
+        scale = 0.5 * (1.0 - alpha1 if normalize_lr_cov else 1.0)
 
         # step for m_K
         if kfac_like:
@@ -487,7 +501,10 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             beta1_C = beta1_C(self.steps)
 
         # perform normalized gradient descent on `K, C` if enabled
-        if enable_matrix_norm:
+        # NOTE We clip the norms below from `1.0` so that the maximum possible
+        # learning rate is the `lr_cov` value specified by the user, but no larger
+        # to avoid numerical instabilities.
+        if normalize_lr_cov:
             beta1_K /= max(1.0, new_m_K.infinity_norm())
             beta1_C /= max(1.0, new_m_C.infinity_norm())
 
