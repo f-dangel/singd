@@ -154,6 +154,8 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
                 the optimizer will still work correctly but the pre-conditioner compu-
                 tation in the first backpropagation might be numerically unstable.
                 Default: `1.0`.
+            enable_matrix_norm: enable more numerically stable updates if this option is `True`.
+                If this option is disabled, we often can not use a constant lr_cov.
 
         Raises:
             TypeError: If `DataParallel` or `DistributedDataParallel` model wrappers
@@ -443,7 +445,7 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
         alpha1 = self._get_param_group_entry(module, "alpha1")
 
         enable_matrix_norm = self._get_param_group_entry(module, "enable_matrix_norm")
-        scale = 0.5 * (1.0 - alpha1 if enable_matrix_norm else 1)
+        scale = 0.5 * (1.0 - alpha1 if enable_matrix_norm else 1.0)
 
         # step for m_K
         if kfac_like:
@@ -476,15 +478,21 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             self.m_Cs[module_name] = new_m_C
             self.m_Ks[module_name] = new_m_K
 
-        beta1 = self._get_param_group_entry(module, "lr_cov")
-        if isinstance(beta1, Callable):  # scheduled
-            beta1 = beta1(self.steps)
+        # learning rates
+        beta1_K = self._get_param_group_entry(module, "lr_cov")
+        if isinstance(beta1_K, Callable):  # scheduled
+            beta1_K = beta1_K(self.steps)
+        beta1_C = self._get_param_group_entry(module, "lr_cov")
+        if isinstance(beta1_C, Callable):  # scheduled
+            beta1_C = beta1_C(self.steps)
 
-        norm_K = max(1.0, new_m_K.infinity_norm()) if enable_matrix_norm else 1.0
-        norm_C = max(1.0, new_m_C.infinity_norm()) if enable_matrix_norm else 1.0
+        # perform normalized gradient descent on `K, C` if enabled
+        if enable_matrix_norm:
+            beta1_K /= max(1.0, new_m_K.infinity_norm())
+            beta1_C /= max(1.0, new_m_C.infinity_norm())
 
-        self.Ks[module_name] = K - (K @ new_m_K) * (beta1 / norm_K)
-        self.Cs[module_name] = C - (C @ new_m_C) * (beta1 / norm_C)
+        self.Ks[module_name] = K - (K @ new_m_K) * beta1_K
+        self.Cs[module_name] = C - (C @ new_m_C) * beta1_C
 
     def _accumulate_H_terms(
         self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]
