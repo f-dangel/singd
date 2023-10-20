@@ -30,7 +30,7 @@ def _test_matmul(
     structured_matrix_cls: Type[StructuredMatrix],
     project: Callable[[Tensor], Tensor],
 ):
-    """Test ``@`` operation of any child of ``StructuredMatrix``.
+    """Test `@` operation of any child of `StructuredMatrix`.
 
     Args:
         sym_mat1: A symmetric dense matrix which will be converted into a structured
@@ -38,7 +38,7 @@ def _test_matmul(
         mat2: Another dense matrix which will be (symmetrized then) converted into a
             structured matrix.
         structured_matrix_cls: The class of the structured matrix into which
-            ``sym_mat1`` and a symmetrization of ``mat2`` will be converted.
+            `sym_mat1` and a symmetrization of `mat2` will be converted.
         project: A function which converts an arbitrary symmetric dense matrix into
             a dense matrix of the tested structure. Used to establish the ground truth.
     """
@@ -68,7 +68,7 @@ def _test_add(
     structured_matrix_cls: Type[StructuredMatrix],
     project: Callable[[Tensor], Tensor],
 ):
-    """Test ``+`` operation of any child of ``StructuredMatrix``.
+    """Test `+` operation of any child of `StructuredMatrix`.
 
     Args:
         sym_mat1: A symmetric dense matrix which will be converted into a structured
@@ -76,7 +76,7 @@ def _test_add(
         sym_mat2: Another symmetric dense matrix which be converted into a structured
             matrix.
         structured_matrix_cls: The class of the structured matrix into which
-            ``sym_mat1`` and ``sym_mat2`` will be converted.
+            `sym_mat1` and `sym_mat2` will be converted.
         project: A function which converts an arbitrary symmetric dense matrix into a
             dense matrix of the tested structure. Used to establish the ground truth.
     """
@@ -98,7 +98,7 @@ def _test_sub(
     structured_matrix_cls: Type[StructuredMatrix],
     project: Callable[[Tensor], Tensor],
 ):
-    """Test ``-`` operation of any child of ``StructuredMatrix``.
+    """Test `-` operation of any child of `StructuredMatrix`.
 
     Args:
         sym_mat1: A symmetric dense matrix which will be converted into a structured
@@ -106,7 +106,7 @@ def _test_sub(
         sym_mat2: Another symmetric dense matrix which be converted into a structured
             matrix.
         structured_matrix_cls: The class of the structured matrix into which
-            ``sym_mat1`` and ``sym_mat2`` will be converted.
+            `sym_mat1` and `sym_mat2` will be converted.
         project: A function which converts an arbitrary symmetric dense matrix into a
             dense matrix of the tested structure. Used to establish the ground truth.
     """
@@ -127,13 +127,13 @@ def _test_mul(
     structured_matrix_cls: Type[StructuredMatrix],
     project: Callable[[Tensor], Tensor],
 ):
-    """Test ``+`` operation of any child of ``StructuredMatrix``.
+    """Test `+` operation of any child of `StructuredMatrix`.
 
     Args:
         sym_mat: A symmetric dense matrix which will be converted into a structured
             matrix.
         factor: Scalar which will be multiplied onto the structured matrix.
-        structured_matrix_cls: The class of the structured matrix into which ``sym_mat``
+        structured_matrix_cls: The class of the structured matrix into which `sym_mat`
             will be converted.
         project: A function which converts an arbitrary symmetric dense matrix into a
             dense matrix of the tested structure. Used to establish the ground truth.
@@ -154,14 +154,14 @@ def _test_rmatmat(
     structured_matrix_cls: Type[StructuredMatrix],
     project: Callable[[Tensor], Tensor],
 ):
-    """Test ``rmatmat`` operation of any child of ``StructuredMatrix``.
+    """Test `rmatmat` operation of any child of `StructuredMatrix`.
 
     Args:
         sym_mat1: A symmetric dense matrix which will be converted into a structured
             matrix.
-        mat2: A dense matrix onto which ``sym_mat1``'s structured matrix transpose
+        mat2: A dense matrix onto which `sym_mat1`'s structured matrix transpose
             will be multiplied onto.
-        structured_matrix_cls: The class of the structured matrix into which ``mat``
+        structured_matrix_cls: The class of the structured matrix into which `mat`
             will be converted.
         project: A function which converts an arbitrary symmetric dense matrix into a
             dense matrix of the tested structure. Used to establish the ground truth.
@@ -183,16 +183,16 @@ def _test_from_inner(
     project: Callable[[Tensor], Tensor],
     X: Union[Tensor, None],
 ):
-    """Test ``from_inner`` method of any child of ``StructuredMatrix``.
+    """Test `from_inner` method of any child of `StructuredMatrix`.
 
     Args:
         sym_mat: A symmetric dense matrix which will be converted into a structured
             matrix.
-        structured_matrix_cls: The class of the structured matrix into which ``sym_mat``
+        structured_matrix_cls: The class of the structured matrix into which `sym_mat`
             will be converted.
         project: A function which converts an arbitrary symmetric dense matrix into a
             dense matrix of the tested structure. Used to establish the ground truth.
-        X: An optional matrix which will be passed to the ``from_inner`` method.
+        X: An optional matrix which will be passed to the `from_inner` method.
     """
     if X is None:
         truth = project(supported_matmul(project(sym_mat).T, project(sym_mat)))
@@ -214,16 +214,16 @@ def _test_from_inner2(
     project: Callable[[Tensor], Tensor],
     XXT: Tensor,
 ):
-    """Test ``from_inner2`` method of any child of ``StructuredMatrix``.
+    """Test `from_inner2` method of any child of `StructuredMatrix`.
 
     Args:
         sym_mat: A symmetric dense matrix which will be converted into a structured
             matrix.
-        structured_matrix_cls: The class of the structured matrix into which ``sym_mat``
+        structured_matrix_cls: The class of the structured matrix into which `sym_mat`
             will be converted.
         project: A function which converts an arbitrary symmetric dense matrix into a
             dense matrix of the tested structure. Used to establish the ground truth.
-        XXT: An symmetric PSD matrix that will be passed to ``from_inner2``.
+        XXT: An symmetric PSD matrix that will be passed to `from_inner2`.
     """
     truth = project(supported_matmul(project(sym_mat).T, XXT, project(sym_mat)))
     sym_mat_structured = structured_matrix_cls.from_dense(sym_mat)
@@ -291,12 +291,12 @@ def _test_trace(
     sym_mat: Tensor,
     structured_matrix_cls: Type[StructuredMatrix],
 ):
-    """Test ``trace`` operation of any child of ``StructuredMatrix``.
+    """Test `trace` operation of any child of `StructuredMatrix`.
 
     Args:
         sym_mat: A symmetric dense matrix which will be converted into a structured
             matrix.
-        structured_matrix_cls: The class of the structured matrix into which ``sym_mat``
+        structured_matrix_cls: The class of the structured matrix into which `sym_mat`
             will be converted.
     """
     truth = supported_trace(sym_mat)
@@ -322,20 +322,20 @@ def symmetrize(mat: Tensor) -> Tensor:
 
 
 class _TestStructuredMatrix(ABC):
-    """Abstract class for testing ``StructuredMatrix`` implementations.
+    """Abstract class for testing `StructuredMatrix` implementations.
 
     To test a new structured matrix type, create a new class and specify the class
-    attributes, then implement the ``project`` method.
+    attributes, then implement the `project` method.
 
-    ``
+    `
     class TestDenseMatrix(_TestStructuredMatrix):
         STRUCTURED_MATRIX_CLS = DenseMatrix
 
         def project(self, mat: Tensor) -> Tensor:):
             ...
-    ``
+    `
 
-    ``pytest`` will automatically pick up the tests defined for ``TestDenseMatrix``
+    `pytest` will automatically pick up the tests defined for `TestDenseMatrix`
     via the base class.
 
     Attributes:
@@ -351,12 +351,12 @@ class _TestStructuredMatrix(ABC):
         """Project a symmetric dense matrix onto a structured matrix.
 
         Args:
-            mat: A symmetric dense matrix.
+            sym_mat: A symmetric dense matrix.
 
         Returns:
             The same matrix.
         """
-        raise NotImplementedError("Must be implemented by a child class")
+        raise NotImplementedError("Must be implemented by a child class.")
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
@@ -517,7 +517,7 @@ class _TestStructuredMatrix(ABC):
         Args:
             dev: The device on which to run the test.
             dtype: The data type of the matrices.
-            value: The value to add to the diagonal. Default: ``-1.23``
+            value: The value to add to the diagonal. Default: `-1.23`
         """
         tolerances = {
             "rtol": 1e-2 if is_half_precision(dtype) else 1e-5,
