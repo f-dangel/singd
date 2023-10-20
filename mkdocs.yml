@@ -43,6 +43,7 @@ plugins:
           conf_script: docs/gallery_conf.py
           examples_dirs: docs/examples
           gallery_dirs: docs/generated/gallery
+          matplotlib_animations: true
     - search
 extra_javascript:
     - javascripts/mathjax.js # LaTeX math

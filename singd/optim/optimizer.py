@@ -441,39 +441,33 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
         kfac_like = self._get_param_group_entry(module, "kfac_like")
         damping = self._get_param_group_entry(module, "damping")
         alpha1 = self._get_param_group_entry(module, "alpha1")
+
         enable_matrix_norm = self._get_param_group_entry(module, "enable_matrix_norm")
+        scale = 0.5 * (1.0 - alpha1 if enable_matrix_norm else 1)
 
         # step for m_K
         if kfac_like:
             first_term = H_K
             second_term = K_tK * damping
         else:
-            first_term = H_K * (H_C.trace() / d)
-            c_squared = damping * C_tC.trace()
-            second_term = K_tK * (c_squared / d)
+            # scaling before taking the trace is numerically more stable
+            first_term = H_K * (H_C * (1.0 / d)).trace()
+            c_squared = damping * (C_tC * (1.0 / d)).trace()
+            second_term = K_tK * c_squared
 
-        if enable_matrix_norm:
-            new_m_K = (first_term + second_term).diag_add_(-1.0) * (
-                (1.0 - alpha1) / 2.0
-            )
-        else:
-            new_m_K = (first_term + second_term).diag_add_(-1.0) * 0.5
+        new_m_K = (first_term + second_term).diag_add_(-1.0) * scale
 
         # step for m_C
         if kfac_like:
             first_term = H_C
             second_term = C_tC * damping
         else:
-            first_term = H_C * (H_K.trace() / p)
-            kappa_squared = damping * K_tK.trace()
-            second_term = C_tC * (kappa_squared / p)
+            # scaling before taking the trace is numerically more stable
+            first_term = H_C * (H_K * (1.0 / p)).trace()
+            kappa_squared = damping * (K_tK * (1.0 / p)).trace()
+            second_term = C_tC * kappa_squared
 
-        if enable_matrix_norm:
-            new_m_C = (first_term + second_term).diag_add_(-1.0) * (
-                (1.0 - alpha1) / 2.0
-            )
-        else:
-            new_m_C = (first_term + second_term).diag_add_(-1.0) * 0.5
+        new_m_C = (first_term + second_term).diag_add_(-1.0) * scale
 
         # 2) APPLY UPDATE
         if alpha1 != 0.0:
@@ -486,11 +480,9 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
         if isinstance(beta1, Callable):  # scheduled
             beta1 = beta1(self.steps)
 
-        norm_K = 1.0
-        norm_C = 1.0
-        if enable_matrix_norm:
-            norm_K = max([1.0, new_m_K.infinity_norm()])
-            norm_C = max([1.0, new_m_C.infinity_norm()])
+        norm_K = max(1.0, new_m_K.infinity_norm()) if enable_matrix_norm else 1.0
+        norm_C = max(1.0, new_m_C.infinity_norm()) if enable_matrix_norm else 1.0
+
         self.Ks[module_name] = K - (K @ new_m_K) * (beta1 / norm_K)
         self.Cs[module_name] = C - (C @ new_m_C) * (beta1 / norm_C)
 
