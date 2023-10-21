@@ -1,6 +1,6 @@
 """Tests for the KFAC approximation of the Fisher/GGN."""
 
-from test.optim.utils import jacobians_naive, Transpose
+from test.optim.utils import Transpose, jacobians_naive
 from test.utils import DEVICE_IDS, DEVICES
 from typing import Callable, List, Tuple
 
@@ -46,22 +46,8 @@ MODELS = {
         Linear(in_features=HID_DIM, out_features=HID_DIM, bias=bias),
         Linear(in_features=HID_DIM, out_features=OUT_DIM, bias=bias),
     ),
-    # Single convolutional layer + linear output layer (expand setting).
-    "conv2d_expand": lambda bias: Sequential(
-        Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
-        Flatten(start_dim=2),
-        Transpose(dim0=1, dim1=2),
-        Linear(C_out, OUT_DIM, bias=bias),
-        Flatten(start_dim=0, end_dim=-2),
-    ),
-    # Single convolutional layer + average pooling and linear output layer
-    # (reduce setting).
-    "conv2d_reduce": lambda bias: Sequential(
-        Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
-        AdaptiveAvgPool2d(1),
-        Flatten(start_dim=1),
-        Linear(C_out, OUT_DIM, bias=bias),
-    ),
+    # Single convolutional layer + linear output layer.
+    "conv2d": lambda setting, bias: Conv2dModel(setting, bias),
 }
 
 
@@ -97,19 +83,19 @@ def test_kfac(
     """
     # Fix random seed.
     manual_seed(711)
+
+    # Setup model and inputs x.
     model_name, model_fn = model
-    # Set up inputs x.
-    if "conv2d" in model_name:
+    if model_name == "conv2d":
+        model: Module = model_fn(setting, bias)
         x = randn((N_SAMPLES, C_in, H_in, W_in), dtype=DTYPE, device=device)
-        n_loss_terms = (
-            N_SAMPLES * H_out * W_out if "expand" in model_name else N_SAMPLES
-        )
+        n_loss_terms = N_SAMPLES * H_out * W_out if setting == "expand" else N_SAMPLES
     else:
+        model: Module = model_fn(bias)
         x = randn((N_SAMPLES, REP_DIM, IN_DIM), dtype=DTYPE, device=device)
         n_loss_terms = N_SAMPLES * REP_DIM if setting == "expand" else N_SAMPLES
+    model.to(device, DTYPE)
 
-    # Set up one-layer linear network for inputs with additional REP_DIM.
-    model: Module = model_fn(bias).to(device, DTYPE)
     num_params_per_layer = [
         sum(p.numel() for p in module.parameters())
         for module in model.modules()
@@ -134,28 +120,17 @@ def test_kfac(
     F = kfac.get_full_kfac_matrix()
     assert F.shape == (num_params, num_params)
 
-    if (model_name == "conv2d_expand" and setting == "reduce") or (
-        model_name == "conv2d_reduce" and setting == "expand"
-    ):
-        # KFAC-expand should not be exact for this setting.
-        # Compare true Fisher/GGN against K-FAC Fisher/GGN diagonal.
-        assert not allclose(F.diag(), exact_F.diag())
-    else:
-        # Compare true Fisher/GGN against K-FAC Fisher/GGN (should be exact).
-        assert allclose(F.diag(), exact_F.diag())  # diagonal comparison
-        # Layer-wise comparison.
-        for i, n_params in enumerate(num_params_per_layer):
-            prev_n_params = sum(num_params_per_layer[:i])
-            assert allclose(
-                F[
-                    prev_n_params : prev_n_params + n_params,
-                    prev_n_params : prev_n_params + n_params,
-                ],
-                exact_F[
-                    prev_n_params : prev_n_params + n_params,
-                    prev_n_params : prev_n_params + n_params,
-                ],
-            )
+    # Compare true Fisher/GGN against K-FAC Fisher/GGN (should be exact).
+    assert allclose(F.diag(), exact_F.diag())  # diagonal comparison
+    # Layer-wise comparison.
+    for i, n_params in enumerate(num_params_per_layer):
+        prev_n_params = sum(num_params_per_layer[:i])
+        layer_start = prev_n_params
+        layer_stop = prev_n_params + n_params
+        assert allclose(
+            F[layer_start:layer_stop, layer_start:layer_stop],
+            exact_F[layer_start:layer_stop, layer_start:layer_stop],
+        )
 
 
 class WeightShareModel(Sequential):
@@ -167,7 +142,7 @@ class WeightShareModel(Sequential):
     (N_SAMPLES, REP_DIM, OUT_DIM).
     """
 
-    def forward(self, x: Tensor, setting: str):
+    def forward(self, x: Tensor, setting: str) -> Tensor:
         """Forward pass with processing of the weight-sharing dimension.
 
         Args:
@@ -192,6 +167,50 @@ class WeightShareModel(Sequential):
         # (REP_DIM = image patches).
         # (N_SAMPLES, REP_DIM, OUT_DIM) -> (N_SAMPLES, OUT_DIM)
         return reduce(x, "batch shared features -> batch features", "mean")
+
+
+class Conv2dModel(Module):
+    """Model with a `Conv2d` module in the expand or the reduce setting."""
+
+    def __init__(self, setting: str, bias: bool):
+        """Initialize the model.
+
+        Args:
+            setting: KFAC approximation setting. Possible values are `"expand"`
+                and `"reduce"`.
+            bias: Whether to use a bias term for `Conv2d` and `Linear` modules.
+
+        Raises:
+            AssertionError: If `setting` is neither `"expand"` nor `"reduce"`.
+        """
+        super().__init__()
+        assert setting in ["expand", "reduce"]
+        if setting == "expand":
+            self.model = Sequential(
+                Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
+                Flatten(start_dim=2),
+                Transpose(dim0=1, dim1=2),
+                Linear(C_out, OUT_DIM, bias=bias),
+                Flatten(start_dim=0, end_dim=-2),
+            )
+        elif setting == "reduce":
+            self.model = Sequential(
+                Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
+                AdaptiveAvgPool2d(1),
+                Flatten(start_dim=1),
+                Linear(C_out, OUT_DIM, bias=bias),
+            )
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Forward pass.
+
+        Args:
+            x: Input tensor.
+
+        Returns:
+            Model output.
+        """
+        return self.model(x)
 
 
 class KFACMSE:
