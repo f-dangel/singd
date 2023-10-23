@@ -556,7 +556,12 @@ class _TestStructuredMatrix(ABC):
         for dim in self.DIMS:
             manual_seed(0)
             sym_mat = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
-            truth = vector_norm(self.project(sym_mat), ord=float("inf"))
+            # NOTE `vector_norm` does not work on empty tensors, hence we must
+            # create a scalar zero tensor
+            if dim == 0:
+                truth = vector_norm(zeros(1, device=dev, dtype=dtype), ord=float("inf"))
+            else:
+                truth = vector_norm(self.project(sym_mat), ord=float("inf"))
             structured = self.STRUCTURED_MATRIX_CLS.from_dense(sym_mat)
             report_nonclose(truth, structured.infinity_vector_norm())
 
