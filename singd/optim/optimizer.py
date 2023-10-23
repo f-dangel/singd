@@ -92,6 +92,7 @@ https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html).
             None,
         ),
         init_grad_scale: float = 1.0,
+        normalize_lr_cov: bool = False,
     ):  # noqa: D301
         """Structured inverse-free natural gradient descent optimizer.
 
@@ -126,7 +127,11 @@ https://pytorch.org/docs/stable/optim.html#per-parameter-options).
                 conditioner momenta \\(\\mathbf{m}_\\mathbf{K}\\) and
                 \\(\\mathbf{m}_\\mathbf{C}\\). Default is `1e-2`. Also allows for a
                 callable which takes the current step and returns the current value for
-                `lr_cov`.
+                `lr_cov`. Using a too large value during the first few steps might lead
+                to instabilities because the pre-conditioner is still warming up. In
+                that case, try using a schedule which gradually ramps up `lr_cov`. Or
+                use a constant value and turn on `normalize_lr_cov` which will at most
+                use `lr_cov` during training.
             structures: A 2-tuple of strings specifying the structure of the
                 pre-conditioner matrices \\(\\mathbf{K}, \\mathbf{C}\\) and their
                 momenta \\(\\mathbf{m}_\\mathbf{K}, \\mathbf{m}_\\mathbf{C}\\).
@@ -153,6 +158,16 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
                 the optimizer will still work correctly but the pre-conditioner compu-
                 tation in the first backpropagation might be numerically unstable.
                 Default: `1.0`.
+            normalize_lr_cov: Use [normalized gradient descent](\
+https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enabling this
+                is a good alternative to scheduling `lr_cov` as we found it to improve
+                SINGD's stability in the early phase where the pre-conditioners are
+                still warming up. Default: `False`. Requires an additional matrix norm
+                computation which will be used to adapt `lr_cov`.
+                (Details: To update the pre-conditioner, SINGD performs Riemannian
+                gradient descent (RGD) on the pre-conditioner factors. Since it uses
+                Riemannian normal coordinates RGD reduces to GD. This allows to apply
+                the idea of normalized gradient descent.)
 
         Raises:
             TypeError: If `DataParallel` or `DistributedDataParallel` model wrappers
@@ -188,6 +203,7 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             structures=structures,
             kfac_like=kfac_like,
             preconditioner_dtype=preconditioner_dtype,
+            normalize_lr_cov=normalize_lr_cov,
         )
         if params is None:
             params = self._get_trainable_parameters(
@@ -438,6 +454,13 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
         # hyper-parameters for parameter group of module
         kfac_like = self._get_param_group_entry(module, "kfac_like")
         damping = self._get_param_group_entry(module, "damping")
+        alpha1 = self._get_param_group_entry(module, "alpha1")
+
+        normalize_lr_cov = self._get_param_group_entry(module, "normalize_lr_cov")
+        # NOTE If we normalize `lr_cov`, we need to multiply with `1.0 - alpha1`
+        # to avoid that the update leads to a strictly increasing largest value
+        # in `m_K, m_C`
+        scale = 0.5 * (1.0 - alpha1 if normalize_lr_cov else 1.0)
 
         # step for m_K
         if kfac_like:
@@ -448,7 +471,8 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             first_term = H_K * (H_C * (1.0 / d)).trace()
             c_squared = damping * (C_tC * (1.0 / d)).trace()
             second_term = K_tK * c_squared
-        new_m_K = (first_term + second_term).diag_add_(-1.0) * 0.5
+
+        new_m_K = (first_term + second_term).diag_add_(-1.0) * scale
 
         # step for m_C
         if kfac_like:
@@ -460,21 +484,33 @@ https://pytorch.org/docs/stable/amp.html#torch.cuda.amp.GradScaler). Initial gra
             kappa_squared = damping * (K_tK * (1.0 / p)).trace()
             second_term = C_tC * kappa_squared
 
-        new_m_C = (first_term + second_term).diag_add_(-1.0) * 0.5
+        new_m_C = (first_term + second_term).diag_add_(-1.0) * scale
 
         # 2) APPLY UPDATE
-        alpha1 = self._get_param_group_entry(module, "alpha1")
         if alpha1 != 0.0:
             new_m_C += self.m_Cs[module_name] * alpha1
             new_m_K += self.m_Ks[module_name] * alpha1
             self.m_Cs[module_name] = new_m_C
             self.m_Ks[module_name] = new_m_K
 
-        beta1 = self._get_param_group_entry(module, "lr_cov")
-        if isinstance(beta1, Callable):  # scheduled
-            beta1 = beta1(self.steps)
-        self.Ks[module_name] = K - (K @ new_m_K) * beta1
-        self.Cs[module_name] = C - (C @ new_m_C) * beta1
+        # learning rates
+        beta1_K = self._get_param_group_entry(module, "lr_cov")
+        if isinstance(beta1_K, Callable):  # scheduled
+            beta1_K = beta1_K(self.steps)
+        beta1_C = self._get_param_group_entry(module, "lr_cov")
+        if isinstance(beta1_C, Callable):  # scheduled
+            beta1_C = beta1_C(self.steps)
+
+        # perform normalized gradient descent on `K, C` if enabled
+        # NOTE We clip the norms below from `1.0` so that the maximum possible
+        # learning rate is the `lr_cov` value specified by the user, but no larger
+        # to avoid numerical instabilities.
+        if normalize_lr_cov:
+            beta1_K /= max(1.0, new_m_K.infinity_vector_norm())
+            beta1_C /= max(1.0, new_m_C.infinity_vector_norm())
+
+        self.Ks[module_name] = K - (K @ new_m_K) * beta1_K
+        self.Cs[module_name] = C - (C @ new_m_C) * beta1_C
 
     def _accumulate_H_terms(
         self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]

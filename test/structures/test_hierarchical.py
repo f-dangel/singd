@@ -1,4 +1,4 @@
-"""Test ``singd.structures.hierarchical``."""
+"""Test `singd.structures.hierarchical`."""
 
 from abc import ABC
 from test.structures.utils import _TestStructuredMatrix
@@ -14,7 +14,7 @@ from singd.structures.hierarchical import (
 
 
 class _TestHierarchicalMatrix(_TestStructuredMatrix, ABC):
-    """Test suite for classes created with ``HierarchicalMatrixTemplate``."""
+    """Test suite for classes created with `HierarchicalMatrixTemplate`."""
 
     STRUCTURED_MATRIX_CLS: Type[HierarchicalMatrixTemplate]
 
@@ -22,7 +22,7 @@ class _TestHierarchicalMatrix(_TestStructuredMatrix, ABC):
         """Project a symmetric matrix onto a hierarchical matrix.
 
         Args:
-            mat: A symmetric matrix.
+            sym_mat: A symmetric matrix.
 
         Returns:
             A matrix containing the hierarchical matrix.
@@ -65,15 +65,15 @@ class _TestHierarchicalMatrix(_TestStructuredMatrix, ABC):
 
 
 class TestHierarchical15_15Matrix(_TestHierarchicalMatrix):
-    """Test suite for ``Hierarchical15_15Matrix`` class."""
+    """Test suite for `Hierarchical15_15Matrix` class."""
 
     STRUCTURED_MATRIX_CLS = Hierarchical15_15Matrix
 
 
 class TestHierarchical3_2Matrix(_TestHierarchicalMatrix):
-    """Test suite for ``Hierarchical3_2Matrix`` class."""
+    """Test suite for `Hierarchical3_2Matrix` class."""
 
-    DIMS = [
+    DIMS = _TestHierarchicalMatrix.DIMS + [
         3,  # only A
         4,  # A, smaller E, smaller B, no D, no C
         5,  # A, normal B, no D, no C
