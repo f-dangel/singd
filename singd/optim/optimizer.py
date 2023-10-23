@@ -129,8 +129,9 @@ https://pytorch.org/docs/stable/optim.html#per-parameter-options).
                 callable which takes the current step and returns the current value for
                 `lr_cov`. Using a too large value during the first few steps might lead
                 to instabilities because the pre-conditioner is still warming up. In
-                that case, try using a schedule which gradually ramps up `lr_cov`, or
-                use a constant value and turn on `normalize_lr_cov`.
+                that case, try using a schedule which gradually ramps up `lr_cov`. Or
+                use a constant value and turn on `normalize_lr_cov` which will at most
+                `lr_cov` during training.
             structures: A 2-tuple of strings specifying the structure of the
                 pre-conditioner matrices \\(\\mathbf{K}, \\mathbf{C}\\) and their
                 momenta \\(\\mathbf{m}_\\mathbf{K}, \\mathbf{m}_\\mathbf{C}\\).
