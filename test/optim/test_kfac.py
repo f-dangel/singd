@@ -156,7 +156,7 @@ class WeightShareModel(Sequential):
         Raises:
             AssertionError: If `setting` is neither `'expand'` nor `'reduce'`.
         """
-        assert setting in ["expand", "reduce"]
+        assert setting in {"expand", "reduce"}
         x = super().forward(x)
         if setting == "expand":
             # Example: Transformer for translation
