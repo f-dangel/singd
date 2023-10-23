@@ -131,7 +131,7 @@ https://pytorch.org/docs/stable/optim.html#per-parameter-options).
                 to instabilities because the pre-conditioner is still warming up. In
                 that case, try using a schedule which gradually ramps up `lr_cov`. Or
                 use a constant value and turn on `normalize_lr_cov` which will at most
-                `lr_cov` during training.
+                use `lr_cov` during training.
             structures: A 2-tuple of strings specifying the structure of the
                 pre-conditioner matrices \\(\\mathbf{K}, \\mathbf{C}\\) and their
                 momenta \\(\\mathbf{m}_\\mathbf{K}, \\mathbf{m}_\\mathbf{C}\\).
