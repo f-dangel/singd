@@ -47,7 +47,7 @@ MODELS = {
         Linear(in_features=HID_DIM, out_features=OUT_DIM, bias=bias),
     ),
     # Single convolutional layer + linear output layer.
-    "conv2d": lambda setting, bias: Conv2dModel(setting, bias),
+    "conv2d": conv2d_model,
 }
 
 
@@ -68,7 +68,7 @@ def test_kfac(
     """Test KFAC using (deep) linear models with weight sharing and the MSE loss.
 
     See [Eschenhagen et al., 2023](TODO Insert arXiv link) for more details on
-    the condtions for KFAC being exact.
+    the conditions for KFAC being exact.
 
     Args:
         model: Tuple of model name and function takes `bias` as input and
@@ -169,48 +169,37 @@ class WeightShareModel(Sequential):
         return reduce(x, "batch shared features -> batch features", "mean")
 
 
-class Conv2dModel(Module):
-    """Model with a `Conv2d` module in the expand or the reduce setting."""
+def conv2d_model(setting: str, bias: bool) -> Sequential:
+    """Model with a `Conv2d` module in the expand or the reduce setting.
 
-    def __init__(self, setting: str, bias: bool):
-        """Initialize the model.
+    Args:
+        setting: KFAC approximation setting. Possible values are `"expand"`
+            and `"reduce"`.
+        bias: Whether to use a bias term for `Conv2d` and `Linear` modules.
 
-        Args:
-            setting: KFAC approximation setting. Possible values are `"expand"`
-                and `"reduce"`.
-            bias: Whether to use a bias term for `Conv2d` and `Linear` modules.
+    Raises:
+        ValueError: If `setting` is neither `"expand"` nor `"reduce"`.
 
-        Raises:
-            AssertionError: If `setting` is neither `"expand"` nor `"reduce"`.
-        """
-        super().__init__()
-        assert setting in ["expand", "reduce"]
-        if setting == "expand":
-            self.model = Sequential(
-                Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
-                Flatten(start_dim=2),
-                Transpose(dim0=1, dim1=2),
-                Linear(C_out, OUT_DIM, bias=bias),
-                Flatten(start_dim=0, end_dim=-2),
-            )
-        elif setting == "reduce":
-            self.model = Sequential(
-                Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
-                AdaptiveAvgPool2d(1),
-                Flatten(start_dim=1),
-                Linear(C_out, OUT_DIM, bias=bias),
-            )
-
-    def forward(self, x: Tensor) -> Tensor:
-        """Forward pass.
-
-        Args:
-            x: Input tensor.
-
-        Returns:
-            Model output.
-        """
-        return self.model(x)
+    Returns:
+        Model with a `Conv2d` module in the expand or the reduce setting.
+    """
+    if setting == "expand":
+        return Sequential(
+            Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
+            Flatten(start_dim=2),
+            Transpose(dim0=1, dim1=2),
+            Linear(C_out, OUT_DIM, bias=bias),
+            Flatten(start_dim=0, end_dim=-2),
+        )
+    elif setting == "reduce":
+        return Sequential(
+            Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
+            AdaptiveAvgPool2d(1),
+            Flatten(start_dim=1),
+            Linear(C_out, OUT_DIM, bias=bias),
+        )
+    else:
+        raise ValueError(f"Unknown setting {setting}.")
 
 
 class KFACMSE:
