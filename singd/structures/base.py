@@ -313,15 +313,8 @@ class StructuredMatrix(ABC):
         Returns:
             The matrix's infinity vector norm.
         """
-        t_abs_maxs = []
-        for t in self._tensors_to_sync:
-            # NOTE `.max` can only be called on tensors with non-zero shape,
-            # hence we must explicitly create a zero tensor for empty tensors
-            t_abs = (
-                t.abs() if t.numel() > 0 else zeros(1, dtype=t.dtype, device=t.device)
-            )
-            t_abs_maxs.append(t_abs.max())
-        return max(t_abs_maxs)
+        # NOTE `.max` can only be called on tensors with non-zero shape
+        return max(t.abs().max() for t in self._tensors_to_sync if t.numel() > 0)
 
     ###############################################################################
     #                      Special initialization operations                      #
