@@ -206,9 +206,10 @@ def conv2d_process_grad_output(
         # KFAC-reduce approximation
         g = g.sum(1)  # (batch_size, n_filters)
 
-    # The use of `g.size(0)` assumes that the setting of the loss, i.e. the
-    # number of loss terms, matches the `kfac_approx` that is used.
-    scaling = scaling * np.sqrt(g.size(0)) if batch_averaged else scaling
+    # The scaling by `np.sqrt(batch_size)` when `batch_averaged=True` assumes
+    # that we are in the reduce setting, i.e. the number of loss terms equals
+    # the batch size.
+    scaling = scaling * np.sqrt(batch_size) if batch_averaged else scaling
     return g * scaling
 
 
