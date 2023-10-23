@@ -21,7 +21,6 @@ def test_compare_lin2023simplifying_ddp():  # noqa: C901
 
     Raises:
         RuntimeError: If the test is not run via torchrun.
-
     """
     N_GPUS = torch.cuda.device_count()
     if not torch.cuda.is_available() or N_GPUS < 2:
