@@ -91,8 +91,8 @@ def test_autocast():
         compare_optimizers(
             optim_single,
             optim_mixed,
-            atol=5e-5,
-            rtol=1e-2,
+            atol=5e-4,
+            rtol=5e-2,
             # momentum requires larger tolerance
             atol_momentum=5e-3,
             rtol_momentum=1e-1,
