@@ -34,6 +34,41 @@ H_out, W_out = H_in + 1, W_in + 1  # output height and width
 K = 4  # kernel size
 # Use double dtype to avoid numerical issues.
 DTYPE = float64
+
+
+def conv2d_model(setting: str, bias: bool) -> Sequential:
+    """Model with a `Conv2d` module in the expand or the reduce setting.
+
+    Args:
+        setting: KFAC approximation setting. Possible values are `"expand"`
+            and `"reduce"`.
+        bias: Whether to use a bias term for `Conv2d` and `Linear` modules.
+
+    Raises:
+        ValueError: If `setting` is neither `"expand"` nor `"reduce"`.
+
+    Returns:
+        Model with a `Conv2d` module in the expand or the reduce setting.
+    """
+    if setting == "expand":
+        return Sequential(
+            Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
+            Flatten(start_dim=2),
+            Transpose(dim0=1, dim1=2),
+            Linear(C_out, OUT_DIM, bias=bias),
+            Flatten(start_dim=0, end_dim=-2),
+        )
+    elif setting == "reduce":
+        return Sequential(
+            Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
+            AdaptiveAvgPool2d(1),
+            Flatten(start_dim=1),
+            Linear(C_out, OUT_DIM, bias=bias),
+        )
+    else:
+        raise ValueError(f"Unknown setting {setting}.")
+
+
 # Models for tests.
 MODELS = {
     # Single linear layer.
@@ -167,39 +202,6 @@ class WeightShareModel(Sequential):
         # (REP_DIM = image patches).
         # (N_SAMPLES, REP_DIM, OUT_DIM) -> (N_SAMPLES, OUT_DIM)
         return reduce(x, "batch shared features -> batch features", "mean")
-
-
-def conv2d_model(setting: str, bias: bool) -> Sequential:
-    """Model with a `Conv2d` module in the expand or the reduce setting.
-
-    Args:
-        setting: KFAC approximation setting. Possible values are `"expand"`
-            and `"reduce"`.
-        bias: Whether to use a bias term for `Conv2d` and `Linear` modules.
-
-    Raises:
-        ValueError: If `setting` is neither `"expand"` nor `"reduce"`.
-
-    Returns:
-        Model with a `Conv2d` module in the expand or the reduce setting.
-    """
-    if setting == "expand":
-        return Sequential(
-            Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
-            Flatten(start_dim=2),
-            Transpose(dim0=1, dim1=2),
-            Linear(C_out, OUT_DIM, bias=bias),
-            Flatten(start_dim=0, end_dim=-2),
-        )
-    elif setting == "reduce":
-        return Sequential(
-            Conv2d(C_in, C_out, K, padding=K // 2, bias=bias),
-            AdaptiveAvgPool2d(1),
-            Flatten(start_dim=1),
-            Linear(C_out, OUT_DIM, bias=bias),
-        )
-    else:
-        raise ValueError(f"Unknown setting {setting}.")
 
 
 class KFACMSE:
