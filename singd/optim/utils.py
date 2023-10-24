@@ -1,45 +1,44 @@
 """Utility functions for the optimizers."""
 
-from typing import Tuple
+from math import sqrt
+from typing import Tuple, Union
 
 import numpy as np
-import torch
 import torch.nn.functional as F
-from torch import Tensor
+from einops import rearrange, reduce
+from torch import Tensor, cat
 from torch.nn import Conv2d, Linear, Module
 
 
 def _extract_patches(
     x: Tensor,
-    kernel_size: Tuple[int, int],
-    stride: Tuple[int, int],
-    padding: Tuple[int, int],
+    kernel_size: Union[Tuple[int, int], int],
+    stride: Union[Tuple[int, int], int],
+    padding: Union[Tuple[int, int], int],
     groups: int,
 ) -> Tensor:
     """Extract patches from the input of a 2d-convolution.
 
+    The patches are averaged over channel groups.
+
     Args:
-        x: The input feature maps. (batch_size, in_c, h, w)
-        kernel_size: the kernel sizes of the conv filter (tuple of two elements).
-        stride: the stride of conv operation (tuple of two elements).
-        padding: number of paddings. be a tuple of two elements..
-        groups: number of groups.
+        x: Input to a 2d-convolution. Has shape `[batch_size, C_in, I1, I2]`.
+        kernel_size: The convolution's kernel size supplied as 2-tuple or integer.
+        stride: The convolution's stride supplied as 2-tuple or integer.
+        padding: The convolution's padding supplied as 2-tuple or integer.
+        groups: The number of channel groups.
 
     Returns:
-        (batch_size, out_h, out_w, in_c*kh*kw)
+        A tensor of shape `[batch_size, O1 * O2, C_in * K1 * K2]` where each column
+        `[b, o1_o2, :]` contains the flattened patch of sample `b` used for output
+        location `(o1, o2)`.
     """
-    # TODO Make human-readable
-    if padding[0] + padding[1] > 0:
-        x = F.pad(
-            x, (padding[1], padding[1], padding[0], padding[0])
-        ).data  # Actually check dims
-    x = x.unfold(2, kernel_size[0], stride[0])
-    x = x.unfold(3, kernel_size[1], stride[1])
-    x = x.transpose_(1, 2).transpose_(2, 3)
-    return torch.mean(
-        x.reshape((x.size(0), x.size(1), x.size(2), groups, -1, x.size(4), x.size(5))),
-        3,
-    ).view(x.size(0), x.size(1), x.size(2), -1)
+    x_unfold = F.unfold(x, kernel_size, dilation=1, padding=padding, stride=stride)
+    # separate the channel groups
+    x_unfold = rearrange(
+        x_unfold, "b (g c_in_k1_k2) o1_o2 -> b g c_in_k1_k2 o1_o2", g=groups
+    )
+    return reduce(x_unfold, "b g c_in_k1_k2 o1_o2 -> b o1_o2 c_in_k1_k2", "mean")
 
 
 def process_input(input: Tensor, module: Module, kfac_approx: str) -> Tensor:
