@@ -109,11 +109,12 @@ def conv2d_process_input(a: Tensor, layer: Conv2d, kfac_approx: str) -> Tensor:
     return a.div_(scale)
 
 
-def linear_process_input(input: Tensor, layer: Linear, kfac_approx: str) -> Tensor:
+def linear_process_input(x: Tensor, layer: Linear, kfac_approx: str) -> Tensor:
     """Process the input of a linear layer before the self-inner product.
 
     Args:
-        input: Input to the linear layer.
+        x: Input to the linear layer. Has shape `[batch_size, ..., d_in]` where
+            `...` is an arbitrary number of weight-shared dimensions.
         layer: The linear layer.
         kfac_approx: The KFAC approximation to use for linear weight-sharing
             layers. Possible values are `'expand'` and `'reduce'`.
@@ -121,26 +122,22 @@ def linear_process_input(input: Tensor, layer: Linear, kfac_approx: str) -> Tens
     Returns:
         The processed input.
     """
-    a = input
-    # Assumes that the first dimension is the mini-batch dimension.
-    scale = np.sqrt(a.size(0))  # sqrt(batch_size)
+    # NOTE Use in-place unless the below operations would alter the data of the
+    # passed layer input
+    in_place_okay = (x.ndim > 2 and kfac_approx == "reduce") or layer.bias is not None
 
-    if a.ndim > 2:
-        # a: (batch_size,  R_1, ..., in_dim)
-        weight_sharing_scale = np.prod(a.shape[1:-1])
-        if kfac_approx == "expand":
-            # KFAC-expand approximation
-            scale *= np.sqrt(weight_sharing_scale)
-            a = a.reshape(-1, a.size(-1))  # (batch_size * R_1 * ..., in_dim)
-        else:
-            # KFAC-reduce approximation
-            weight_sharing_dims = tuple(range(1, a.ndim - 1))
-            a = a.mean(weight_sharing_dims)  # (batch_size, in_dim)
+    if kfac_approx == "expand":
+        # KFAC-expand approximation
+        x = rearrange(x, "b ... d_in -> (b ...) d_in")
+    else:
+        # KFAC-reduce approximation
+        x = reduce(x, "b ... d_in -> b d_in", "mean")
 
     if layer.bias is not None:
-        a = cat([a, a.new_ones(a.size(0), 1)], 1)
+        x = cat([x, x.new_ones(x.shape[0], 1)], dim=1)
 
-    return a / scale
+    scale = sqrt(x.shape[0])
+    return x.div_(scale) if in_place_okay else x / scale
 
 
 def process_grad_output(
@@ -162,7 +159,7 @@ def process_grad_output(
         AssertionError: If `kfac_approx` is neither `'expand'` nor `'reduce'`.
         NotImplementedError: If the module is not supported.
     """
-    assert kfac_approx in ["expand", "reduce"]
+    assert kfac_approx in {"expand", "reduce"}
     grad_scaling = 1.0
     if isinstance(module, Conv2d):
         return conv2d_process_grad_output(
