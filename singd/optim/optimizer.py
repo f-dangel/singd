@@ -85,6 +85,7 @@ https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html).
         batch_averaged: bool = True,
         lr_cov: Union[float, Callable[[int], float]] = 1e-2,  # β₁ in the paper
         structures: Tuple[str, str] = ("dense", "dense"),
+        kfac_approx: str = "expand",
         warn_unsupported: bool = True,
         kfac_like: bool = False,
         preconditioner_dtype: Tuple[Union[dtype, None], Union[dtype, None]] = (
@@ -138,6 +139,13 @@ https://pytorch.org/docs/stable/optim.html#per-parameter-options).
                 Possible values for each entry are `'dense'`, `'diagonal'`,
                 `'block30diagonal'`, `'hierarchical15_15'`, `'triltoeplitz'`, and
                 `'triutoeplitz'`. Default is (`'dense'`, `'dense'`).
+            kfac_approx: A string specifying the KFAC approximation that should
+                be used for linear weight-sharing layers, e.g. `Conv2d` modules
+                or `Linear` modules that process matrix- or higher-dimensional
+                features.
+                Possible values are `'expand'` and `'reduce'`.
+                See [Eschenhagen et al., 2023](TODO Insert arXiv link) for an
+                explanation of the two approximations.
             warn_unsupported: Only relevant if `params` is unspecified. Whether to
                 warn if `model` contains parameters of layers that are not supported.
                 These parameters will not be trained by the optimizer. Default: `True`
@@ -201,6 +209,7 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             batch_averaged=batch_averaged,
             lr_cov=lr_cov,
             structures=structures,
+            kfac_approx=kfac_approx,
             kfac_like=kfac_like,
             preconditioner_dtype=preconditioner_dtype,
             normalize_lr_cov=normalize_lr_cov,
@@ -269,13 +278,15 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             model: The model whose layers will be checked.
 
         Raises:
+            ValueError: If `kfac_approx` for any param group is not
+                `'expand'` or `'reduce'`.
             ValueError: If parameters in a supported layer are in different groups.
 
         Returns:
             A dictionary mapping parameter IDs (`.data_ptr()`) to group indices.
         """
-        # if KFAC-like update is employed, alpha1 will be ignored
         for idx, group in enumerate(self.param_groups):
+            # if KFAC-like update is employed, alpha1 will be ignored
             if group["kfac_like"] and group["alpha1"] != 0.0:
                 warn(
                     f"Parameter group {idx} has kfac_like=True but was initialized "
@@ -283,6 +294,11 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
                     + "Setting alpha' to zero."
                 )
                 group["alpha1"] = 0.0
+            if group["kfac_approx"] not in ["expand", "reduce"]:
+                raise ValueError(
+                    "kfac_approx has to be set to either 'expand' or 'reduce', "
+                    f"but was set to {group['kfac_approx']}."
+                )
 
         # Find out which parameter is in which group
         param_to_group_idx = {}
@@ -532,17 +548,19 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             return
 
         batch_averaged = self._get_param_group_entry(module, "batch_averaged")
+        kfac_approx = self._get_param_group_entry(module, "kfac_approx")
         module_name = self.module_names[module]
 
         # 1) PROCESS INPUTS AND GRAD_OUTPUTS
         a = self.inputs.pop(module_name)
         batch_size = a.shape[0]
+        # Process into matrix according to kfac_approx
         # For convolutions, unfold the input, for modules with bias terms, append a 1
-        a = process_input(a, module)
+        a = process_input(a, module, kfac_approx)
 
         g = grad_output[0].data
-        # Flatten into matrix, add scaling from batch average
-        g = process_grad_output(g, module, batch_averaged)
+        # Process into matrix according to kfac_approx, add scaling from batch average
+        g = process_grad_output(g, module, batch_averaged, kfac_approx)
 
         # 2) Update H_K, H_C
         K, C = self.Ks[module_name], self.Cs[module_name]
