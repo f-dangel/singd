@@ -182,7 +182,8 @@ def conv2d_process_grad_output(
             `'expand'` and `'reduce'`.
 
     Returns:
-        The processed gradient of shape `[batch_size, ???]`.
+        The processed scaled gradient. Has shape `[batch_size, C_out]` for
+        `'reduce'` and `[batch_size * O1 * O2, C_out]` for `'expand'`.
     """
     # The scaling by `sqrt(batch_size)` when `batch_averaged=True` assumes
     # that we are in the reduce setting, i.e. the number of loss terms equals
@@ -201,34 +202,31 @@ def conv2d_process_grad_output(
 
 
 def linear_process_grad_output(
-    grad_output: Tensor, batch_averaged: bool, scaling: float, kfac_approx: str
+    g: Tensor, batch_averaged: bool, scaling: float, kfac_approx: str
 ) -> Tensor:
     """Process the output gradient of a linear layer before the self-inner product.
 
     Args:
-        grad_output: Gradient w.r.t. the output of a linear layer.
+        g: Gradient w.r.t. the output of a linear layer. Has shape
+            `[batch_size, ..., d_out]` where `...` is an arbitrary number of
+            weight-shared dimensions.
         batch_averaged: Whether to multiply with the batch size.
         scaling: An additional scaling that will be applied to the gradient.
         kfac_approx: The KFAC approximation to use for linear weight-sharing
             layers. Possible values are `'expand'` and `'reduce'`.
 
     Returns:
-        The processed gradient.
+        The processed gradient. Has shape `[batch_size, d_out]` for `'expand'`
+        and `[batch_size * ..., d_out]` for `'reduce'`.
     """
-    g = grad_output
+    if kfac_approx == "expand":
+        # KFAC-expand approximation
+        g = rearrange(g, "b ... d_out -> (b ...) d_out")
+    else:
+        # KFAC-reduce approximation
+        g = reduce(g, "b ... d_out -> b d_out", "sum")
 
-    if g.ndim > 2:
-        # Assumes that the first dimension is the mini-batch dimension.
-        # g: (batch_size,  R_1, ...,  out_dim)
-        if kfac_approx == "expand":
-            # KFAC-expand approximation
-            g = g.reshape(-1, g.size(-1))  # (batch_size * R_1 * ..., out_dim)
-        else:
-            # KFAC-reduce approximation
-            weight_sharing_dims = tuple(range(1, g.ndim - 1))
-            g = g.sum(weight_sharing_dims)  # (batch_size, out_dim)
-
-    # The use of `g.size(0)` assumes that the setting of the loss, i.e. the
+    # The use of `g.shape[0]` assumes that the setting of the loss, i.e. the
     # number of loss terms, matches the `kfac_approx` that is used.
-    scaling = scaling * sqrt(g.size(0)) if batch_averaged else scaling
+    scaling = scaling * sqrt(g.shape[0]) if batch_averaged else scaling
     return g * scaling
