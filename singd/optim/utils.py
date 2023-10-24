@@ -57,7 +57,7 @@ def process_input(input: Tensor, module: Module, kfac_approx: str) -> Tensor:
         AssertionError: If `kfac_approx` is neither `'expand'` nor `'reduce'`.
         NotImplementedError: If the module is not supported.
     """
-    assert kfac_approx in ["expand", "reduce"]
+    assert kfac_approx in {"expand", "reduce"}
     if isinstance(module, Conv2d):
         return conv2d_process_input(input, module, kfac_approx)
     elif isinstance(module, Linear):
@@ -66,44 +66,47 @@ def process_input(input: Tensor, module: Module, kfac_approx: str) -> Tensor:
         raise NotImplementedError(f"Can't process input for {module}.")
 
 
-def conv2d_process_input(input: Tensor, layer: Conv2d, kfac_approx: str) -> Tensor:
+def conv2d_process_input(a: Tensor, layer: Conv2d, kfac_approx: str) -> Tensor:
     """Process the input of a convolution before the self-inner product.
 
     Args:
-        input: Input to the convolution.
+        a: Input to the convolution.
         layer: The convolution layer.
         kfac_approx: The KFAC approximation to use. Possible values are
             `'expand'` and `'reduce'`.
 
     Returns:
         The processed input.
-    """
-    a = input
-    a = _extract_patches(
-        a,
-        layer.kernel_size,
-        layer.stride,
-        layer.padding,
-        layer.groups,
-    )
 
-    batch_size = a.size(0)
-    spatial_size = a.size(1) * a.size(2)
-    scale = np.sqrt(batch_size)
-    a = a.view(batch_size, spatial_size, -1)  # (batch_size, out_h * out_w, nfilters)
+    Raises:
+        NotImplementedError: If the convolution uses dilation or string-valued
+            padding.
+    """
+    # TODO Add support for dilation in `_extract_patches`
+    if layer.dilation != (1, 1):
+        raise NotImplementedError("Dilated convolutions are not yet supported.")
+    # TODO Add support for string-valued padding in `_extract_patches`
+    if isinstance(layer.padding, str):
+        raise NotImplementedError(
+            "String-valued padding is not yet supported (only 2-tuples)."
+        )
+
+    a = _extract_patches(
+        a, layer.kernel_size, layer.stride, layer.padding, layer.groups
+    )
 
     if kfac_approx == "expand":
         # KFAC-expand approximation
-        scale *= np.sqrt(spatial_size)
-        a = a.view(-1, a.size(-1))  # (batch_size * out_h * out_w, nfilters)
+        a = rearrange(a, "b o1_o2 c_in_k1_k2 -> (b o1_o2) c_in_k1_k2")
     else:
         # KFAC-reduce approximation
-        a = a.mean(1)  # (batch_size, nfilters)
+        a = reduce(a, "b o1_o2 c_in_k1_k2 -> b c_in_k1_k2", "mean")
 
     if layer.bias is not None:
-        a = torch.cat([a, a.new_ones(a.size(0), 1)], 1)
+        a = cat([a, a.new_ones(a.shape[0], 1)], dim=1)
 
-    return a / scale
+    scale = sqrt(a.shape[0])
+    return a.div_(scale)
 
 
 def linear_process_input(input: Tensor, layer: Linear, kfac_approx: str) -> Tensor:
