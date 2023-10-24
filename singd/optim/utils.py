@@ -3,7 +3,6 @@
 from math import sqrt
 from typing import Tuple, Union
 
-import numpy as np
 import torch.nn.functional as F
 from einops import rearrange, reduce
 from torch import Tensor, cat
@@ -122,10 +121,6 @@ def linear_process_input(x: Tensor, layer: Linear, kfac_approx: str) -> Tensor:
     Returns:
         The processed input.
     """
-    # NOTE Use in-place unless the below operations would alter the data of the
-    # passed layer input
-    in_place_okay = (x.ndim > 2 and kfac_approx == "reduce") or layer.bias is not None
-
     if kfac_approx == "expand":
         # KFAC-expand approximation
         x = rearrange(x, "b ... d_in -> (b ...) d_in")
@@ -137,7 +132,7 @@ def linear_process_input(x: Tensor, layer: Linear, kfac_approx: str) -> Tensor:
         x = cat([x, x.new_ones(x.shape[0], 1)], dim=1)
 
     scale = sqrt(x.shape[0])
-    return x.div_(scale) if in_place_okay else x / scale
+    return x / scale
 
 
 def process_grad_output(
@@ -174,41 +169,34 @@ def process_grad_output(
 
 
 def conv2d_process_grad_output(
-    grad_output: Tensor, batch_averaged: bool, scaling: float, kfac_approx: str
+    g: Tensor, batch_averaged: bool, scaling: float, kfac_approx: str
 ) -> Tensor:
     """Process the output gradient of a convolution before the self-inner product.
 
     Args:
-        grad_output: Gradient w.r.t. the output of a convolution.
+        g: Gradient w.r.t. the output of a convolution. Has shape
+            `[batch_size, C_out, O1, O2]`.
         batch_averaged: Whether to multiply with the batch size.
         scaling: An additional scaling that will be applied to the gradient.
         kfac_approx: The KFAC approximation to use. Possible values are
             `'expand'` and `'reduce'`.
 
     Returns:
-        The processed gradient.
+        The processed gradient of shape `[batch_size, ???]`.
     """
-    g = grad_output
-    # g: (batch_size, n_filters, out_h, out_w)
-    # n_filters is actually the output dimension (analogous to Linear layer)
-
-    batch_size = g.size(0)
-    spatial_size = g.size(2) * g.size(3)  # out_h * out_w
-    g = (
-        g.transpose(1, 2).transpose(2, 3).reshape(batch_size, spatial_size, -1)
-    )  # (batch_size, out_h * out_w, n_filters)
+    # The scaling by `sqrt(batch_size)` when `batch_averaged=True` assumes
+    # that we are in the reduce setting, i.e. the number of loss terms equals
+    # the batch size.
+    batch_size = g.shape[0]
+    scaling = scaling * sqrt(batch_size) if batch_averaged else scaling
 
     if kfac_approx == "expand":
         # KFAC-expand approximation
-        g = g.reshape(-1, g.size(-1))  # (batch_size * out_h * out_w, n_filters)
+        g = rearrange(g, "b c o1 o2 -> (b o1 o2) c")
     else:
         # KFAC-reduce approximation
-        g = g.sum(1)  # (batch_size, n_filters)
+        g = reduce(g, "b c o1 o2 -> b c", "sum")
 
-    # The scaling by `np.sqrt(batch_size)` when `batch_averaged=True` assumes
-    # that we are in the reduce setting, i.e. the number of loss terms equals
-    # the batch size.
-    scaling = scaling * np.sqrt(batch_size) if batch_averaged else scaling
     return g * scaling
 
 
@@ -242,5 +230,5 @@ def linear_process_grad_output(
 
     # The use of `g.size(0)` assumes that the setting of the loss, i.e. the
     # number of loss terms, matches the `kfac_approx` that is used.
-    scaling = scaling * np.sqrt(g.size(0)) if batch_averaged else scaling
+    scaling = scaling * sqrt(g.size(0)) if batch_averaged else scaling
     return g * scaling
