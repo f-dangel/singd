@@ -138,7 +138,7 @@ def linear_process_input(input: Tensor, layer: Linear, kfac_approx: str) -> Tens
             a = a.mean(weight_sharing_dims)  # (batch_size, in_dim)
 
     if layer.bias is not None:
-        a = torch.cat([a, a.new_ones(a.size(0), 1)], 1)
+        a = cat([a, a.new_ones(a.size(0), 1)], 1)
 
     return a / scale
 
