@@ -52,13 +52,21 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
     Examples:
         >>> from torch import ones
         >>>
-        >>> class Block4DiagonalMatrix(BlockDiagonalMatrixTemplate):
-        ...     '''Class to represent block-diagonal matrices with 4x4 blocks.'''
-        ...     BLOCK_DIM = 4
+        >>> class Block2DiagonalMatrix(BlockDiagonalMatrixTemplate):
+        ...     '''Class to represent block-diagonal matrices with 2x2 blocks.'''
+        ...     BLOCK_DIM = 2
         >>>
-        >>> # A block-diagonal matrix of total dimension 14x14
-        >>> blocks, last = ones(3, 4, 4), ones(2, 2)
-        >>> mat = Block4DiagonalMatrix(blocks, last)
+        >>> # A block-diagonal matrix of total dimension 7x7
+        >>> blocks, last = ones(3, 2, 2), 2 * ones(1, 1)
+        >>> mat = Block2DiagonalMatrix(blocks, last)
+        >>> mat.to_dense()
+        tensor([[1., 1., 0., 0., 0., 0., 0.],
+                [1., 1., 0., 0., 0., 0., 0.],
+                [0., 0., 1., 1., 0., 0., 0.],
+                [0., 0., 1., 1., 0., 0., 0.],
+                [0., 0., 0., 0., 1., 1., 0.],
+                [0., 0., 0., 0., 1., 1., 0.],
+                [0., 0., 0., 0., 0., 0., 2.]])
     """
 
     BLOCK_DIM: int

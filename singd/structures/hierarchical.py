@@ -60,15 +60,23 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
     Examples:
         >>> from torch import ones
         >>>
-        >>> class Hierarchical3_4Matrix(HierarchicalMatrixTemplate):
-        ...     '''Hierarchical matrix with 3x3 top left and 4x4 bottom right block.'''
-        ...     MAX_K1 = 3
-        ...     MAX_K2 = 4
+        >>> class Hierarchical2_3Matrix(HierarchicalMatrixTemplate):
+        ...     '''Hierarchical matrix with 2x2 top left and 3x3 bottom right block.'''
+        ...     MAX_K1 = 2
+        ...     MAX_K2 = 3
         >>>
-        >>> # A hierarchical matrix with total dimension K=15
-        >>> A, C, E = ones(3, 3), ones(8), ones(4, 4)
-        >>> B, D = ones(3, 12), ones(4, 11)
-        >>> mat = Hierarchical3_4Matrix(A, B, C, D, E)
+        >>> # A hierarchical matrix with total dimension K=7
+        >>> A, C, E = ones(2, 2), 3 * ones(2), 5 * ones(3, 3)
+        >>> B, D = 2 * ones(2, 5), 4 * ones(3, 2)
+        >>> mat = Hierarchical2_3Matrix(A, B, C, D, E)
+        >>> mat.to_dense()
+        tensor([[1., 1., 2., 2., 2., 2., 2.],
+                [1., 1., 2., 2., 2., 2., 2.],
+                [0., 0., 3., 0., 0., 0., 0.],
+                [0., 0., 0., 3., 0., 0., 0.],
+                [0., 0., 4., 4., 5., 5., 5.],
+                [0., 0., 4., 4., 5., 5., 5.],
+                [0., 0., 4., 4., 5., 5., 5.]])
     """
 
     MAX_K1: int
