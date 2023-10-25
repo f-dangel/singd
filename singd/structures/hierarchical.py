@@ -83,7 +83,7 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
     MAX_K2: int
 
     def __init__(self, A: Tensor, B: Tensor, C: Tensor, D: Tensor, E: Tensor):
-        """Store the structural components internally.
+        r"""Store the structural components internally.
 
         Args:
             A: Dense symmetric matrix of shape `[K1, K1]` or smaller representing
@@ -96,6 +96,10 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
                 \(\mathbf{D}\).
             E: Dense symmetric matrix of shape `[K2, K2]` or smaller representing
                 \(\mathbf{E}\).
+
+        Note:
+            For performance reasons, symmetry is not checked internally and must
+            be ensured by the caller.
 
         Raises:
             ValueError: If the shapes of the arguments are invalid.

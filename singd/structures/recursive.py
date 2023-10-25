@@ -68,12 +68,16 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
     CLS_C: Type[StructuredMatrix]
 
     def __init__(self, A: StructuredMatrix, B: Tensor, C: StructuredMatrix):
-        """Store the matrix internally.
+        r"""Store the matrix internally.
 
         Args:
             A: Structured matrix representing the top left block \(\mathbf{A}\).
             B: Rectangular tensor representing the top right block \(\mathbf{B}\).
             C: Structured matrix representing the bottom right block \(\mathbf{C}\).
+
+        Note:
+            For performance reasons, symmetry is not checked internally and must
+            be ensured by the caller.
 
         Raises:
             ValueError: If the dimensions of the blocks do not match or the
@@ -212,6 +216,10 @@ class RecursiveBottomLeftMatrixTemplate(StructuredMatrix):
             A: Structured matrix representing the top left block \(\mathbf{A}\).
             B: Rectangular tensor representing the bottom left block \(\mathbf{B}\).
             C: Structured matrix representing the bottom right block \(\mathbf{C}\).
+
+        Note:
+            For performance reasons, symmetry is not checked internally and must
+            be ensured by the caller.
 
         Raises:
             ValueError: If the dimensions of the blocks do not match or the structured

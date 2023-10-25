@@ -19,6 +19,7 @@ class DenseMatrix(StructuredMatrix):
     \quad \text{with} \quad
     \mathbf{A} = \mathbf{A}^\top\,.
     \]
+
     """
 
     WARN_NAIVE: bool = False  # Fall-back to naive base class implementations OK

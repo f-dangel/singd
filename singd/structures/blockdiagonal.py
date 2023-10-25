@@ -82,6 +82,10 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
                 if `BLOCK_DIM` does not divide the matrix dimension.
                 Has shape `[last_dim, last_dim]` where `last_dim` may be zero.
 
+        Note:
+            For performance reasons, symmetry is not checked internally and must
+            be ensured by the caller.
+
         Raises:
             ValueError: If the passed tensors have incorrect shape.
         """
