@@ -23,7 +23,7 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
     Note:
         This is a template class. To define an actual class, inherit from this class,
-        then specify the `BLOCK_DIM` class attribute.
+        then specify the `BLOCK_DIM` class attribute. See the example below.
 
     Block-diagonal matrices have the following structure:
 
@@ -47,6 +47,17 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
     Attributes:
         BLOCK_DIM: The dimension of a diagonal block (\(D\)).
+
+    Examples:
+        >>> from torch import ones
+        >>>
+        >>> class Block4DiagonalMatrix(BlockDiagonalMatrixTemplate):
+        ...     '''Class to represent block-diagonal matrices with 4x4 blocks.'''
+        ...     BLOCK_DIM = 4
+        >>>
+        >>> # A block-diagonal matrix of total dimension 14x14
+        >>> blocks, last = ones(3, 4, 4), ones(2, 2)
+        >>> mat = Block4DiagonalMatrix(blocks, last)
     """
 
     BLOCK_DIM: int

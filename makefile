@@ -58,10 +58,9 @@ install-test:
 .PHONY: test test-light
 
 test:
-	@pytest -vx --run-optional-tests=expensive --cov=singd test
-
+	@pytest -vx --run-optional-tests=expensive --cov=singd --doctest-modules test singd
 test-light:
-	@pytest -vx --cov=singd test
+	@pytest -vx --cov=singd --doctest-modules test singd
 
 .PHONY: install-lint
 
