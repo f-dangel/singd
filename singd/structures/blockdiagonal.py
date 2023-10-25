@@ -1,4 +1,4 @@
-"""Block-diagonal dense matrix implemented in the ``StructuredMatrix`` interface."""
+"""Block-diagonal dense matrix implemented in the `StructuredMatrix` interface."""
 
 from __future__ import annotations
 
@@ -19,41 +19,48 @@ from singd.structures.utils import (
 
 
 class BlockDiagonalMatrixTemplate(StructuredMatrix):
-    """Template for symmetric block-diagonal dense matrix.
-
-    ``
-    [[A₁, 0,   ..., 0,   0],
-     [0,  A₂,  0,   ..., 0],
-     [0,  0,   ..., 0,   0],
-     [0,  ..., 0,   A_N, 0],
-     [0,  0,   0,   0,   B]]
-    ``
-
-    where
-    - ``A₁, ..., A_N`` are symmetric matrices of size ``block_dim``
-    - ``B`` is a symmetric matrix of size ``last_dim`` if ``block_dim`` does not divide
-      the total matrix dimension.
+    r"""Template class for symmetric block-diagonal dense matrix.
 
     Note:
         This is a template class. To define an actual class, inherit from this class,
-        then specify the ``BLOCK_DIM`` class attribute.
+        then specify the `BLOCK_DIM` class attribute.
+
+    Block-diagonal matrices have the following structure:
+
+    \(
+    \begin{pmatrix}
+    \mathbf{A}_1 & \mathbf{0} & \cdots & \cdots & \mathbf{0} \\
+    \mathbf{0} & \mathbf{A}_2 & \mathbf{0} & \cdots & \mathbf{0} \\
+    \vdots & \ddots & \ddots & \ddots & \vdots \\
+    \mathbf{0} & \cdots & \mathbf{0} & \mathbf{A}_N & \mathbf{0} & \\
+    \mathbf{0} & \cdots & \cdots & \mathbf{0} & \mathbf{B}
+    \end{pmatrix}
+    \)
+
+    where
+
+    - \(\mathbf{A}_n = \mathbf{A}_n^\top \in \mathbb{R}^{D \times D}\) are symmetric
+        matrices containing the diagonal blocks of block dimension \(D\).
+    - \(\mathbf{B} = \mathbf{B}^\top \in \mathbb{R}^{D' \times D'}\) is a symmetric
+        matrix containing the last block of dimension \(D' < D\), which can be empty
+        if \(D\) divides the matrix dimension.
 
     Attributes:
-        BLOCK_DIM: The dimension of a diagonal block.
+        BLOCK_DIM: The dimension of a diagonal block (\(D\)).
     """
 
     BLOCK_DIM: int
 
     def __init__(self, blocks: Tensor, last: Tensor) -> None:
-        """Store the matrix internally.
+        r"""Store the matrix internally.
 
         Args:
-            blocks: The diagonal blocks ``A₁, A₂, ..., A_N`` of the matrix, supplied
-                as a tensor of shape ``[N, BLOCK_DIM, BLOCK_DIM]``. If there are no
-                blocks, has shape ``[0, BLOCK_DIM, BLOCK_DIM]``.
-            last: The last block if ``BLOCK_DIM`` which contains the remaining matrix
-                if ``BLOCK_DIM`` does not divide the matrix dimension.
-                Has shape ``[last_dim, last_dim]`` where ``last_dim`` may be zero.
+            blocks: The diagonal blocks \(\{\mathbf{A}_n\}\), supplied
+                as a tensor of shape `[N, BLOCK_DIM, BLOCK_DIM]`. If there are no
+                blocks, this argument has shape `[0, BLOCK_DIM, BLOCK_DIM]`.
+            last: The last block \(\mathbf{B}\) which contains the remaining matrix
+                if `BLOCK_DIM` does not divide the matrix dimension.
+                Has shape `[last_dim, last_dim]` where `last_dim` may be zero.
 
         Raises:
             ValueError: If the passed tensors have incorrect shape.
@@ -94,10 +101,10 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
         Args:
             mat: A dense and symmetric square matrix which will be approximated by a
-                ``BlockDiagonalMatrixTemplate``.
+                `BlockDiagonalMatrixTemplate`.
 
         Returns:
-            ``BlockDiagonalMatrixTemplate`` approximating the passed matrix.
+            `BlockDiagonalMatrixTemplate` approximating the passed matrix.
         """
         num_blocks = mat.shape[0] // cls.BLOCK_DIM
 
@@ -142,15 +149,15 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
         Args:
             other: A matrix which will be multiplied onto. Can be represented by a
-                PyTorch tensor or a ``BlockDiagonalMatrix``.
+                PyTorch tensor or a `BlockDiagonalMatrix`.
 
         Returns:
             Result of the multiplication. If a PyTorch tensor was passed as argument,
             the result will be a PyTorch tensor. If a block-diagonal matrix was passed,
-            the result will be returned as a ``BlockDiagonalMatrixTemplate``.
+            the result will be returned as a `BlockDiagonalMatrixTemplate`.
 
         Raises:
-            ValueError: If ``other``'s shape is incompatible.
+            ValueError: If `other`'s shape is incompatible.
         """
         if isinstance(other, Tensor):
             num_blocks, last_dim = self._blocks.shape[0], self._last.shape[0]
@@ -216,7 +223,7 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
         return self.__class__(other * self._blocks, other * self._last)
 
     def rmatmat(self, mat: Tensor) -> Tensor:
-        """Multiply ``mat`` with the transpose of the structured matrix.
+        """Multiply `mat` with the transpose of the structured matrix.
 
         Args:
             mat: A matrix which will be multiplied by the transpose of the represented
@@ -232,24 +239,24 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
     ###############################################################################
 
     def from_inner(self, X: Union[Tensor, None] = None) -> BlockDiagonalMatrixTemplate:
-        """Represent the matrix block-diagonal of ``self.T @ X @ X^T @ self``.
+        """Represent the matrix block-diagonal of `self.T @ X @ X^T @ self`.
 
-        Let ``K := self``. We can first re-write ``K.T @ X @ X^T @ K`` into
-        ``S @ S.T`` where ``S = K.T @ X``. Next, note that ``S`` has block structure:
-        Write ``K := blockdiag(K₁, K₂, ...)`` and write ``X`` as a stack of matrices
-        ``X = vstack(X₁, X₂, ...)`` where ``Xᵢ`` is associated with the ``i``th diagonal
-        block. Then ``S = vstack( K₁.T @ X₁, K₂ @ X₂, ...) = vstack(S₁ S₂, ...)`` where
-        we have introduced ``Sᵢ = Kᵢ.T @ Xᵢ``. Consequently, ``S @ S.T`` consists of
-        blocks ``(i, j)`` with structure ``Sᵢ @ Sⱼ.T``. We are only interested in the
+        Let `K := self`. We can first re-write `K.T @ X @ X^T @ K` into
+        `S @ S.T` where `S = K.T @ X`. Next, note that `S` has block structure:
+        Write `K := blockdiag(K₁, K₂, ...)` and write `X` as a stack of matrices
+        `X = vstack(X₁, X₂, ...)` where `Xᵢ` is associated with the `i`th diagonal
+        block. Then `S = vstack( K₁.T @ X₁, K₂ @ X₂, ...) = vstack(S₁ S₂, ...)` where
+        we have introduced `Sᵢ = Kᵢ.T @ Xᵢ`. Consequently, `S @ S.T` consists of
+        blocks `(i, j)` with structure `Sᵢ @ Sⱼ.T`. We are only interested in the
         diagonal blocks. So we need to compute
-        ``Sᵢ @ Sᵢ.T = (Kᵢ.T @ Xᵢ) @ (Kᵢ.T @ Xᵢ).T`` for all ``i``.
+        `Sᵢ @ Sᵢ.T = (Kᵢ.T @ Xᵢ) @ (Kᵢ.T @ Xᵢ).T` for all `i`.
 
         Args:
-            X: Optional arbitrary 2d tensor. If ``None``, ``X = I`` will be used.
+            X: Optional arbitrary 2d tensor. If `None`, `X = I` will be used.
 
         Returns:
-            A ``DiagonalMatrix`` representing matrix block diagonal of
-            ``self.T @ X @ X^T @ self``.
+            A `DiagonalMatrix` representing matrix block diagonal of
+            `self.T @ X @ X^T @ self`.
         """
         if X is None:
             S_blocks, S_last = self._blocks, self._last
