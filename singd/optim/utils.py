@@ -42,41 +42,44 @@ def _extract_patches(
     ).view(x.size(0), x.size(1), x.size(2), -1)
 
 
-def process_input(input: Tensor, module: Module) -> Tensor:
+def process_input(input: Tensor, module: Module, kfac_approx: str) -> Tensor:
     """Unfold the input for convolutions, append ones if biases are present.
 
     Args:
         input: The input to the module.
         module: The module.
+        kfac_approx: The KFAC approximation to use for linear weight-sharing
+            layers. Possible values are `'expand'` and `'reduce'`.
 
     Returns:
         The processed input.
 
     Raises:
+        AssertionError: If `kfac_approx` is neither `'expand'` nor `'reduce'`.
         NotImplementedError: If the module is not supported.
     """
+    assert kfac_approx in ["expand", "reduce"]
     if isinstance(module, Conv2d):
-        return conv2d_process_input(input, module)
+        return conv2d_process_input(input, module, kfac_approx)
     elif isinstance(module, Linear):
-        return linear_process_input(input, module)
+        return linear_process_input(input, module, kfac_approx)
     else:
-        raise NotImplementedError(f"Can't process input for {module}")
+        raise NotImplementedError(f"Can't process input for {module}.")
 
 
-def conv2d_process_input(input: Tensor, layer: Conv2d) -> Tensor:
+def conv2d_process_input(input: Tensor, layer: Conv2d, kfac_approx: str) -> Tensor:
     """Process the input of a convolution before the self-inner product.
 
     Args:
         input: Input to the convolution.
         layer: The convolution layer.
+        kfac_approx: The KFAC approximation to use. Possible values are
+            `'expand'` and `'reduce'`.
 
     Returns:
         The processed input.
     """
-    # TODO Improve readability
     a = input
-
-    batch_size = a.size(0)
     a = _extract_patches(
         a,
         layer.kernel_size,
@@ -84,68 +87,62 @@ def conv2d_process_input(input: Tensor, layer: Conv2d) -> Tensor:
         layer.padding,
         layer.groups,
     )
+
+    batch_size = a.size(0)
     spatial_size = a.size(1) * a.size(2)
-    a = a.reshape(-1, a.size(-1))  # (batch_size*out_h*out_w, nfilters)
+    scale = np.sqrt(batch_size)
+    a = a.view(batch_size, spatial_size, -1)  # (batch_size, out_h * out_w, nfilters)
+
+    if kfac_approx == "expand":
+        # KFAC-expand approximation
+        scale *= np.sqrt(spatial_size)
+        a = a.view(-1, a.size(-1))  # (batch_size * out_h * out_w, nfilters)
+    else:
+        # KFAC-reduce approximation
+        a = a.mean(1)  # (batch_size, nfilters)
+
     if layer.bias is not None:
-        shape = list(a.shape[:-1]) + [1]  # new try
-        a = torch.cat([a, a.new_ones(shape)], dim=-1)  # new try
+        a = torch.cat([a, a.new_ones(a.size(0), 1)], 1)
 
-    a = a / spatial_size
-    a = a / np.sqrt(batch_size)  # new try2
-
-    return a
+    return a / scale
 
 
-def linear_process_input(input: Tensor, layer: Linear) -> Tensor:
+def linear_process_input(input: Tensor, layer: Linear, kfac_approx: str) -> Tensor:
     """Process the input of a linear layer before the self-inner product.
 
     Args:
         input: Input to the linear layer.
         layer: The linear layer.
+        kfac_approx: The KFAC approximation to use for linear weight-sharing
+            layers. Possible values are `'expand'` and `'reduce'`.
 
     Returns:
         The processed input.
     """
-    # TODO Improve readability
     a = input
+    # Assumes that the first dimension is the mini-batch dimension.
+    scale = np.sqrt(a.size(0))  # sqrt(batch_size)
 
-    # mode = 'reduce'
-    mode = "expand"
-
-    wt = 1.0
-    batch_size = a.size(0)
-    if a.ndim == 2:
-        # a: batch_size * in_dim
-        # b = a.reshape(-1, a.size(-1)) #new try
-        b = a
-    elif a.ndim == 3:
-        # print( 'a shape:', a.ndim, a.size() )
-        # a: batch_size *  R  * in_dim
-        if mode == "reduce":
-            b = a.mean(dim=1)  # reduce case
+    if a.ndim > 2:
+        # a: (batch_size,  R_1, ..., in_dim)
+        weight_sharing_scale = np.prod(a.shape[1:-1])
+        if kfac_approx == "expand":
+            # KFAC-expand approximation
+            scale *= np.sqrt(weight_sharing_scale)
+            a = a.reshape(-1, a.size(-1))  # (batch_size * R_1 * ..., in_dim)
         else:
-            wt = 1.0 / np.sqrt(a.size(1))  # expand case
-            b = a.reshape(-1, a.size(-1)) / np.sqrt(a.size(1))  # expand case
-    else:
-        # print( 'a shape:', a.ndim, a.size() )
-        wt = 1.0 / np.sqrt(np.prod(a.shape[1:-1]))  # expand case
-        b = a.reshape(-1, a.size(-1)) / np.sqrt(np.prod(a.shape[1:-1]))  # expand case
-        # raise NotImplementedError
+            # KFAC-reduce approximation
+            weight_sharing_dims = tuple(range(1, a.ndim - 1))
+            a = a.mean(weight_sharing_dims)  # (batch_size, in_dim)
 
     if layer.bias is not None:
-        b = torch.cat([b, b.new(b.size(0), 1).fill_(wt)], 1)
+        a = torch.cat([a, a.new_ones(a.size(0), 1)], 1)
 
-        # shape = list(b.shape[:-1]) + [1] #new try
-        # b = torch.cat([b, b.new_ones(shape)], dim=-1)#new try
-
-    # return b.t() @ (b / batch_size) #new try
-    b = b / np.sqrt(batch_size)
-
-    return b
+    return a / scale
 
 
 def process_grad_output(
-    grad_output: Tensor, module: Module, batch_averaged: bool
+    grad_output: Tensor, module: Module, batch_averaged: bool, kfac_approx: str
 ) -> Tensor:
     """Reshape output gradients into matrices and apply scaling.
 
@@ -153,24 +150,32 @@ def process_grad_output(
         grad_output: The gradient w.r.t. the output of the module.
         module: The module.
         batch_averaged: Whether the loss is a mean over per-sample losses.
+        kfac_approx: The KFAC approximation to use for linear weight-sharing
+            layers. Possible values are `'expand'` and `'reduce'`.
 
     Returns:
         The processed output gradient.
 
     Raises:
+        AssertionError: If `kfac_approx` is neither `'expand'` nor `'reduce'`.
         NotImplementedError: If the module is not supported.
     """
+    assert kfac_approx in ["expand", "reduce"]
     grad_scaling = 1.0
     if isinstance(module, Conv2d):
-        return conv2d_process_grad_output(grad_output, batch_averaged, grad_scaling)
+        return conv2d_process_grad_output(
+            grad_output, batch_averaged, grad_scaling, kfac_approx
+        )
     elif isinstance(module, Linear):
-        return linear_process_grad_output(grad_output, batch_averaged, grad_scaling)
+        return linear_process_grad_output(
+            grad_output, batch_averaged, grad_scaling, kfac_approx
+        )
     else:
-        raise NotImplementedError(f"Can't process grad_output for {module}")
+        raise NotImplementedError(f"Can't process grad_output for {module}.")
 
 
 def conv2d_process_grad_output(
-    grad_output: Tensor, batch_averaged: bool, scaling: float
+    grad_output: Tensor, batch_averaged: bool, scaling: float, kfac_approx: str
 ) -> Tensor:
     """Process the output gradient of a convolution before the self-inner product.
 
@@ -178,29 +183,38 @@ def conv2d_process_grad_output(
         grad_output: Gradient w.r.t. the output of a convolution.
         batch_averaged: Whether to multiply with the batch size.
         scaling: An additional scaling that will be applied to the gradient.
+        kfac_approx: The KFAC approximation to use. Possible values are
+            `'expand'` and `'reduce'`.
 
     Returns:
         The processed gradient.
     """
-    # TODO Improve readability
     g = grad_output
-    # g: batch_size * n_filters * out_h * out_w
+    # g: (batch_size, n_filters, out_h, out_w)
     # n_filters is actually the output dimension (analogous to Linear layer)
 
-    spatial_size = g.size(2) * g.size(3)  # out_h*out_w
-    batch_size = g.shape[0]
-    g = g.transpose(1, 2).transpose(2, 3)  # batch_size, out_h, out_w, n_filters
-    g = g.reshape(-1, g.size(-1))  # (batch_size*out_h*out_w, n_filters)
+    batch_size = g.size(0)
+    spatial_size = g.size(2) * g.size(3)  # out_h * out_w
+    g = (
+        g.transpose(1, 2).transpose(2, 3).reshape(batch_size, spatial_size, -1)
+    )  # (batch_size, out_h * out_w, n_filters)
 
-    if batch_averaged:
-        g = g * batch_size
-    g = g * spatial_size
+    if kfac_approx == "expand":
+        # KFAC-expand approximation
+        g = g.reshape(-1, g.size(-1))  # (batch_size * out_h * out_w, n_filters)
+    else:
+        # KFAC-reduce approximation
+        g = g.sum(1)  # (batch_size, n_filters)
 
-    return g * (scaling / np.sqrt(g.size(0)))
+    # The scaling by `np.sqrt(batch_size)` when `batch_averaged=True` assumes
+    # that we are in the reduce setting, i.e. the number of loss terms equals
+    # the batch size.
+    scaling = scaling * np.sqrt(batch_size) if batch_averaged else scaling
+    return g * scaling
 
 
 def linear_process_grad_output(
-    grad_output: Tensor, batch_averaged: bool, scaling: float
+    grad_output: Tensor, batch_averaged: bool, scaling: float, kfac_approx: str
 ) -> Tensor:
     """Process the output gradient of a linear layer before the self-inner product.
 
@@ -208,37 +222,26 @@ def linear_process_grad_output(
         grad_output: Gradient w.r.t. the output of a linear layer.
         batch_averaged: Whether to multiply with the batch size.
         scaling: An additional scaling that will be applied to the gradient.
+        kfac_approx: The KFAC approximation to use for linear weight-sharing
+            layers. Possible values are `'expand'` and `'reduce'`.
 
     Returns:
         The processed gradient.
     """
-    # TODO Improve readability
     g = grad_output
 
-    # mode='reduce'
-    mode = "expand"
-    batch_size = g.size(0)
-
-    if g.ndim == 2:
-        # g = g.reshape(-1, g.size(-1)) #new try
-        b = g
-    elif g.ndim == 3:
-        # print( 'g shape:', g.ndim, g.size() )
-        # g: batch_size *  R  * in_dim
-
-        if mode == "reduce":
-            b = g.sum(dim=1)  # reduce case
-            # b = g.sum(dim=1)/np.sqrt(g.size(1)) #modified reduce case
+    if g.ndim > 2:
+        # Assumes that the first dimension is the mini-batch dimension.
+        # g: (batch_size,  R_1, ...,  out_dim)
+        if kfac_approx == "expand":
+            # KFAC-expand approximation
+            g = g.reshape(-1, g.size(-1))  # (batch_size * R_1 * ..., out_dim)
         else:
-            b = g.reshape(-1, g.size(-1))  # expand
-    else:
-        # print( 'g shape:', g.ndim, g.size() )
-        # raise NotImplementedError
-        b = g.reshape(-1, g.size(-1))  # expand
+            # KFAC-reduce approximation
+            weight_sharing_dims = tuple(range(1, g.ndim - 1))
+            g = g.sum(weight_sharing_dims)  # (batch_size, out_dim)
 
-    if batch_averaged:
-        b = b * (scaling * np.sqrt(batch_size))
-    else:
-        b = b * (scaling / np.sqrt(batch_size))
-
-    return b
+    # The use of `g.size(0)` assumes that the setting of the loss, i.e. the
+    # number of loss terms, matches the `kfac_approx` that is used.
+    scaling = scaling * np.sqrt(g.size(0)) if batch_averaged else scaling
+    return g * scaling

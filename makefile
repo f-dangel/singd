@@ -79,12 +79,10 @@ black-check:
 .PHONY: isort isort-check
 
 isort:
-	@isort singd
-	@isort test
+	@isort singd test docs/examples
 
 isort-check:
-	@isort singd --check --diff
-	@isort test --check --diff
+	@isort --check --diff singd test docs/examples
 
 .PHONY: flake8
 
@@ -94,7 +92,7 @@ flake8:
 .PHONY: darglint-check
 
 darglint-check:
-	@darglint --verbosity 2 singd
+	@darglint --verbosity 2 singd test docs/examples
 
 .PHONY: pydocstyle-check
 

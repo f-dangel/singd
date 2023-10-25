@@ -297,6 +297,25 @@ class StructuredMatrix(ABC):
         self.__dict__.update(new.__dict__)
         return self
 
+    def infinity_vector_norm(self) -> Tensor:
+        """Compute the infinity vector norm.
+
+        The infinity vector norm is the absolute value of the largest entry.
+        Note that this is different from the infinity matrix norm, compare
+        (here)[https://pytorch.org/docs/stable/generated/torch.linalg.vector_norm.html]
+        and
+        (here)[https://pytorch.org/docs/stable/generated/torch.linalg.matrix_norm.html].
+
+        Note:
+            This assumes that all tensors in `self._tensors_to_sync` contain
+            elements of the matrix.
+
+        Returns:
+            The matrix's infinity vector norm.
+        """
+        # NOTE `.max` can only be called on tensors with non-zero shape
+        return max(t.abs().max() for t in self._tensors_to_sync if t.numel() > 0)
+
     ###############################################################################
     #                      Special initialization operations                      #
     ###############################################################################
