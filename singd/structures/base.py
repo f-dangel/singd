@@ -25,22 +25,27 @@ class StructuredMatrix(ABC):
     a new structured matrix class with SINGD.
 
     The minimum amount of work to add a new structured matrix class requires
-    implementing the `to_dense`, `from_dense` methods.
-    The other operations will then use a naive implementation which internally
+    implementing the following methods:
+
+    - `to_dense`
+    - `from_dense`
+
+    All other operations will then use a naive implementation which internally
     re-constructs unstructured dense matrices. By default, these operations
     will trigger a warning which can be used to identify functions that can be
     implemented more efficiently using structure.
 
-    If you want to support data parallel training, you also have to implement
-    the `tensors_to_sync` method.
+    Note:
+        If you want to support data parallel training, you also have to implement
+        the `tensors_to_sync` method.
 
     Attributes:
         WARN_NAIVE: Warn the user if a method falls back to a naive implementation
             of this base class. This indicates a method that should be implemented to
             save memory and run time by considering the represented structure.
-            Default: ``True``.
+            Default: `True`.
         WARN_NAIVE_EXCEPTIONS: Set of methods that should not trigger a warning even
-            if ``WARN_NAIVE`` is ``True``. This can be used to silence warnings for
+            if `WARN_NAIVE` is `True`. This can be used to silence warnings for
             methods for which it is too complicated to leverage a specific structure
             and which should therefore call out to this class's implementation without
             performance warnings.
@@ -55,7 +60,7 @@ class StructuredMatrix(ABC):
 
         This is used to support distributed data parallel training.
 
-        # noqa: DAR202
+        <!-- noqa: DAR202-->
 
         Returns:
             A tuple of tensors that need to be synchronized across devices.
@@ -68,9 +73,7 @@ class StructuredMatrix(ABC):
     def __matmul__(
         self, other: Union[StructuredMatrix, Tensor]
     ) -> Union[StructuredMatrix, Tensor]:
-        """Multiply onto a matrix (@ operator).
-
-        (https://peps.python.org/pep-0465/)
+        """Multiply onto a matrix ([@ operator](https://peps.python.org/pep-0465/)).
 
         Args:
             other: Another matrix which will be multiplied onto. Can be represented
@@ -99,13 +102,13 @@ class StructuredMatrix(ABC):
         are non-zero.
 
         Warning:
-            We do not verify whether ``mat`` is symmetric internally.
+            We do not verify whether `mat` is symmetric internally.
 
         Args:
             sym_mat: A symmetric dense matrix which will be converted into a structured
                 one.
 
-        # noqa: DAR202
+        <!-- noqa: DAR202-->
 
         Returns:
             Structured matrix.
@@ -119,7 +122,7 @@ class StructuredMatrix(ABC):
     def to_dense(self) -> Tensor:
         """Return a dense tensor representing the structured matrix.
 
-        # noqa: DAR202
+        <!-- noqa: DAR202-->
 
         Returns:
             A dense PyTorch tensor representing the matrix.
@@ -165,7 +168,7 @@ class StructuredMatrix(ABC):
         return self + (other * (-1.0))
 
     def rmatmat(self, mat: Tensor) -> Tensor:
-        """Multiply the structured matrix's transpose onto a matrix (``self.T @ mat``).
+        """Multiply the structured matrix's transpose onto a matrix (`self.T @ mat`).
 
         Args:
             mat: A dense matrix that will be multiplied onto.
@@ -183,7 +186,7 @@ class StructuredMatrix(ABC):
         This suggests that a child class does not implement a specialized version
         that is usually more efficient.
 
-        You can turn off the warning by setting the ``WARN_NAIVE`` class attribute.
+        You can turn off the warning by setting the `WARN_NAIVE` class attribute.
 
         Args:
             fn_name: Name of the function whose naive version is being called.
@@ -207,17 +210,17 @@ class StructuredMatrix(ABC):
         parallel training.
 
         Args:
-            op: The reduction operation to perform (default: ``dist.ReduceOp.AVG``).
-            group: The process group to work on. If ``None``, the default process group
+            op: The reduction operation to perform (default: `dist.ReduceOp.AVG`).
+            group: The process group to work on. If `None`, the default process group
                 will be used.
-            async_op: If ``True``, this function will return a
-                ``torch.distributed.Future`` object.
+            async_op: If `True`, this function will return a
+                `torch.distributed.Future` object.
                 Otherwise, it will block until the reduction completes
-                (default: ``False``).
+                (default: `False`).
 
         Returns:
-            If ``async_op`` is ``True``, a (tuple of) ``torch.distributed.Future``
-            object(s), else ``None``.
+            If `async_op` is `True`, a (tuple of) `torch.distributed.Future`
+            object(s), else `None`.
         """
         handles = []
         for tensor in self._tensors_to_sync:
@@ -236,16 +239,16 @@ class StructuredMatrix(ABC):
     ###############################################################################
 
     def from_inner(self, X: Union[Tensor, None] = None) -> StructuredMatrix:
-        """Extract the represented structure from ``self.T @ X @ X^T @ self``.
+        """Extract the represented structure from `self.T @ X @ X^T @ self`.
 
-        We can recycle terms by writing ``self.T @ X @ X^T @ self`` as ``S @ S^T``
-        with ``S := self.T @ X``.
+        We can recycle terms by writing `self.T @ X @ X^T @ self` as `S @ S^T`
+        with `S := self.T @ X`.
 
         Args:
-            X: Optional arbitrary 2d tensor. If ``None``, ``X = I`` will be used.
+            X: Optional arbitrary 2d tensor. If `None`, `X = I` will be used.
 
         Returns:
-            The structured matrix extracted from ``self.T @ X @ X^T @ self``.
+            The structured matrix extracted from `self.T @ X @ X^T @ self`.
         """
         self._warn_naive_implementation("from_inner")
         S_dense = self.to_dense().T if X is None else self.rmatmat(X)
@@ -256,13 +259,13 @@ class StructuredMatrix(ABC):
     # integrating this interface into existing implementations of sparse IF-KFAC
     # easier, as they have access to the input/gradient covariance matrices.
     def from_inner2(self, XXT: Tensor) -> StructuredMatrix:
-        """Extract the represented structure from ``self.T @ XXT @ self``.
+        """Extract the represented structure from `self.T @ XXT @ self`.
 
         Args:
             XXT: 2d square symmetric matrix.
 
         Returns:
-            The structured matrix extracted from ``self.T @ XXT @ self``.
+            The structured matrix extracted from `self.T @ XXT @ self`.
         """
         self._warn_naive_implementation("from_inner2")
         dense = self.to_dense()
@@ -291,7 +294,7 @@ class StructuredMatrix(ABC):
         diag_add_(dense, value)
 
         # NOTE `self` is immutable, so we have to update its state with the following
-        # hack (otherwise, the call ``a.diag_add_(b)`` will not modify ``a``). See
+        # hack (otherwise, the call `a.diag_add_(b)` will not modify `a`). See
         # https://stackoverflow.com/a/37658673 and https://stackoverflow.com/q/1015592.
         new = self.from_dense(dense)
         self.__dict__.update(new.__dict__)
@@ -302,9 +305,9 @@ class StructuredMatrix(ABC):
 
         The infinity vector norm is the absolute value of the largest entry.
         Note that this is different from the infinity matrix norm, compare
-        (here)[https://pytorch.org/docs/stable/generated/torch.linalg.vector_norm.html]
+        [here](https://pytorch.org/docs/stable/generated/torch.linalg.vector_norm.html)
         and
-        (here)[https://pytorch.org/docs/stable/generated/torch.linalg.matrix_norm.html].
+        [here](https://pytorch.org/docs/stable/generated/torch.linalg.matrix_norm.html).
 
         Note:
             This assumes that all tensors in `self._tensors_to_sync` contain

@@ -25,7 +25,7 @@ class DenseMatrix(StructuredMatrix):
     WARN_NAIVE: bool = False  # Fall-back to naive base class implementations OK
 
     def __init__(self, mat: Tensor) -> None:
-        """Store the dense matrix internally.
+        r"""Store the dense matrix internally.
 
         Note:
             For performance reasons, symmetry is not checked internally and must
