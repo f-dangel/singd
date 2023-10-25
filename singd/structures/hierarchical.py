@@ -19,34 +19,56 @@ from singd.structures.utils import (
 
 
 class HierarchicalMatrixTemplate(StructuredMatrix):
-    """Template for hierarchical matrices.
-
-    ``[[A,   B ],
-      [ 0, C, 0],
-      [ 0, D, E],]``
-
-    where (denoting ``K`` the matrix dimension)
-
-    - ``A`` is dense square and has shape ``[K1, K1]``
-    - ``B`` is dense rectangular of shape ``[K1, K - K1]``
-    - ``C`` is a diagonal matrix of shape ``[K - K1 - K2, K - K1 - K2]``
-    - ``D`` is dense rectangular of shape ``[K2, K - K1 - K2]``
-    - ``E`` is dense square and has shape ``[K2, K2]``
+    r"""Template class for creating hierarchical matrices.
 
     Note:
         This is a template class. To define an actual class, inherit from this class,
-        then specify the ``MAX_K1`` and ``MAX_K2`` class attributes.
+        then specify the `MAX_K1` and `MAX_K2` class attributes. See the example below.
 
-    Given specific values for ``K1, K2``, if the matrix to be represented is not
+    Hierarchical matrices have the following structure:
+
+    \(
+    \begin{pmatrix}
+    \mathbf{A} & \mathbf{B}_1 & \mathbf{B}_2 \\
+    \mathbf{0} & \mathbf{C} & \mathbf{0} \\
+    \mathbf{0} & \mathbf{D} & \mathbf{E} \\
+    \end{pmatrix}
+    \in \mathbb{R}^{K \times K}
+    \)
+
+    where (denoting
+    \(\mathbf{B} := \begin{pmatrix}\mathbf{B}_1 & \mathbf{B}_2\end{pmatrix}\))
+
+    - \(\mathbf{A} \in \mathbb{R}^{K_1 \times K_1}\) is dense symmetric
+    - \(\mathbf{B} \in \mathbb{R}^{K_1 \times (K - K_1)}\) is dense rectangular
+    - \(\mathbf{C} \in \mathbb{R}^{(K - K_2 - K_1) \times (K - K_2 - K_1)}\) is diagonal
+    - \(\mathbf{D} \in \mathbb{R}^{K_2 \times (K - K_2 - K_1)}\) is dense rectangular
+    - \(\mathbf{E} \in \mathbb{R}^{K_2 \times K_2}\) is dense symmetric
+
+    For fixed values of \(K_1, K_2\), if the matrix to be represented is not
     big enough to fit all structures, we use the following prioritization:
 
-    1. If ``K <= K1``, start by filling ``A``.
-    2. If ``K1 < K <= K1+K2``, fill ``A`` and start filling ``B`` and ``E``.
-    3. If ``K1+K2 < K``, use all structures.
+    1. If \(K \le K_1\), start by filling \(\mathbf{A}\).
+    2. If \(K_1 < K \le K_1+K_2\), fill \(\mathbf{A}\) and start filling \(\mathbf{B}\)
+       and \(\mathbf{E}\).
+    3. If \(K_1+K_2 < K\), use all structures.
 
     Attributes:
-        MAX_K1: Maximum dimension of the top left.
-        MAX_K2: Maximum dimension of the bottom right block.
+        MAX_K1: Maximum dimension \(K_1\) of the top left block \(\mathbf{A}\).
+        MAX_K2: Maximum dimension \(K_2\) of the bottom right block \(\mathbf{E}\).
+
+    Examples:
+        >>> from torch import ones
+        >>>
+        >>> class Hierarchical3_4Matrix(HierarchicalMatrixTemplate):
+        ...     '''Hierarchical matrix with 3x3 top left and 4x4 bottom right block.'''
+        ...     MAX_K1 = 3
+        ...     MAX_K2 = 4
+        >>>
+        >>> # A hierarchical matrix with total dimension K=15
+        >>> A, C, E = ones(3, 3), ones(8), ones(4, 4)
+        >>> B, D = ones(3, 12), ones(4, 11)
+        >>> mat = Hierarchical3_4Matrix(A, B, C, D, E)
     """
 
     MAX_K1: int
@@ -55,14 +77,17 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
     def __init__(self, A: Tensor, B: Tensor, C: Tensor, D: Tensor, E: Tensor):
         """Store the structural components internally.
 
-        Please read the class docstring for more information.
-
         Args:
-            A: Dense square matrix of shape ``[K1, K1]`` or smaller.
-            B: Dense rectangular matrix of shape ``[K1, K - K1]``.
-            C: Diagonal of shape ``[K - K1 - K2]``.
-            D: Dense rectangular matrix of shape ``[K2, K - K1 - K2]``.
-            E: Dense square matrix of shape ``[K2, K2]`` or smaller.
+            A: Dense symmetric matrix of shape `[K1, K1]` or smaller representing
+                \(\mathbf{A}\).
+            B: Dense rectangular matrix of shape `[K1, K - K1]` representing
+                \(\mathbf{B}\).
+            C: Vector of shape `[K - K1 - K2]` representing the diagonal of
+                \(\mathbf{C}\).
+            D: Dense rectangular matrix of shape `[K2, K - K1 - K2]` representing
+                \(\mathbf{D}\).
+            E: Dense symmetric matrix of shape `[K2, K2]` or smaller representing
+                \(\mathbf{E}\).
 
         Raises:
             ValueError: If the shapes of the arguments are invalid.
@@ -118,10 +143,10 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
 
         Args:
             sym_mat: A dense symmetric matrix which will be represented as
-                ``Hierarchical``.
+                `Hierarchical`.
 
         Returns:
-            ``HierarchicalMatrix`` representing the passed matrix.
+            `HierarchicalMatrix` representing the passed matrix.
         """
         cls._check_square(sym_mat)
         dim = sym_mat.shape[0]
@@ -164,7 +189,7 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
         Returns:
             Result of the multiplication. If a PyTorch tensor was passed as argument,
             the result will be a PyTorch tensor. If a hierarchial matrix was passed,
-            the result will be returned as a ``HierarchicalMatrixTemplate``.
+            the result will be returned as a `HierarchicalMatrixTemplate`.
         """
         # parts of B that share columns with C, E
         B_C, B_E = self.B.split([self.diag_dim, self.K2], dim=1)
@@ -243,7 +268,7 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
         )
 
     def rmatmat(self, mat: Tensor) -> Tensor:
-        """Multiply ``mat`` with the transpose of the structured matrix.
+        """Multiply `mat` with the transpose of the structured matrix.
 
         Args:
             mat: A matrix which will be multiplied by the transpose of the represented
@@ -278,14 +303,14 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
     ###############################################################################
 
     def from_inner(self, X: Union[Tensor, None] = None) -> HierarchicalMatrixTemplate:
-        """Represent the hierarchical matrix of ``self.T @ X @ X^T @ self``.
+        """Represent the hierarchical matrix of `self.T @ X @ X^T @ self`.
 
         Args:
-            X: Optional arbitrary 2d tensor. If ``None``, ``X = I`` will be used.
+            X: Optional arbitrary 2d tensor. If `None`, `X = I` will be used.
 
         Returns:
-            A ``HierarchicalMatrix`` representing hierarchical matrix of
-            ``self.T @ X @ X^T @ self``.
+            A `HierarchicalMatrix` representing hierarchical matrix of
+            `self.T @ X @ X^T @ self`.
         """
         if X is None:
             A_new = supported_matmul(self.A.T, self.A)
@@ -397,13 +422,13 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
 
     @classmethod
     def _compute_block_dims(cls, dim: int) -> Tuple[int, int, int]:
-        """Compute the dimensions of ``A, C, E``.
+        """Compute the dimensions of `A, C, E`.
 
         Args:
             dim: Total dimension of the (square) matrix.
 
         Returns:
-            A tuple of the form ``(K1, diag_dim, K2)``.
+            A tuple of the form `(K1, diag_dim, K2)`.
         """
         if dim <= cls.MAX_K1:
             K1, diag_dim, K2 = dim, 0, 0
@@ -415,14 +440,14 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
 
 
 class Hierarchical15_15Matrix(HierarchicalMatrixTemplate):
-    """Hierarchical matrix with ``K1=15`` and ``K2=15``."""
+    """Hierarchical matrix with `K1=15` and `K2=15`."""
 
     MAX_K1 = 15
     MAX_K2 = 15
 
 
 class Hierarchical3_2Matrix(HierarchicalMatrixTemplate):
-    """Hierarchical matrix with ``K1=3`` and ``K2=2``."""
+    """Hierarchical matrix with `K1=3` and `K2=2`."""
 
     MAX_K1 = 3
     MAX_K2 = 2

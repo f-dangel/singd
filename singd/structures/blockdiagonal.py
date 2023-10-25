@@ -35,6 +35,7 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
     \mathbf{0} & \cdots & \mathbf{0} & \mathbf{A}_N & \mathbf{0} & \\
     \mathbf{0} & \cdots & \cdots & \mathbf{0} & \mathbf{B}
     \end{pmatrix}
+    \in \mathbb{R}^{(N D + D') \times (N D + D')}
     \)
 
     where
