@@ -26,7 +26,6 @@ class TrilToeplitzMatrix(StructuredMatrix):
 
     WARN_NAIVE_EXCEPTIONS = {  # hard to leverage structure for efficient implementation
         "from_inner",
-        "from_inner2",
     }
 
     def __init__(self, diag_consts: Tensor) -> None:

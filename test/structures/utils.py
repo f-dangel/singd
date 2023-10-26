@@ -209,33 +209,6 @@ def _test_from_inner(
     )
 
 
-def _test_from_inner2(
-    sym_mat: Tensor,
-    structured_matrix_cls: Type[StructuredMatrix],
-    project: Callable[[Tensor], Tensor],
-    XXT: Tensor,
-):
-    """Test `from_inner2` method of any child of `StructuredMatrix`.
-
-    Args:
-        sym_mat: A symmetric dense matrix which will be converted into a structured
-            matrix.
-        structured_matrix_cls: The class of the structured matrix into which `sym_mat`
-            will be converted.
-        project: A function which converts an arbitrary symmetric dense matrix into a
-            dense matrix of the tested structure. Used to establish the ground truth.
-        XXT: An symmetric PSD matrix that will be passed to `from_inner2`.
-    """
-    truth = project(supported_matmul(project(sym_mat).T, XXT, project(sym_mat)))
-    sym_mat_structured = structured_matrix_cls.from_dense(sym_mat)
-    report_nonclose(
-        truth,
-        sym_mat_structured.from_inner2(XXT).to_dense(),
-        rtol=1e-2 if is_half_precision(sym_mat.dtype) else 1e-5,
-        atol=1e-4 if is_half_precision(sym_mat.dtype) else 1e-7,
-    )
-
-
 def _test_zeros(
     structured_matrix_cls: Type[StructuredMatrix],
     dim: int,
@@ -453,23 +426,6 @@ class _TestStructuredMatrix(ABC):
             sym_mat = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
             X = rand((dim, 2 * dim), device=dev, dtype=dtype)
             _test_from_inner(sym_mat, self.STRUCTURED_MATRIX_CLS, self.project, X)
-
-    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
-    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
-    def test_from_inner2(self, dev: device, dtype: torch.dtype):
-        """Test structure extraction after self-inner product w/ intermediate matrix.
-
-        Args:
-            dev: The device on which to run the test.
-            dtype: The data type of the matrices.
-        """
-        for dim in self.DIMS:
-            manual_seed(0)
-
-            sym_mat = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
-            X = rand((dim, 2 * dim), device=dev, dtype=dtype)
-            XXT = supported_matmul(X, X.T)
-            _test_from_inner2(sym_mat, self.STRUCTURED_MATRIX_CLS, self.project, XXT)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
