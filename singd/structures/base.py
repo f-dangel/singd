@@ -60,9 +60,7 @@ class StructuredMatrix(ABC):
 
         This is used to support distributed data parallel training.
 
-        <!-- noqa: DAR202-->
-
-        Returns:
+        Returns: # noqa: DAR202
             A tuple of tensors that need to be synchronized across devices.
 
         Raises:
@@ -108,8 +106,6 @@ class StructuredMatrix(ABC):
             sym_mat: A symmetric dense matrix which will be converted into a structured
                 one.
 
-        <!-- noqa: DAR202-->
-
         Returns:
             Structured matrix.
 
@@ -121,8 +117,6 @@ class StructuredMatrix(ABC):
     @abstractmethod
     def to_dense(self) -> Tensor:
         """Return a dense tensor representing the structured matrix.
-
-        <!-- noqa: DAR202-->
 
         Returns:
             A dense PyTorch tensor representing the matrix.
