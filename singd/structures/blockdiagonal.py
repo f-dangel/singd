@@ -75,11 +75,12 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
         r"""Store the matrix internally.
 
         Args:
-            blocks: The diagonal blocks \(\{\mathbf{A}_n\}\), supplied
-                as a tensor of shape `[N, BLOCK_DIM, BLOCK_DIM]`. If there are no
-                blocks, this argument has shape `[0, BLOCK_DIM, BLOCK_DIM]`.
-            last: The last block \(\mathbf{B}\) which contains the remaining matrix
-                if `BLOCK_DIM` does not divide the matrix dimension.
+            blocks: The diagonal blocks
+                \(\{\mathbf{A}_n = \mathbf{A}_n^\top\}_{n = 1}^N\),
+                supplied as a tensor of shape `[N, BLOCK_DIM, BLOCK_DIM]`. If there are
+                no blocks, this argument has shape `[0, BLOCK_DIM, BLOCK_DIM]`.
+            last: The last block \(\mathbf{B} = \mathbf{B}^\top\) which contains the
+                remaining matrix if `BLOCK_DIM` does not divide the matrix dimension.
                 Has shape `[last_dim, last_dim]` where `last_dim` may be zero.
 
         Note:
@@ -382,12 +383,22 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
 
 class Block30DiagonalMatrix(BlockDiagonalMatrixTemplate):
-    """Block-diagonal matrix with blocks of size 30."""
+    """Block-diagonal matrix with blocks of size 30.
+
+    Note:
+        See the template class `BlockDiagonalMatrixTemplate` for a mathematical
+        description.
+    """
 
     BLOCK_DIM = 30
 
 
 class Block3DiagonalMatrix(BlockDiagonalMatrixTemplate):
-    """Block-diagonal matrix with blocks of size 3."""
+    """Block-diagonal matrix with blocks of size 3.
+
+    Note:
+        See the template class `BlockDiagonalMatrixTemplate` for a mathematical
+        description.
+    """
 
     BLOCK_DIM = 3

@@ -11,13 +11,36 @@ from singd.structures.base import StructuredMatrix
 
 
 class DiagonalMatrix(StructuredMatrix):
-    """Diagonal matrix implemented in the ``StructuredMatrix`` interface."""
+    r"""Diagonal matrix implemented in the ``StructuredMatrix`` interface.
+
+    A diagonal matrix is defined as
+
+    \(
+    \begin{pmatrix}
+        d_1 & 0 & \cdots & 0 \\
+        0 & d_2 & \ddots & \vdots \\
+        \vdots & \ddots & \ddots & 0 \\
+        0 & \cdots & \ddots & d_K \\
+    \end{pmatrix} \in \mathbb{R}^{K \times K}
+    \quad
+    \text{with}
+    \quad
+    \mathbf{d}
+    :=
+    \begin{pmatrix}
+        d_1 \\
+        d_2 \\
+        \vdots \\
+        d_K \\
+    \end{pmatrix} \in \mathbb{R}^K
+    \)
+    """
 
     def __init__(self, mat_diag: Tensor) -> None:
-        """Store the dense matrix internally.
+        r"""Store the dense matrix internally.
 
         Args:
-            mat_diag: A 1d tensor representing the matrix diagonal.
+            mat_diag: A 1d tensor representing the matrix diagonal \(\mathbf{d}\).
         """
         self._mat_diag = mat_diag
 

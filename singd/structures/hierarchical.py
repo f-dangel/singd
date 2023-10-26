@@ -452,14 +452,24 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
 
 
 class Hierarchical15_15Matrix(HierarchicalMatrixTemplate):
-    """Hierarchical matrix with `K1=15` and `K2=15`."""
+    """Hierarchical matrix with `K1=15` and `K2=15`.
+
+    Note:
+        See the template class `HierarchicalMatrixTemplate` for a mathematical
+        description.
+    """
 
     MAX_K1 = 15
     MAX_K2 = 15
 
 
 class Hierarchical3_2Matrix(HierarchicalMatrixTemplate):
-    """Hierarchical matrix with `K1=3` and `K2=2`."""
+    """Hierarchical matrix with `K1=3` and `K2=2`.
+
+    Note:
+        See the template class `HierarchicalMatrixTemplate` for a mathematical
+        description.
+    """
 
     MAX_K1 = 3
     MAX_K2 = 2
