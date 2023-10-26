@@ -90,16 +90,16 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
         Raises:
             ValueError: If the passed tensors have incorrect shape.
         """
-        if blocks.dim() != 3:
+        if blocks.ndim != 3:
             raise ValueError(
-                f"Diagonal blocks must be 3-dimensional, got {blocks.dim()}."
+                f"Diagonal blocks must be 3-dimensional, got {blocks.ndim}."
             )
         if blocks.shape[1] != blocks.shape[2] != self.BLOCK_DIM:
             raise ValueError(
                 f"Diagonal blocks must be square with dimension {self.BLOCK_DIM},"
                 f" got {blocks.shape[1:]} instead."
             )
-        if last.dim() != 2 or last.shape[0] != last.shape[1]:
+        if last.ndim != 2 or last.shape[0] != last.shape[1]:
             raise ValueError(f"Last block must be square, got {last.shape}.")
         if last.shape[0] >= self.BLOCK_DIM or last.shape[1] >= self.BLOCK_DIM:
             raise ValueError(
@@ -187,7 +187,7 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
         if isinstance(other, Tensor):
             num_blocks, last_dim = self._blocks.shape[0], self._last.shape[0]
             total_dim = num_blocks * self.BLOCK_DIM + last_dim
-            if other.shape[0] != total_dim or other.dim() != 2:
+            if other.shape[0] != total_dim or other.ndim != 2:
                 raise ValueError(
                     f"Expect matrix with {total_dim} rows. Got {other.shape}."
                 )

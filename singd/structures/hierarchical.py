@@ -104,10 +104,10 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
         Raises:
             ValueError: If the shapes of the arguments are invalid.
         """
-        if A.dim() != 2 or B.dim() != 2 or C.dim() != 1 or D.dim() != 2 or E.dim() != 2:
+        if A.ndim != 2 or B.ndim != 2 or C.ndim != 1 or D.ndim != 2 or E.ndim != 2:
             raise ValueError(
                 "Invalid tensor dimensions. Expected 2, 2, 1, 2, 2."
-                + f" Got {A.dim()}, {B.dim()}, {C.dim()}, {D.dim()}, {E.dim()}."
+                + f" Got {A.ndim}, {B.ndim}, {C.ndim}, {D.ndim}, {E.ndim}."
             )
         self._check_square(A, name="A")
         self._check_square(E, name="E")
