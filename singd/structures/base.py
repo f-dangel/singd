@@ -251,23 +251,6 @@ class StructuredMatrix(ABC):
         S_dense = self.to_dense().T if X is None else self.rmatmat(X)
         return self.from_dense(supported_matmul(S_dense, S_dense.T))
 
-    # NOTE This operation should be removed long-term as implementing IF-KFAC
-    # with `from_inner` is more efficient. For now, it will exist as it makes
-    # integrating this interface into existing implementations of sparse IF-KFAC
-    # easier, as they have access to the input/gradient covariance matrices.
-    def from_inner2(self, XXT: Tensor) -> StructuredMatrix:
-        """Extract the represented structure from ``self.T @ XXT @ self``.
-
-        Args:
-            XXT: 2d square symmetric matrix.
-
-        Returns:
-            The structured matrix extracted from ``self.T @ XXT @ self``.
-        """
-        self._warn_naive_implementation("from_inner2")
-        dense = self.to_dense()
-        return self.from_dense(supported_matmul(dense.T, XXT, dense))
-
     def trace(self) -> Tensor:
         """Compute the trace of the represented matrix.
 

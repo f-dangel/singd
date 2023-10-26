@@ -133,18 +133,6 @@ class DiagonalMatrix(StructuredMatrix):
             mat_diag *= (X**2).sum(1)
         return DiagonalMatrix(mat_diag)
 
-    def from_inner2(self, XXT: Tensor) -> StructuredMatrix:
-        """Represent the matrix diagonal of ``self.T @ XXT @ self``.
-
-        Args:
-            XXT: 2d square symmetric matrix.
-
-        Returns:
-            A ``DiagonalMatrix`` representing matrix diagonal of
-            ``self.T @ XXT @ self``.
-        """
-        return DiagonalMatrix(self._mat_diag**2 * XXT.diag())
-
     def trace(self) -> Tensor:
         """Compute the trace of the represented matrix.
 
