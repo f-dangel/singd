@@ -29,6 +29,9 @@ class RecursiveStructuredMatrix(StructuredMatrix):
             substructure: A structured matrix
             name: A name for the structured matrix. The matrix will be available under
                 `self.name`.
+
+        Raises:
+            ValueError: If the name is already in use.
         """
         if hasattr(self, name):
             raise ValueError(f"Variable name {name!r} is already in use.")
