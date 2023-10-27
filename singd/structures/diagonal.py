@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Tuple, Union
+from typing import Union
 
 import torch
 from torch import Tensor, einsum, ones, zeros
@@ -19,18 +19,9 @@ class DiagonalMatrix(StructuredMatrix):
         Args:
             mat_diag: A 1d tensor representing the matrix diagonal.
         """
-        self._mat_diag = mat_diag
-
-    @property
-    def _tensors_to_sync(self) -> Tuple[Tensor]:
-        """Tensors that need to be synchronized across devices.
-
-        This is used to support distributed data parallel training.
-
-        Returns:
-            A tensor that need to be synchronized across devices.
-        """
-        return (self._mat_diag,)
+        super().__init__()
+        self._mat_diag: Tensor
+        self.register_tensor(mat_diag, "_mat_diag")
 
     def __matmul__(
         self, other: Union[DiagonalMatrix, Tensor]

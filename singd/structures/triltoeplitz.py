@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Tuple, Union
+from typing import Union
 
 import torch
 from torch import Tensor, arange, cat, zeros
@@ -29,26 +29,17 @@ class TrilToeplitzMatrix(StructuredMatrix):
         "from_inner2",
     }
 
-    def __init__(self, diag_consts: Tensor) -> None:
+    def __init__(self, lower_diags: Tensor) -> None:
         """Store the lower-triangular Toeplitz matrix internally.
 
         Args:
-            diag_consts: A vector containing the constants of all diagonals, i.e.
+            lower_diags: A vector containing the constants of all diagonals, i.e.
                 the first entry corresponds to the constant on the diagonal, the
                 second entry to the constant on the lower first off-diagonal, etc.
         """
-        self._mat_column = diag_consts
-
-    @property
-    def _tensors_to_sync(self) -> Tuple[Tensor]:
-        """Tensors that need to be synchronized across devices.
-
-        This is used to support distributed data parallel training.
-
-        Returns:
-            A tensor that need to be synchronized across devices.
-        """
-        return (self._mat_column,)
+        super().__init__()
+        self._lower_diags: Tensor
+        self.register_tensor(lower_diags, "_lower_diags")
 
     @classmethod
     def from_dense(cls, mat: Tensor) -> TrilToeplitzMatrix:
@@ -83,12 +74,12 @@ class TrilToeplitzMatrix(StructuredMatrix):
         Returns:
             The represented matrix as PyTorch tensor.
         """
-        dim = self._mat_column.size(0)
+        dim = self._lower_diags.size(0)
         i, j = torch.tril_indices(row=dim, col=dim, offset=0)
         mat = torch.zeros(
-            (dim, dim), device=self._mat_column.device, dtype=self._mat_column.dtype
+            (dim, dim), device=self._lower_diags.device, dtype=self._lower_diags.dtype
         )
-        mat[i, j] = self._mat_column[i - j]
+        mat[i, j] = self._lower_diags[i - j]
         return mat
 
     def __add__(self, other: TrilToeplitzMatrix) -> TrilToeplitzMatrix:
@@ -100,7 +91,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
         Returns:
             A tril Toeplitz matrix resulting from the addition.
         """
-        return TrilToeplitzMatrix(self._mat_column + other._mat_column)
+        return TrilToeplitzMatrix(self._lower_diags + other._mat_column)
 
     def __mul__(self, other: float) -> TrilToeplitzMatrix:
         """Multiply with a scalar.
@@ -111,7 +102,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
         Returns:
             A triu Toeplitz matrix resulting from the multiplication.
         """
-        return TrilToeplitzMatrix(self._mat_column * other)
+        return TrilToeplitzMatrix(self._lower_diags * other)
 
     def __matmul__(
         self, other: Union[TrilToeplitzMatrix, Tensor]
@@ -127,7 +118,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
             the result will be a PyTorch tensor. If a triu Toeplitz matrix was passed,
             the result will be returned as a ``TrilToeplitzMatrix``.
         """
-        col = self._mat_column
+        col = self._lower_diags
         dim = col.shape[0]
 
         if isinstance(other, Tensor):
@@ -153,7 +144,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
         Returns:
             The result of ``self.T @ mat``.
         """
-        col = self._mat_column
+        col = self._lower_diags
         dim = col.shape[0]
         coeffs = cat([zeros(dim - 1, device=col.device, dtype=col.dtype), col])
 
@@ -173,8 +164,8 @@ class TrilToeplitzMatrix(StructuredMatrix):
         Returns:
             The trace of the represented matrix.
         """
-        dim = self._mat_column.shape[0]
-        return self._mat_column[0] * dim
+        dim = self._lower_diags.shape[0]
+        return self._lower_diags[0] * dim
 
     def diag_add_(self, value: float) -> TrilToeplitzMatrix:
         """In-place add a value to the diagonal of the represented matrix.
@@ -185,7 +176,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
         Returns:
             A reference to the updated matrix.
         """
-        self._mat_column[0].add_(value)
+        self._lower_diags[0].add_(value)
         return self
 
     ###############################################################################

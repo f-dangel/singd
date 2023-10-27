@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Tuple, Union
+from typing import Union
 
 import torch
 from einops import rearrange
@@ -58,6 +58,7 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
         Raises:
             ValueError: If the passed tensors have incorrect shape.
         """
+        super().__init__()
         if blocks.dim() != 3:
             raise ValueError(
                 f"Diagonal blocks must be 3-dimensional, got {blocks.dim()}."
@@ -74,19 +75,12 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
                 f"Last block must have dimension at most {self.BLOCK_DIM},"
                 f" got {last.shape} instead."
             )
-        self._blocks = blocks
-        self._last = last
 
-    @property
-    def _tensors_to_sync(self) -> Tuple[Tensor, Tensor]:
-        """Tensors that need to be synchronized across devices.
+        self._blocks: Tensor
+        self.register_tensor(blocks, "_blocks")
 
-        This is used to support distributed data parallel training.
-
-        Returns:
-            A tuple of tensors that need to be synchronized across devices.
-        """
-        return (self._blocks, self._last)
+        self._last: Tensor
+        self.register_tensor(last, "_last")
 
     @classmethod
     def from_dense(cls, mat: Tensor) -> BlockDiagonalMatrixTemplate:
