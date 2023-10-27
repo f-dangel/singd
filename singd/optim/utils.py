@@ -14,6 +14,7 @@ def _extract_patches(
     kernel_size: Union[Tuple[int, int], int],
     stride: Union[Tuple[int, int], int],
     padding: Union[Tuple[int, int], int],
+    dilation: Union[Tuple[int, int], int],
     groups: int,
 ) -> Tensor:
     """Extract patches from the input of a 2d-convolution.
@@ -25,6 +26,7 @@ def _extract_patches(
         kernel_size: The convolution's kernel size supplied as 2-tuple or integer.
         stride: The convolution's stride supplied as 2-tuple or integer.
         padding: The convolution's padding supplied as 2-tuple or integer.
+        dilation: The convolution's dilation supplied as 2-tuple or integer.
         groups: The number of channel groups.
 
     Returns:
@@ -32,7 +34,9 @@ def _extract_patches(
         each column `[b, o1_o2, :]` contains the flattened patch of sample `b` used
         for output location `(o1, o2)`, averaged over channel groups.
     """
-    x_unfold = F.unfold(x, kernel_size, dilation=1, padding=padding, stride=stride)
+    x_unfold = F.unfold(
+        x, kernel_size, dilation=dilation, padding=padding, stride=stride
+    )
     # separate the channel groups
     x_unfold = rearrange(
         x_unfold, "b (g c_in_k1_k2) o1_o2 -> b g c_in_k1_k2 o1_o2", g=groups
@@ -81,12 +85,8 @@ def conv2d_process_input(x: Tensor, layer: Conv2d, kfac_approx: str) -> Tensor:
         The `+1` is active if the layer has a bias.
 
     Raises:
-        NotImplementedError: If the convolution uses dilation or string-valued
-            padding.
+        NotImplementedError: If the convolution uses string-valued padding.
     """
-    # TODO Add support for dilation in `_extract_patches`
-    if layer.dilation != (1, 1):
-        raise NotImplementedError("Dilated convolutions are not yet supported.")
     # TODO Add support for string-valued padding in `_extract_patches`
     if isinstance(layer.padding, str):
         raise NotImplementedError(
@@ -94,7 +94,7 @@ def conv2d_process_input(x: Tensor, layer: Conv2d, kfac_approx: str) -> Tensor:
         )
 
     x = _extract_patches(
-        x, layer.kernel_size, layer.stride, layer.padding, layer.groups
+        x, layer.kernel_size, layer.stride, layer.padding, layer.dilation, layer.groups
     )
 
     if kfac_approx == "expand":
