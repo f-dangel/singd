@@ -1,4 +1,4 @@
-"""Toeplitz matrix implemented in the ``StructuredMatrix`` interface."""
+"""Toeplitz matrix implemented in the `StructuredMatrix` interface."""
 
 from __future__ import annotations
 
@@ -18,10 +18,29 @@ from singd.structures.utils import (
 
 
 class TrilToeplitzMatrix(StructuredMatrix):
-    """Lower-triangular Toeplitz-structured matrix in ``StructuredMatrix`` interface.
+    r"""Class for lower-triangular Toeplitz-structured matrices.
 
-    We follow the representation of such matrices using the SciPy terminology, see
-    https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.toeplitz.html
+    A lower-triangular Toeplitz matrix is defined by:
+
+    \(
+    \begin{pmatrix}
+        d_1 & 0 & \cdots & 0 \\
+        d_2 & d_1 & \ddots & \vdots \\
+        \vdots & \ddots & \ddots & 0 \\
+        d_K & \cdots & d_2 & d_1 \\
+    \end{pmatrix} \in \mathbb{R}^{K \times K}
+    \quad
+    \text{with}
+    \quad
+    \mathbf{d}
+    :=
+    \begin{pmatrix}
+        d_1 \\
+        d_2 \\
+        \vdots \\
+        d_K \\
+    \end{pmatrix} \in \mathbb{R}^K\,.
+    \)
     """
 
     WARN_NAIVE_EXCEPTIONS = {  # hard to leverage structure for efficient implementation
@@ -30,12 +49,11 @@ class TrilToeplitzMatrix(StructuredMatrix):
     }
 
     def __init__(self, diag_consts: Tensor) -> None:
-        """Store the lower-triangular Toeplitz matrix internally.
+        r"""Store the lower-triangular Toeplitz matrix internally.
 
         Args:
-            diag_consts: A vector containing the constants of all diagonals, i.e.
-                the first entry corresponds to the constant on the diagonal, the
-                second entry to the constant on the lower first off-diagonal, etc.
+            diag_consts: The vector \(\mathbf{d}\) containing the constants of all
+                lower diagonals, starting with the value on the main diagonal.
         """
         self._mat_column = diag_consts
 
@@ -56,10 +74,10 @@ class TrilToeplitzMatrix(StructuredMatrix):
 
         Args:
             mat: A dense and symmetric square matrix which will be approximated by a
-                ``TrilToeplitzMatrix``.
+                `TrilToeplitzMatrix`.
 
         Returns:
-            ``TrilToeplitzMatrix`` approximating the passed matrix.
+            `TrilToeplitzMatrix` approximating the passed matrix.
         """
         assert mat.shape[0] == mat.shape[1]
         traces = all_traces(mat)
@@ -120,12 +138,12 @@ class TrilToeplitzMatrix(StructuredMatrix):
 
         Args:
             other: A matrix which will be multiplied onto. Can be represented by a
-                PyTorch tensor or another ``TrilToeplitzMatrix``.
+                PyTorch tensor or another `TrilToeplitzMatrix`.
 
         Returns:
             Result of the multiplication. If a PyTorch tensor was passed as argument,
             the result will be a PyTorch tensor. If a triu Toeplitz matrix was passed,
-            the result will be returned as a ``TrilToeplitzMatrix``.
+            the result will be returned as a `TrilToeplitzMatrix`.
         """
         col = self._mat_column
         dim = col.shape[0]
@@ -144,14 +162,14 @@ class TrilToeplitzMatrix(StructuredMatrix):
             return TrilToeplitzMatrix(mat_column)
 
     def rmatmat(self, mat: Tensor) -> Tensor:
-        """Multiply ``mat`` with the transpose of the structured matrix.
+        """Multiply `mat` with the transpose of the structured matrix.
 
         Args:
             mat: A matrix which will be multiplied by the transpose of the represented
                 diagonal matrix.
 
         Returns:
-            The result of ``self.T @ mat``.
+            The result of `self.T @ mat`.
         """
         col = self._mat_column
         dim = col.shape[0]

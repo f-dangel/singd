@@ -6,17 +6,24 @@ from singd.structures.recursive import RecursiveBottomLeftMatrixTemplate
 
 
 class TrilBottomRightDiagonalMatrix(RecursiveBottomLeftMatrixTemplate):
-    """Sparse lower-triangular matrix with bottom right diagonal.
+    r"""Sparse lower-triangular matrix with bottom right diagonal.
 
-    ``
-    [[c1, 0],
-    [[c2, D]]
-    ``
+    This matrix is defined as follows:
+
+    \(
+    \begin{pmatrix}
+        a & \mathbf{0} \\
+        \mathbf{b} & \mathbf{C} \\
+    \end{pmatrix} \in \mathbb{R}^{K \times K}
+    \)
 
     where
-    - ``c1`` is a scalar,
-    - ``c2`` is a row vector, and
-    - ``D`` is a diagonal matrix.
+
+    - \(a \in \mathbb{R}\) is a scalar, represented by a `DenseMatrix`
+    - \(\mathbf{b} \in \mathbb{R}^{K-1}\) is a row vector, represented as PyTorch
+        `Tensor`, and
+    - \(\mathbf{C} \in \mathbb{R}^{(K-1)\times (K-1)}\) is a diagonal matrix represented
+        as a `DiagonalMatrix`.
     """
 
     MAX_DIMS = (1, float("inf"))

@@ -18,10 +18,29 @@ from singd.structures.utils import (
 
 
 class TriuToeplitzMatrix(StructuredMatrix):
-    """Upper-triangular Toeplitz-structured matrix.
+    r"""Class for upper-triangular Toeplitz-structured matrices.
 
-    We follow the representation of such matrices using the SciPy terminology, see
-    https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.toeplitz.html
+    An upper-triangular Toeplitz matrix is defined by:
+
+    \(
+    \begin{pmatrix}
+        d_1 & d_2 & \cdots & d_K \\
+        0 & d_1 & \ddots & \vdots \\
+        \vdots & \ddots & \ddots & d_2 \\
+        0 & \cdots & 0 & d_1 \\
+    \end{pmatrix} \in \mathbb{R}^{K \times K}
+    \quad
+    \text{with}
+    \quad
+    \mathbf{d}
+    :=
+    \begin{pmatrix}
+        d_1 \\
+        d_2 \\
+        \vdots \\
+        d_K \\
+    \end{pmatrix} \in \mathbb{R}^K\,.
+    \)
     """
 
     WARN_NAIVE_EXCEPTIONS = {  # hard to leverage structure for efficient implementation
@@ -30,12 +49,11 @@ class TriuToeplitzMatrix(StructuredMatrix):
     }
 
     def __init__(self, diag_consts: Tensor) -> None:
-        """Store the upper-triangular Toeplitz matrix internally.
+        r"""Store the upper-triangular Toeplitz matrix internally.
 
         Args:
-            diag_consts: A vector containing the constants of all diagonals, i.e.
-                the first entry corresponds to the constant on the diagonal, the
-                second entry to the constant on the upper first off-diagonal, etc.
+            diag_consts: A vector \(\mathbf{d}\) containing the constants of all
+                upper diagonals, starting with the main diagonal.
         """
         self._mat_row = diag_consts
 

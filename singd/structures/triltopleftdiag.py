@@ -8,17 +8,22 @@ from singd.structures.recursive import RecursiveBottomLeftMatrixTemplate
 class TrilTopLeftDiagonalMatrix(RecursiveBottomLeftMatrixTemplate):
     r"""Sparse lower-triangular matrix with top left diagonal entries.
 
+    This matrix is defined as follows:
+
     \(
     \begin{pmatrix}
-    \mathbf{D} & \mathbf{0} \\
-    r_1 & \mathbf{r}_2
-    \end{pmatrix}
+        \mathbf{A} & \mathbf{0} \\
+        \mathbf{b} & c \\
+    \end{pmatrix} \in \mathbb{R}^{K \times K}
     \)
 
     where
-    - \(\mathbf{D}\) is a diagonal matrix,
-    - \(r_1\) is a scalar, and
-    - \(\mathbf{r}_2\) is a row vector.
+
+    - \(\mathbf{A} \in \mathbb{R}^{(K-1)\times (K-1)}\) is a diagonal matrix represented
+        as a `DiagonalMatrix`.
+    - \(\mathbf{b} \in \mathbb{R}^{K-1}\) is a row vector, represented as PyTorch
+        `Tensor`, and
+    - \(c \in \mathbb{R}\) is a scalar, represented by a `DenseMatrix`.
     """
 
     MAX_DIMS = (float("inf"), 1)
