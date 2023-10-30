@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Tuple, Union
+from typing import Union
 
 import torch
 from torch import Tensor, arange, cat, triu_indices, zeros
@@ -48,25 +48,16 @@ class TriuToeplitzMatrix(StructuredMatrix):
         "from_inner2",
     }
 
-    def __init__(self, diag_consts: Tensor) -> None:
+    def __init__(self, upper_diags: Tensor) -> None:
         r"""Store the upper-triangular Toeplitz matrix internally.
 
         Args:
-            diag_consts: A vector \(\mathbf{d}\) containing the constants of all
+            upper_diags: A vector \(\mathbf{d}\) containing the constants of all
                 upper diagonals, starting with the main diagonal.
         """
-        self._mat_row = diag_consts
-
-    @property
-    def _tensors_to_sync(self) -> Tuple[Tensor]:
-        """Tensors that need to be synchronized across devices.
-
-        This is used to support distributed data parallel training.
-
-        Returns:
-            A tensor that need to be synchronized across devices.
-        """
-        return (self._mat_row,)
+        super().__init__()
+        self._upper_diags: Tensor
+        self.register_tensor(upper_diags, "_upper_diags")
 
     @classmethod
     def from_dense(cls, mat: Tensor) -> TriuToeplitzMatrix:
@@ -101,10 +92,12 @@ class TriuToeplitzMatrix(StructuredMatrix):
         Returns:
             The represented matrix as PyTorch tensor.
         """
-        dim = self._mat_row.shape[0]
+        dim = self._upper_diags.shape[0]
         i, j = triu_indices(row=dim, col=dim, offset=0)
-        mat = zeros((dim, dim), dtype=self._mat_row.dtype, device=self._mat_row.device)
-        mat[i, j] = self._mat_row[j - i]
+        mat = zeros(
+            (dim, dim), dtype=self._upper_diags.dtype, device=self._upper_diags.device
+        )
+        mat[i, j] = self._upper_diags[j - i]
         return mat
 
     def __add__(self, other: TriuToeplitzMatrix) -> TriuToeplitzMatrix:
@@ -116,7 +109,7 @@ class TriuToeplitzMatrix(StructuredMatrix):
         Returns:
             A triu Toeplitz matrix resulting from the addition.
         """
-        return TriuToeplitzMatrix(self._mat_row + other._mat_row)
+        return TriuToeplitzMatrix(self._upper_diags + other._upper_diags)
 
     def __mul__(self, other: float) -> TriuToeplitzMatrix:
         """Multiply with a scalar.
@@ -127,7 +120,7 @@ class TriuToeplitzMatrix(StructuredMatrix):
         Returns:
             A triu Toeplitz matrix resulting from the multiplication.
         """
-        return TriuToeplitzMatrix(self._mat_row * other)
+        return TriuToeplitzMatrix(self._upper_diags * other)
 
     def __matmul__(
         self, other: Union[TriuToeplitzMatrix, Tensor]
@@ -143,7 +136,7 @@ class TriuToeplitzMatrix(StructuredMatrix):
             the result will be a PyTorch tensor. If a triu Toeplitz matrix was passed,
             the result will be returned as a ``TriuToeplitzMatrix``.
         """
-        row = self._mat_row
+        row = self._upper_diags
         dim = row.shape[0]
 
         if isinstance(other, Tensor):
@@ -152,7 +145,7 @@ class TriuToeplitzMatrix(StructuredMatrix):
 
         else:
             # need to create fake channel dimensions
-            conv_input = pad(other._mat_row, (dim - 1, 0)).unsqueeze(0)
+            conv_input = pad(other._upper_diags, (dim - 1, 0)).unsqueeze(0)
             conv_weight = row.flip(0).unsqueeze(0).unsqueeze(0)
             mat_row = supported_conv1d(conv_input, conv_weight).squeeze(0)
             return TriuToeplitzMatrix(mat_row)
@@ -167,7 +160,7 @@ class TriuToeplitzMatrix(StructuredMatrix):
         Returns:
             The result of ``self.T @ mat``.
         """
-        row = self._mat_row
+        row = self._upper_diags
         dim = row.shape[0]
         coeffs = cat([row.flip(0), zeros(dim - 1, device=row.device, dtype=row.dtype)])
 
@@ -187,8 +180,8 @@ class TriuToeplitzMatrix(StructuredMatrix):
         Returns:
             The trace of the represented matrix.
         """
-        dim = self._mat_row.shape[0]
-        return self._mat_row[0] * dim
+        dim = self._upper_diags.shape[0]
+        return self._upper_diags[0] * dim
 
     def diag_add_(self, value: float) -> TriuToeplitzMatrix:
         """In-place add a value to the diagonal of the represented matrix.
@@ -199,7 +192,7 @@ class TriuToeplitzMatrix(StructuredMatrix):
         Returns:
             A reference to the updated matrix.
         """
-        self._mat_row[0].add_(value)
+        self._upper_diags[0].add_(value)
         return self
 
     ###############################################################################

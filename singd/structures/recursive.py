@@ -2,15 +2,59 @@
 
 from __future__ import annotations
 
-from typing import Tuple, Type, Union
+from typing import Iterator, List, Tuple, Type, Union
 
 from torch import Tensor, block_diag
 
 from singd.structures.base import StructuredMatrix
 
 
-class RecursiveTopRightMatrixTemplate(StructuredMatrix):
-    r"""Template to define recursively structured matrices with top right dense block.
+class RecursiveStructuredMatrix(StructuredMatrix):
+    """Base class for recursively defined structured matrices.
+
+    Note:
+        To register another structured matrix, use the `register_substructure` method.
+        This is similar to PyTorch modules which have a `register_module` method.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the recursively structured matrix."""
+        super().__init__()
+        self._substructure_names: List[str] = []
+
+    def register_substructure(self, substructure: StructuredMatrix, name: str) -> None:
+        """Register a substructure that represents a part of the matrix.
+
+        Args:
+            substructure: A structured matrix
+            name: A name for the structured matrix. The matrix will be available under
+                `self.name`.
+
+        Raises:
+            ValueError: If the name is already in use.
+        """
+        if hasattr(self, name):
+            raise ValueError(f"Variable name {name!r} is already in use.")
+
+        setattr(self, name, substructure)
+        self._substructure_names.append(name)
+
+    def named_tensors(self) -> Iterator[Tuple[str, Tensor]]:
+        """Yield all tensors that represent the matrix and their names.
+
+        Yields:
+            A tuple of the tensor's name and the tensor itself.
+        """
+        for name in self._tensor_names:
+            yield name, getattr(self, name)
+        for name in self._substructure_names:
+            substructure = getattr(self, name)
+            for sub_name, tensor in substructure.named_tensors():
+                yield f"{name}.{sub_name}", tensor
+
+
+class RecursiveTopRightMatrixTemplate(RecursiveStructuredMatrix):
+    r"""Template to define recursive structured matrices with top right dense block.
 
     Note:
         This is a template class. To define an actual class, inherit from this class,
@@ -83,6 +127,7 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
             ValueError: If the dimensions of the blocks do not match or the
                 structured matrices are of wrong type.
         """
+        super().__init__()
         if not isinstance(A, self.CLS_A) or not isinstance(C, self.CLS_C):
             raise ValueError(
                 f"Matrices A and C must be of type {self.CLS_A} and "
@@ -100,20 +145,14 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
         if dim_C > max_dim_C:
             raise ValueError(f"Dim. of C ({dim_A}) exceeds max dim. ({max_dim_C}).")
 
-        self.A = A
-        self.B = B
-        self.C = C
+        self.A: StructuredMatrix
+        self.register_substructure(A, "A")
 
-    @property
-    def _tensors_to_sync(self) -> Tuple[Tensor, ...]:
-        """Tensors that need to be synchronized across devices.
+        self.B: Tensor
+        self.register_tensor(B, "B")
 
-        This is used to support distributed data parallel training.
-
-        Returns:
-            A tuple of tensors that need to be synchronized across devices.
-        """
-        return self.A._tensors_to_sync + (self.B,) + self.C._tensors_to_sync
+        self.C: StructuredMatrix
+        self.register_substructure(C, "C")
 
     @classmethod
     def from_dense(cls, sym_mat: Tensor) -> RecursiveTopRightMatrixTemplate:
@@ -151,8 +190,8 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
         return mat
 
 
-class RecursiveBottomLeftMatrixTemplate(StructuredMatrix):
-    r"""Template to define recursively structured matrices with bottom left dense block.
+class RecursiveBottomLeftMatrixTemplate(RecursiveStructuredMatrix):
+    r"""Template to define recursive structured matrices with bottom left dense block.
 
     Note:
         This is a template class. To define an actual class, inherit from this class,
@@ -225,6 +264,7 @@ class RecursiveBottomLeftMatrixTemplate(StructuredMatrix):
             ValueError: If the dimensions of the blocks do not match or the structured
                 matrices are of wrong type.
         """
+        super().__init__()
         if not isinstance(A, self.CLS_A) or not isinstance(C, self.CLS_C):
             raise ValueError(
                 f"Matrices A and C must be of type {self.CLS_A} and "
@@ -242,20 +282,14 @@ class RecursiveBottomLeftMatrixTemplate(StructuredMatrix):
         if dim_C > max_dim_C:
             raise ValueError(f"Dim. of C ({dim_A}) exceeds max dim. ({max_dim_C}).")
 
-        self.A = A
-        self.B = B
-        self.C = C
+        self.A: StructuredMatrix
+        self.register_substructure(A, "A")
 
-    @property
-    def _tensors_to_sync(self) -> Tuple[Tensor, ...]:
-        """Tensors that need to be synchronized across devices.
+        self.B: Tensor
+        self.register_tensor(B, "B")
 
-        This is used to support distributed data parallel training.
-
-        Returns:
-            A tuple of tensors that need to be synchronized across devices.
-        """
-        return self.A._tensors_to_sync + (self.B,) + self.C._tensors_to_sync
+        self.C: StructuredMatrix
+        self.register_substructure(C, "C")
 
     @classmethod
     def from_dense(cls, sym_mat: Tensor) -> RecursiveBottomLeftMatrixTemplate:

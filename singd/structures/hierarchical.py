@@ -104,6 +104,7 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
         Raises:
             ValueError: If the shapes of the arguments are invalid.
         """
+        super().__init__()
         if A.ndim != 2 or B.ndim != 2 or C.ndim != 1 or D.ndim != 2 or E.ndim != 2:
             raise ValueError(
                 "Invalid tensor dimensions. Expected 2, 2, 1, 2, 2."
@@ -132,22 +133,20 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
                 + " Got {B.shape}."
             )
 
-        self.A = A
-        self.B = B
-        self.C = C
-        self.D = D
-        self.E = E
+        self.A: Tensor
+        self.register_tensor(A, "A")
 
-    @property
-    def _tensors_to_sync(self) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
-        """Tensors that need to be synchronized across devices.
+        self.B: Tensor
+        self.register_tensor(B, "B")
 
-        This is used to support distributed data parallel training.
+        self.C: Tensor
+        self.register_tensor(C, "C")
 
-        Returns:
-            A tuple of tensors that needs to be synchronized across devices.
-        """
-        return (self.A, self.B, self.C, self.D, self.E)
+        self.D: Tensor
+        self.register_tensor(D, "D")
+
+        self.E: Tensor
+        self.register_tensor(E, "E")
 
     @classmethod
     def from_dense(cls, sym_mat: Tensor) -> HierarchicalMatrixTemplate:

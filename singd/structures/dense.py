@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Tuple
-
 from torch import Tensor
 
 from singd.structures.base import StructuredMatrix
@@ -34,19 +32,9 @@ class DenseMatrix(StructuredMatrix):
         Args:
             mat: A symmetric matrix representing \(\mathbf{A}\).
         """
-        self._check_square(mat)
-        self._mat = mat
-
-    @property
-    def _tensors_to_sync(self) -> Tuple[Tensor]:
-        """Tensors that need to be synchronized across devices.
-
-        This is used to support distributed data parallel training.
-
-        Returns:
-            A tensor that needs to be synchronized across devices.
-        """
-        return (self._mat,)
+        super().__init__()
+        self._mat: Tensor
+        self.register_tensor(mat, "_mat")
 
     @classmethod
     def from_dense(cls, sym_mat: Tensor) -> DenseMatrix:

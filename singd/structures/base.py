@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Set, Tuple, Union
+from typing import Iterator, List, Set, Tuple, Union
 from warnings import warn
 
 import torch
@@ -36,8 +36,10 @@ class StructuredMatrix(ABC):
     implemented more efficiently using structure.
 
     Note:
-        If you want to support data parallel training, you also have to implement
-        the `tensors_to_sync` method.
+        You need to register tensors that represent parts of the represented
+        matrix using the `register_tensor` method. This is similar to the
+        mechanism in PyTorch modules, which have a `register_parameter` method.
+        It allows to support many operations out of the box.
 
     Attributes:
         WARN_NAIVE: Warn the user if a method falls back to a naive implementation
@@ -54,19 +56,35 @@ class StructuredMatrix(ABC):
     WARN_NAIVE: bool = True
     WARN_NAIVE_EXCEPTIONS: Set[str] = set()
 
-    @property
-    def _tensors_to_sync(self) -> Tuple[Tensor, ...]:
-        """Tensors that need to be synchronized across devices.
+    def __init__(self) -> None:
+        """Initialize the structured matrix."""
+        self._tensor_names: List[str] = []
 
-        This is used to support distributed data parallel training.
+    def register_tensor(self, tensor: Tensor, name: str) -> None:
+        """Register a tensor that represents a part of the matrix structure.
 
-        Returns: # noqa: DAR202
-            A tuple of tensors that need to be synchronized across devices.
+        Args:
+            tensor: A tensor that represents a part of the matrix structure.
+            name: A name for the tensor. The tensor will be available under
+                `self.name`.
 
         Raises:
-            NotImplementedError: Must be implemented by a child class.
+            ValueError: If the name is already in use.
         """
-        raise NotImplementedError
+        if hasattr(self, name):
+            raise ValueError(f"Variable name {name!r} is already in use.")
+
+        setattr(self, name, tensor)
+        self._tensor_names.append(name)
+
+    def named_tensors(self) -> Iterator[Tuple[str, Tensor]]:
+        """Yield all tensors that represent the matrix and their names.
+
+        Yields:
+            A tuple of the tensor's name and the tensor itself.
+        """
+        for name in self._tensor_names:
+            yield name, getattr(self, name)
 
     def __matmul__(
         self, other: Union[StructuredMatrix, Tensor]
@@ -217,7 +235,7 @@ class StructuredMatrix(ABC):
             object(s), else `None`.
         """
         handles = []
-        for tensor in self._tensors_to_sync:
+        for _, tensor in self.named_tensors():
             tensor = tensor.contiguous()
             if async_op:
                 handles.append(
@@ -303,15 +321,11 @@ class StructuredMatrix(ABC):
         and
         [here](https://pytorch.org/docs/stable/generated/torch.linalg.matrix_norm.html).
 
-        Note:
-            This assumes that all tensors in `self._tensors_to_sync` contain
-            elements of the matrix.
-
         Returns:
             The matrix's infinity vector norm.
         """
         # NOTE `.max` can only be called on tensors with non-zero shape
-        return max(t.abs().max() for t in self._tensors_to_sync if t.numel() > 0)
+        return max(t.abs().max() for _, t in self.named_tensors() if t.numel() > 0)
 
     ###############################################################################
     #                      Special initialization operations                      #
