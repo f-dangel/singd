@@ -6,17 +6,24 @@ from singd.structures.recursive import RecursiveTopRightMatrixTemplate
 
 
 class TriuTopLeftDiagonalMatrix(RecursiveTopRightMatrixTemplate):
-    """Sparse upper-triangular matrix with top left diagonal entries.
+    r"""Sparse upper-triangular matrix with top left diagonal entries.
 
-    ``
-    [[D, c1],
-    [[0, c2]]
-    ``
+    This matrix is defined as follows:
+
+    \(
+    \begin{pmatrix}
+        \mathbf{A} & \mathbf{b} \\
+        \mathbf{0} & c \\
+    \end{pmatrix} \in \mathbb{R}^{K \times K}
+    \)
 
     where
-    - ``D`` is a diagonal matrix,
-    - ``c1`` is a row vector, and
-    - ``c2`` is a scalar.
+
+    - \(\mathbf{A} \in \mathbb{R}^{(K-1)\times (K-1)}\) is a diagonal matrix represented
+        as a `DiagonalMatrix`.
+    - \(\mathbf{b} \in \mathbb{R}^{K-1}\) is a column vector, represented as PyTorch
+        `Tensor`, and
+    - \(c \in \mathbb{R}\) is a scalar, represented by a `DenseMatrix`.
     """
 
     MAX_DIMS = (float("inf"), 1)
