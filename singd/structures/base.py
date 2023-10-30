@@ -156,6 +156,20 @@ class StructuredMatrix(ABC):
         self._warn_naive_implementation("__mul__")
         return self.from_dense(self.to_dense() * other)
 
+    def mul_(self, value: float) -> StructuredMatrix:
+        """In-place multiplication with a scalar.
+
+        Args:
+            value: A scalar that will be multiplied onto the structured matrix.
+
+        Returns:
+            Reference to the in-place updated matrix.
+        """
+        for _, tensor in self.named_tensors():
+            tensor.mul_(value)
+
+        return self
+
     def __add__(self, other: StructuredMatrix) -> StructuredMatrix:
         """Add another matrix of same structure.
 
@@ -167,6 +181,24 @@ class StructuredMatrix(ABC):
         """
         self._warn_naive_implementation("__add__")
         return self.from_dense(self.to_dense() + other.to_dense())
+
+    def add_(self, other: StructuredMatrix, alpha: float = 1.0) -> StructuredMatrix:
+        """In-place addition with another structured matrix.
+
+        Args:
+            other: Another structured matrix which will be added in-place.
+            alpha: A scalar that will be multiplied onto `other` before adding it.
+                Default: `1.0`.
+
+        Returns:
+            Reference to the in-place updated matrix.
+        """
+        for (_, tensor), (_, tensor_other) in zip(
+            self.named_tensors(), other.named_tensors()
+        ):
+            tensor.add_(tensor_other, alpha=alpha)
+
+        return self
 
     def __sub__(self, other: StructuredMatrix) -> StructuredMatrix:
         """Subtract another matrix of same structure.

@@ -376,6 +376,45 @@ class _TestStructuredMatrix(ABC):
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_add_(self, dev: device, dtype: torch.dtype, alpha: float = -0.5):
+        """Test in-place addition of a structured matrix.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+            alpha: The value to scale the other matrix before adding. Default: `-0.5`.
+        """
+        tolerances = {
+            "rtol": 2e-2 if is_half_precision(dtype) else 1e-5,
+            "atol": 1e-4 if is_half_precision(dtype) else 1e-7,
+        }
+
+        for dim in self.DIMS:
+            manual_seed(0)
+            sym_mat1 = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+            sym_mat2 = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+
+            truth = self.project(sym_mat1.clone()).add_(
+                self.project(sym_mat2.clone()), alpha=alpha
+            )
+
+            # Call in-place operation without assigning the return to a variable
+            structured = self.STRUCTURED_MATRIX_CLS.from_dense(sym_mat1.clone())
+            structured.add_(
+                self.STRUCTURED_MATRIX_CLS.from_dense(sym_mat2.clone()), alpha=alpha
+            )
+            report_nonclose(truth, structured.to_dense(), **tolerances)
+
+            # Call in-place operation and assign the return to a variable
+            structured = self.STRUCTURED_MATRIX_CLS.from_dense(sym_mat1.clone())
+            updated_structured = structured.add_(
+                self.STRUCTURED_MATRIX_CLS.from_dense(sym_mat2.clone()), alpha=alpha
+            )
+            assert structured is updated_structured  # point to same object in memory
+            report_nonclose(truth, updated_structured.to_dense(), **tolerances)
+
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
     def test_sub(self, dev: device, dtype: torch.dtype):
         """Test matrix subtraction of two structured matrices.
 
@@ -418,6 +457,38 @@ class _TestStructuredMatrix(ABC):
             sym_mat = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
             factor = 0.3
             _test_mul(sym_mat, factor, self.STRUCTURED_MATRIX_CLS, self.project)
+
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_mul_(self, dev: device, dtype: torch.dtype, value: float = -1.23):
+        """Test in-place multiplication of a structured matrix.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+            value: The value to multiply with. Default: `-1.23`.
+        """
+        tolerances = {
+            "rtol": 2e-2 if is_half_precision(dtype) else 1e-5,
+            "atol": 1e-4 if is_half_precision(dtype) else 1e-7,
+        }
+
+        for dim in self.DIMS:
+            manual_seed(0)
+            sym_mat = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+
+            truth = self.project(sym_mat.clone()).mul_(value)
+
+            # Call in-place operation without assigning the return to a variable
+            structured = self.STRUCTURED_MATRIX_CLS.from_dense(sym_mat.clone())
+            structured.mul_(value)
+            report_nonclose(truth, structured.to_dense(), **tolerances)
+
+            # Call in-place operation and assign the return to a variable
+            structured = self.STRUCTURED_MATRIX_CLS.from_dense(sym_mat.clone())
+            updated_structured = structured.mul_(value)
+            assert structured is updated_structured  # point to same object in memory
+            report_nonclose(truth, updated_structured.to_dense(), **tolerances)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)

@@ -488,7 +488,7 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             c_squared = damping * (C_tC * (1.0 / d)).trace()
             second_term = K_tK * c_squared
 
-        new_m_K = (first_term + second_term).diag_add_(-1.0) * scale
+        new_m_K = (first_term + second_term).diag_add_(-1.0).mul_(scale)
 
         # step for m_C
         if kfac_like:
@@ -500,12 +500,12 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             kappa_squared = damping * (K_tK * (1.0 / p)).trace()
             second_term = C_tC * kappa_squared
 
-        new_m_C = (first_term + second_term).diag_add_(-1.0) * scale
+        new_m_C = (first_term + second_term).diag_add_(-1.0).mul_(scale)
 
         # 2) APPLY UPDATE
         if alpha1 != 0.0:
-            new_m_C += self.m_Cs[module_name] * alpha1
-            new_m_K += self.m_Ks[module_name] * alpha1
+            new_m_C.add_(self.m_Cs[module_name], alpha=alpha1)
+            new_m_K.add_(self.m_Ks[module_name], alpha=alpha1)
             self.m_Cs[module_name] = new_m_C
             self.m_Ks[module_name] = new_m_K
 
@@ -525,8 +525,8 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             beta1_K /= max(1.0, new_m_K.infinity_vector_norm())
             beta1_C /= max(1.0, new_m_C.infinity_vector_norm())
 
-        self.Ks[module_name] = K - (K @ new_m_K) * beta1_K
-        self.Cs[module_name] = C - (C @ new_m_C) * beta1_C
+        self.Ks[module_name].add_(K @ new_m_K, alpha=-beta1_K)
+        self.Cs[module_name].add_(C @ new_m_C, alpha=-beta1_C)
 
     def _accumulate_H_terms(
         self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]
