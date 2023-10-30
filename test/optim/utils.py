@@ -8,12 +8,6 @@ from torch.nn import Module
 
 from singd.optim.optimizer import SINGD
 from singd.structures.base import StructuredMatrix
-from singd.structures.blockdiagonal import BlockDiagonalMatrixTemplate
-from singd.structures.dense import DenseMatrix
-from singd.structures.diagonal import DiagonalMatrix
-from singd.structures.hierarchical import HierarchicalMatrixTemplate
-from singd.structures.triltoeplitz import TrilToeplitzMatrix
-from singd.structures.triutoeplitz import TriuToeplitzMatrix
 
 
 def check_preconditioner_structures(optim: SINGD, structures: Tuple[str, str]):
@@ -58,25 +52,9 @@ def verify_dtype(mat: StructuredMatrix, dtype: dtype):
         dtype: The dtype to check for.
 
     Raises:
-        NotImplementedError: If the structure is not supported.
         RuntimeError: If the structure is not of the specified type.
     """
-    if isinstance(mat, DenseMatrix):
-        tensors_to_check = (mat._mat,)
-    elif isinstance(mat, DiagonalMatrix):
-        tensors_to_check = (mat._mat_diag,)
-    elif issubclass(mat.__class__, BlockDiagonalMatrixTemplate):
-        tensors_to_check = (mat._blocks, mat._last)
-    elif issubclass(mat.__class__, HierarchicalMatrixTemplate):
-        tensors_to_check = (mat.A, mat.B, mat.C, mat.D, mat.E)
-    elif isinstance(mat, TriuToeplitzMatrix):
-        tensors_to_check = (mat._mat_row,)
-    elif isinstance(mat, TrilToeplitzMatrix):
-        tensors_to_check = (mat._mat_column,)
-    else:
-        raise NotImplementedError(f"{mat.__class__.__name__} is not yet supported.")
-
-    dtypes = [tensor.dtype for tensor in tensors_to_check]
+    dtypes = [tensor.dtype for _, tensor in mat.named_tensors()]
     if any(d != dtype for d in dtypes):
         raise RuntimeError(f"Expected dtype {dtype}, got {dtypes}.")
 
