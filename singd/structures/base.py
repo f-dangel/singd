@@ -63,18 +63,13 @@ class StructuredMatrix(ABC):
     def register_tensor(self, tensor: Tensor, name: str) -> None:
         """Register a tensor that represents a part of the matrix structure.
 
-        <<<<<<< HEAD
-                Args:
-                    tensor: A tensor that represents a part of the matrix structure.
-                    name: A name for the tensor. The tensor will be available under
-                        `self.name`.
-        =======
-                Returns: # noqa: DAR202
-                    A tuple of tensors that need to be synchronized across devices.
-        >>>>>>> main
+        Args:
+            tensor: A tensor that represents a part of the matrix structure.
+            name: A name for the tensor. The tensor will be available under
+                `self.name`.
 
-                Raises:
-                    ValueError: If the name is already in use.
+        Raises:
+            ValueError: If the name is already in use.
         """
         if hasattr(self, name):
             raise ValueError(f"Variable name {name!r} is already in use.")
