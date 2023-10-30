@@ -49,7 +49,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
     }
 
     def __init__(self, lower_diags: Tensor) -> None:
-        """Store the lower-triangular Toeplitz matrix internally.
+        r"""Store the lower-triangular Toeplitz matrix internally.
 
         Args:
             lower_diags: The vector \(\mathbf{d}\) containing the constants of all
