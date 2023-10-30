@@ -200,17 +200,6 @@ class StructuredMatrix(ABC):
 
         return self
 
-    def __sub__(self, other: StructuredMatrix) -> StructuredMatrix:
-        """Subtract another matrix of same structure.
-
-        Args:
-            other: Another structured matrix which will be subtracted.
-
-        Returns:
-            A structured matrix resulting from the subtraction.
-        """
-        return self + (other * (-1.0))
-
     def rmatmat(self, mat: Tensor) -> Tensor:
         """Multiply the structured matrix's transpose onto a matrix (`self.T @ mat`).
 

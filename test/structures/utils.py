@@ -93,35 +93,6 @@ def _test_add(
     )
 
 
-def _test_sub(
-    sym_mat1: Tensor,
-    sym_mat2: Tensor,
-    structured_matrix_cls: Type[StructuredMatrix],
-    project: Callable[[Tensor], Tensor],
-):
-    """Test `-` operation of any child of `StructuredMatrix`.
-
-    Args:
-        sym_mat1: A symmetric dense matrix which will be converted into a structured
-            matrix.
-        sym_mat2: Another symmetric dense matrix which be converted into a structured
-            matrix.
-        structured_matrix_cls: The class of the structured matrix into which
-            `sym_mat1` and `sym_mat2` will be converted.
-        project: A function which converts an arbitrary symmetric dense matrix into a
-            dense matrix of the tested structure. Used to establish the ground truth.
-    """
-    truth = project(sym_mat1) - project(sym_mat2)
-    sym_mat1_structured = structured_matrix_cls.from_dense(sym_mat1)
-    sym_mat2_structured = structured_matrix_cls.from_dense(sym_mat2)
-    report_nonclose(
-        truth,
-        (sym_mat1_structured - sym_mat2_structured).to_dense(),
-        rtol=3e-1 if is_half_precision(sym_mat1.dtype) else 1e-5,
-        atol=1e-4 if is_half_precision(sym_mat1.dtype) else 5e-7,
-    )
-
-
 def _test_mul(
     sym_mat: Tensor,
     factor: float,
@@ -412,21 +383,6 @@ class _TestStructuredMatrix(ABC):
             )
             assert structured is updated_structured  # point to same object in memory
             report_nonclose(truth, updated_structured.to_dense(), **tolerances)
-
-    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
-    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
-    def test_sub(self, dev: device, dtype: torch.dtype):
-        """Test matrix subtraction of two structured matrices.
-
-        Args:
-            dev: The device on which to run the test.
-            dtype: The data type of the matrices.
-        """
-        for dim in self.DIMS:
-            manual_seed(0)
-            sym_mat1 = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
-            sym_mat2 = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
-            _test_sub(sym_mat1, sym_mat2, self.STRUCTURED_MATRIX_CLS, self.project)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
