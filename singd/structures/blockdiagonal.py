@@ -90,6 +90,7 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
         Raises:
             ValueError: If the passed tensors have incorrect shape.
         """
+        super().__init__()
         if blocks.ndim != 3:
             raise ValueError(
                 f"Diagonal blocks must be 3-dimensional, got {blocks.ndim}."

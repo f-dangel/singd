@@ -109,7 +109,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
         Returns:
             A tril Toeplitz matrix resulting from the addition.
         """
-        return TrilToeplitzMatrix(self._lower_diags + other._mat_column)
+        return TrilToeplitzMatrix(self._lower_diags + other._lower_diags)
 
     def __mul__(self, other: float) -> TrilToeplitzMatrix:
         """Multiply with a scalar.
@@ -147,7 +147,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
 
         else:
             # need to create fake channel dimensions
-            conv_input = pad(other._mat_column, (dim - 1, 0)).unsqueeze(0)
+            conv_input = pad(other._lower_diags, (dim - 1, 0)).unsqueeze(0)
             conv_weight = col.flip(0).unsqueeze(0).unsqueeze(0)
             mat_column = supported_conv1d(conv_input, conv_weight).squeeze(0)
             return TrilToeplitzMatrix(mat_column)
