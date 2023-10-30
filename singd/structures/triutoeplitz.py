@@ -174,14 +174,13 @@ class TriuToeplitzMatrix(StructuredMatrix):
     #                        Special operations for IF-KFAC                       #
     ###############################################################################
 
-    def trace(self) -> Tensor:
-        """Compute the trace of the represented matrix.
+    def average_trace(self) -> Tensor:
+        """Compute the average trace of the represented matrix.
 
         Returns:
-            The trace of the represented matrix.
+            The average trace of the represented matrix.
         """
-        dim = self._upper_diags.shape[0]
-        return self._upper_diags[0] * dim
+        return self._upper_diags[0]
 
     def diag_add_(self, value: float) -> TriuToeplitzMatrix:
         """In-place add a value to the diagonal of the represented matrix.

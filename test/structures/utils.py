@@ -14,12 +14,7 @@ from torch import Tensor, device, manual_seed, rand, zeros
 from torch.linalg import vector_norm
 
 from singd.structures.base import StructuredMatrix
-from singd.structures.utils import (
-    is_half_precision,
-    supported_eye,
-    supported_matmul,
-    supported_trace,
-)
+from singd.structures.utils import is_half_precision, supported_eye, supported_matmul
 
 DTYPES = [torch.float32, torch.float16, torch.bfloat16]
 DTYPE_IDS = [str(dt).split(".")[-1] for dt in DTYPES]
@@ -259,11 +254,11 @@ def _test_eye(
     report_nonclose(truth, identity_matrix)
 
 
-def _test_trace(
+def _test_average_trace(
     sym_mat: Tensor,
     structured_matrix_cls: Type[StructuredMatrix],
 ):
-    """Test `trace` operation of any child of `StructuredMatrix`.
+    """Test `average_trace` operation of any child of `StructuredMatrix`.
 
     Args:
         sym_mat: A symmetric dense matrix which will be converted into a structured
@@ -271,11 +266,11 @@ def _test_trace(
         structured_matrix_cls: The class of the structured matrix into which `sym_mat`
             will be converted.
     """
-    truth = supported_trace(sym_mat)
+    truth = sym_mat.diag().mean()
     mat_structured = structured_matrix_cls.from_dense(sym_mat)
     report_nonclose(
         truth,
-        mat_structured.trace(),
+        mat_structured.average_trace(),
         rtol=1e-2 if is_half_precision(sym_mat.dtype) else 1e-5,
         atol=1e-4 if is_half_precision(sym_mat.dtype) else 1e-7,
     )
@@ -524,8 +519,8 @@ class _TestStructuredMatrix(ABC):
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
-    def test_trace(self, dev: device, dtype: torch.dtype):
-        """Test trace of a structured dense matrix.
+    def test_average_trace(self, dev: device, dtype: torch.dtype):
+        """Test average trace of a structured dense matrix.
 
         Args:
             dev: The device on which to run the test.
@@ -535,7 +530,7 @@ class _TestStructuredMatrix(ABC):
             manual_seed(0)
 
             mat = rand((dim, dim), device=dev, dtype=dtype)
-            _test_trace(mat, self.STRUCTURED_MATRIX_CLS)
+            _test_average_trace(mat, self.STRUCTURED_MATRIX_CLS)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
