@@ -1,8 +1,8 @@
-"""Toeplitz matrix implemented in the ``StructuredMatrix`` interface."""
+"""Toeplitz matrix implemented in the `StructuredMatrix` interface."""
 
 from __future__ import annotations
 
-from typing import Tuple, Union
+from typing import Union
 
 import torch
 from torch import Tensor, arange, cat, zeros
@@ -18,10 +18,29 @@ from singd.structures.utils import (
 
 
 class TrilToeplitzMatrix(StructuredMatrix):
-    """Lower-triangular Toeplitz-structured matrix in ``StructuredMatrix`` interface.
+    r"""Class for lower-triangular Toeplitz-structured matrices.
 
-    We follow the representation of such matrices using the SciPy terminology, see
-    https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.toeplitz.html
+    A lower-triangular Toeplitz matrix is defined by:
+
+    \(
+    \begin{pmatrix}
+        d_1 & 0 & \cdots & 0 \\
+        d_2 & d_1 & \ddots & \vdots \\
+        \vdots & \ddots & \ddots & 0 \\
+        d_K & \cdots & d_2 & d_1 \\
+    \end{pmatrix} \in \mathbb{R}^{K \times K}
+    \quad
+    \text{with}
+    \quad
+    \mathbf{d}
+    :=
+    \begin{pmatrix}
+        d_1 \\
+        d_2 \\
+        \vdots \\
+        d_K \\
+    \end{pmatrix} \in \mathbb{R}^K\,.
+    \)
     """
 
     WARN_NAIVE_EXCEPTIONS = {  # hard to leverage structure for efficient implementation
@@ -29,26 +48,16 @@ class TrilToeplitzMatrix(StructuredMatrix):
         "from_inner2",
     }
 
-    def __init__(self, diag_consts: Tensor) -> None:
-        """Store the lower-triangular Toeplitz matrix internally.
+    def __init__(self, lower_diags: Tensor) -> None:
+        r"""Store the lower-triangular Toeplitz matrix internally.
 
         Args:
-            diag_consts: A vector containing the constants of all diagonals, i.e.
-                the first entry corresponds to the constant on the diagonal, the
-                second entry to the constant on the lower first off-diagonal, etc.
+            lower_diags: The vector \(\mathbf{d}\) containing the constants of all
+                lower diagonals, starting with the value on the main diagonal.
         """
-        self._mat_column = diag_consts
-
-    @property
-    def _tensors_to_sync(self) -> Tuple[Tensor]:
-        """Tensors that need to be synchronized across devices.
-
-        This is used to support distributed data parallel training.
-
-        Returns:
-            A tensor that need to be synchronized across devices.
-        """
-        return (self._mat_column,)
+        super().__init__()
+        self._lower_diags: Tensor
+        self.register_tensor(lower_diags, "_lower_diags")
 
     @classmethod
     def from_dense(cls, mat: Tensor) -> TrilToeplitzMatrix:
@@ -56,10 +65,10 @@ class TrilToeplitzMatrix(StructuredMatrix):
 
         Args:
             mat: A dense and symmetric square matrix which will be approximated by a
-                ``TrilToeplitzMatrix``.
+                `TrilToeplitzMatrix`.
 
         Returns:
-            ``TrilToeplitzMatrix`` approximating the passed matrix.
+            `TrilToeplitzMatrix` approximating the passed matrix.
         """
         assert mat.shape[0] == mat.shape[1]
         traces = all_traces(mat)
@@ -83,12 +92,12 @@ class TrilToeplitzMatrix(StructuredMatrix):
         Returns:
             The represented matrix as PyTorch tensor.
         """
-        dim = self._mat_column.size(0)
+        dim = self._lower_diags.size(0)
         i, j = torch.tril_indices(row=dim, col=dim, offset=0)
         mat = torch.zeros(
-            (dim, dim), device=self._mat_column.device, dtype=self._mat_column.dtype
+            (dim, dim), device=self._lower_diags.device, dtype=self._lower_diags.dtype
         )
-        mat[i, j] = self._mat_column[i - j]
+        mat[i, j] = self._lower_diags[i - j]
         return mat
 
     def __add__(self, other: TrilToeplitzMatrix) -> TrilToeplitzMatrix:
@@ -100,7 +109,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
         Returns:
             A tril Toeplitz matrix resulting from the addition.
         """
-        return TrilToeplitzMatrix(self._mat_column + other._mat_column)
+        return TrilToeplitzMatrix(self._lower_diags + other._lower_diags)
 
     def __mul__(self, other: float) -> TrilToeplitzMatrix:
         """Multiply with a scalar.
@@ -111,7 +120,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
         Returns:
             A triu Toeplitz matrix resulting from the multiplication.
         """
-        return TrilToeplitzMatrix(self._mat_column * other)
+        return TrilToeplitzMatrix(self._lower_diags * other)
 
     def __matmul__(
         self, other: Union[TrilToeplitzMatrix, Tensor]
@@ -120,14 +129,14 @@ class TrilToeplitzMatrix(StructuredMatrix):
 
         Args:
             other: A matrix which will be multiplied onto. Can be represented by a
-                PyTorch tensor or another ``TrilToeplitzMatrix``.
+                PyTorch tensor or another `TrilToeplitzMatrix`.
 
         Returns:
             Result of the multiplication. If a PyTorch tensor was passed as argument,
             the result will be a PyTorch tensor. If a triu Toeplitz matrix was passed,
-            the result will be returned as a ``TrilToeplitzMatrix``.
+            the result will be returned as a `TrilToeplitzMatrix`.
         """
-        col = self._mat_column
+        col = self._lower_diags
         dim = col.shape[0]
 
         if isinstance(other, Tensor):
@@ -138,22 +147,22 @@ class TrilToeplitzMatrix(StructuredMatrix):
 
         else:
             # need to create fake channel dimensions
-            conv_input = pad(other._mat_column, (dim - 1, 0)).unsqueeze(0)
+            conv_input = pad(other._lower_diags, (dim - 1, 0)).unsqueeze(0)
             conv_weight = col.flip(0).unsqueeze(0).unsqueeze(0)
             mat_column = supported_conv1d(conv_input, conv_weight).squeeze(0)
             return TrilToeplitzMatrix(mat_column)
 
     def rmatmat(self, mat: Tensor) -> Tensor:
-        """Multiply ``mat`` with the transpose of the structured matrix.
+        """Multiply `mat` with the transpose of the structured matrix.
 
         Args:
             mat: A matrix which will be multiplied by the transpose of the represented
                 diagonal matrix.
 
         Returns:
-            The result of ``self.T @ mat``.
+            The result of `self.T @ mat`.
         """
-        col = self._mat_column
+        col = self._lower_diags
         dim = col.shape[0]
         coeffs = cat([zeros(dim - 1, device=col.device, dtype=col.dtype), col])
 
@@ -167,14 +176,13 @@ class TrilToeplitzMatrix(StructuredMatrix):
     #                        Special operations for IF-KFAC                       #
     ###############################################################################
 
-    def trace(self) -> Tensor:
-        """Compute the trace of the represented matrix.
+    def average_trace(self) -> Tensor:
+        """Compute the average trace of the represented matrix.
 
         Returns:
-            The trace of the represented matrix.
+            The average trace of the represented matrix.
         """
-        dim = self._mat_column.shape[0]
-        return self._mat_column[0] * dim
+        return self._lower_diags[0]
 
     def diag_add_(self, value: float) -> TrilToeplitzMatrix:
         """In-place add a value to the diagonal of the represented matrix.
@@ -185,7 +193,7 @@ class TrilToeplitzMatrix(StructuredMatrix):
         Returns:
             A reference to the updated matrix.
         """
-        self._mat_column[0].add_(value)
+        self._lower_diags[0].add_(value)
         return self
 
     ###############################################################################

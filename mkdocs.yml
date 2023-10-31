@@ -10,6 +10,10 @@ nav:
     - Code Examples: generated/gallery
     - API Documentation: api.md
     - Developer Notes: develop.md
+    - Internal:
+      - Structures: structures.md
+      - Templates: templates.md
+      - Interface: interface.md
 theme:
     name: material
     features:
@@ -34,7 +38,7 @@ plugins:
                 options:
                       show_root_heading: true
                       show_source: true
-                      show_bases: false
+                      show_bases: true
                       show_signature_annotations: true
                       separate_signature: true
                       docstring_section_style: list

@@ -2,15 +2,64 @@
 
 from __future__ import annotations
 
-from typing import Tuple, Type, Union
+from typing import Iterator, List, Tuple, Type, Union
 
 from torch import Tensor, block_diag
 
 from singd.structures.base import StructuredMatrix
 
 
-class RecursiveTopRightMatrixTemplate(StructuredMatrix):
+class RecursiveStructuredMatrix(StructuredMatrix):
+    """Base class for recursively defined structured matrices.
+
+    Note:
+        To register another structured matrix, use the `register_substructure` method.
+        This is similar to PyTorch modules which have a `register_module` method.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the recursively structured matrix."""
+        super().__init__()
+        self._substructure_names: List[str] = []
+
+    def register_substructure(self, substructure: StructuredMatrix, name: str) -> None:
+        """Register a substructure that represents a part of the matrix.
+
+        Args:
+            substructure: A structured matrix
+            name: A name for the structured matrix. The matrix will be available under
+                `self.name`.
+
+        Raises:
+            ValueError: If the name is already in use.
+        """
+        if hasattr(self, name):
+            raise ValueError(f"Variable name {name!r} is already in use.")
+
+        setattr(self, name, substructure)
+        self._substructure_names.append(name)
+
+    def named_tensors(self) -> Iterator[Tuple[str, Tensor]]:
+        """Yield all tensors that represent the matrix and their names.
+
+        Yields:
+            A tuple of the tensor's name and the tensor itself.
+        """
+        for name in self._tensor_names:
+            yield name, getattr(self, name)
+        for name in self._substructure_names:
+            substructure = getattr(self, name)
+            for sub_name, tensor in substructure.named_tensors():
+                yield f"{name}.{sub_name}", tensor
+
+
+class RecursiveTopRightMatrixTemplate(RecursiveStructuredMatrix):
     r"""Template to define recursive structured matrices with top right dense block.
+
+    Note:
+        This is a template class. To define an actual class, inherit from this class,
+        then specify the attributes `MAX_DIMS`, `CLS_A`, and `CLS_C`. See the example
+        below.
 
     This matrix is defined by
 
@@ -24,33 +73,67 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
     - \(\mathbf{A}, \mathbf{C}\) are structured matrices (which can be recursive).
     - \(\mathbf{B}\) is a dense rectangular matrix.
 
-    Note:
-        This is a template class. To define an actual class, inherit from this class,
-        then specify the attributes `MAX_DIMS`, `CLS_A`, and `CLS_C`.
 
     Attributes:
-        MAX_DIMS: A tuple that contains integers and `float('inf')` which indicate
-            the maximum dimension of `A` and `C`. For example, `(10, float('inf'))`
-            means that `A` will be used for dimensions up to 10, and `C` will be used
-            in addition for larger dimensions.
-        CLS_A: Structured matrix class used for the top left block.
-        CLS_C: Structured matrix class used for the the bottom right block.
+        MAX_DIMS: A tuple that contains an integer and a `float('inf')` which indicate
+            the maximum dimensions of \(\mathbf{A}\) and \(\mathbf{C}\). For example,
+            `(10, float('inf'))` means that only \(\mathbf{A}\) will be used for
+            dimensions up to 10, and \(\mathbf{C}\) will be used in addition for larger
+            dimensions.
+        CLS_A: Structured matrix class used for the top left block \(\mathbf{A}\).
+        CLS_C: Structured matrix class used for the the bottom right block
+            \(\mathbf{B}\).
+
+    Examples:
+        >>> from torch import ones
+        >>> from singd.structures.dense import DenseMatrix
+        >>> from singd.structures.diagonal import DiagonalMatrix
+        >>>
+        >>> class Dense3DiagonalTopRightMatrix(RecursiveTopRightMatrixTemplate):
+        ...     '''Structured matrix with 3 dense rows upper and lower diagonal part.'''
+        ...     MAX_DIMS = (3, float('inf'))
+        ...     CLS_A = DenseMatrix
+        ...     CLS_C = DiagonalMatrix
+        >>>
+        >>> # A 5x5 matrix with 3 dense rows in the upper and lower diagonal part
+        >>> A = DenseMatrix(ones(3, 3))
+        >>> B = 2 * ones(3, 2)
+        >>> C = DiagonalMatrix(3 * ones(2))
+        >>> mat = Dense3DiagonalTopRightMatrix(A, B, C)
+        >>> mat.to_dense()
+        tensor([[1., 1., 1., 2., 2.],
+                [1., 1., 1., 2., 2.],
+                [1., 1., 1., 2., 2.],
+                [0., 0., 0., 3., 0.],
+                [0., 0., 0., 0., 3.]])
     """
     MAX_DIMS: Tuple[Union[int, float], Union[int, float]]
     CLS_A: Type[StructuredMatrix]
     CLS_C: Type[StructuredMatrix]
 
     def __init__(self, A: StructuredMatrix, B: Tensor, C: StructuredMatrix):
-        """Store the matrix internally.
+        r"""Store the matrix internally.
 
         Args:
-            A: Top left block.
-            B: Top right block.
-            C: Bottom right block.
+            A: Structured matrix representing the top left block \(\mathbf{A}\).
+            B: Rectangular tensor representing the top right block \(\mathbf{B}\).
+            C: Structured matrix representing the bottom right block \(\mathbf{C}\).
+
+        Note:
+            For performance reasons, symmetry is not checked internally and must
+            be ensured by the caller.
 
         Raises:
-            ValueError: If the dimensions of the blocks do not match.
+            ValueError: If the dimensions of the blocks do not match or the
+                structured matrices are of wrong type.
         """
+        super().__init__()
+        if not isinstance(A, self.CLS_A) or not isinstance(C, self.CLS_C):
+            raise ValueError(
+                f"Matrices A and C must be of type {self.CLS_A} and "
+                f"{self.CLS_C}, respectively. Got {type(A)} and {type(C)}."
+            )
+
         # TODO Add a `dim` property to make this cheaper
         dim_A, dim_C = A.to_dense().shape[0], C.to_dense().shape[0]
         if B.shape != (dim_A, dim_C):
@@ -62,20 +145,14 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
         if dim_C > max_dim_C:
             raise ValueError(f"Dim. of C ({dim_A}) exceeds max dim. ({max_dim_C}).")
 
-        self.A = A
-        self.B = B
-        self.C = C
+        self.A: StructuredMatrix
+        self.register_substructure(A, "A")
 
-    @property
-    def _tensors_to_sync(self) -> Tuple[Tensor, ...]:
-        """Tensors that need to be synchronized across devices.
+        self.B: Tensor
+        self.register_tensor(B, "B")
 
-        This is used to support distributed data parallel training.
-
-        Returns:
-            A tuple of tensors that need to be synchronized across devices.
-        """
-        return self.A._tensors_to_sync + (self.B,) + self.C._tensors_to_sync
+        self.C: StructuredMatrix
+        self.register_substructure(C, "C")
 
     @classmethod
     def from_dense(cls, sym_mat: Tensor) -> RecursiveTopRightMatrixTemplate:
@@ -113,8 +190,13 @@ class RecursiveTopRightMatrixTemplate(StructuredMatrix):
         return mat
 
 
-class RecursiveBottomLeftMatrixTemplate(StructuredMatrix):
+class RecursiveBottomLeftMatrixTemplate(RecursiveStructuredMatrix):
     r"""Template to define recursive structured matrices with bottom left dense block.
+
+    Note:
+        This is a template class. To define an actual class, inherit from this class,
+        then specify the attributes `MAX_DIMS`, `CLS_A`, and `CLS_C`. See the example
+        below.
 
     This matrix is defined by
 
@@ -128,33 +210,67 @@ class RecursiveBottomLeftMatrixTemplate(StructuredMatrix):
     - \(\mathbf{A}, \mathbf{C}\) are structured matrices (which can be recursive).
     - \(\mathbf{B}\) is a dense rectangular matrix.
 
-    Note:
-        This is a template class. To define an actual class, inherit from this class,
-        then specify the attributes `MAX_DIMS`, `CLS_A`, and `CLS_C`.
 
     Attributes:
-        MAX_DIMS: A tuple that contains integers and `float('inf')` which indicate
-            the maximum dimension of `A` and `C`. For example, `(10, float('inf'))`
-            means that `A` will be used for dimensions up to 10, and `C` will be used
-            in addition for larger dimensions.
-        CLS_A: Structured matrix class used for the top left block.
-        CLS_C: Structured matrix class used for the the bottom right block.
+        MAX_DIMS: A tuple that contains an integer and a `float('inf')` which indicate
+            the maximum dimensions of \(\mathbf{A}\) and \(\mathbf{C}\). For example,
+            `(10, float('inf'))` means that only \(\mathbf{A}\) will be used for
+            dimensions up to 10, and \(\mathbf{C}\) will be used in addition for larger
+            dimensions.
+        CLS_A: Structured matrix class used for the top left block \(\mathbf{A}\).
+        CLS_C: Structured matrix class used for the the bottom right block
+            \(\mathbf{C}\).
+
+    Examples:
+        >>> from torch import ones
+        >>> from singd.structures.dense import DenseMatrix
+        >>> from singd.structures.diagonal import DiagonalMatrix
+        >>>
+        >>> class Dense3DiagonalBottomLeftMatrix(RecursiveBottomLeftMatrixTemplate):
+        ...     '''Structured matrix with 3 left columns and right diagonal part.'''
+        ...     MAX_DIMS = (3, float('inf'))
+        ...     CLS_A = DenseMatrix
+        ...     CLS_C = DiagonalMatrix
+        >>>
+        >>> # A 5x5 matrix with 3 left columns and right diagonal part
+        >>> A = DenseMatrix(ones(3, 3))
+        >>> B = 2 * ones(2, 3)
+        >>> C = DiagonalMatrix(3 * ones(2))
+        >>> mat = Dense3DiagonalBottomLeftMatrix(A, B, C)
+        >>> mat.to_dense()
+        tensor([[1., 1., 1., 0., 0.],
+                [1., 1., 1., 0., 0.],
+                [1., 1., 1., 0., 0.],
+                [2., 2., 2., 3., 0.],
+                [2., 2., 2., 0., 3.]])
     """
     MAX_DIMS: Tuple[Union[int, float], Union[int, float]]
     CLS_A: Type[StructuredMatrix]
     CLS_C: Type[StructuredMatrix]
 
     def __init__(self, A: StructuredMatrix, B: Tensor, C: StructuredMatrix):
-        """Store the matrix internally.
+        r"""Store the matrix internally.
 
         Args:
-            A: Top left block.
-            B: Bottom left block.
-            C: Bottom right block.
+            A: Structured matrix representing the top left block \(\mathbf{A}\).
+            B: Rectangular tensor representing the bottom left block \(\mathbf{B}\).
+            C: Structured matrix representing the bottom right block \(\mathbf{C}\).
+
+        Note:
+            For performance reasons, symmetry is not checked internally and must
+            be ensured by the caller.
 
         Raises:
-            ValueError: If the dimensions of the blocks do not match.
+            ValueError: If the dimensions of the blocks do not match or the structured
+                matrices are of wrong type.
         """
+        super().__init__()
+        if not isinstance(A, self.CLS_A) or not isinstance(C, self.CLS_C):
+            raise ValueError(
+                f"Matrices A and C must be of type {self.CLS_A} and "
+                f"{self.CLS_C}, respectively. Got {type(A)} and {type(C)}."
+            )
+
         # TODO Add a `dim` property to make this cheaper
         dim_A, dim_C = A.to_dense().shape[0], C.to_dense().shape[0]
         if B.shape != (dim_C, dim_A):
@@ -166,20 +282,14 @@ class RecursiveBottomLeftMatrixTemplate(StructuredMatrix):
         if dim_C > max_dim_C:
             raise ValueError(f"Dim. of C ({dim_A}) exceeds max dim. ({max_dim_C}).")
 
-        self.A = A
-        self.B = B
-        self.C = C
+        self.A: StructuredMatrix
+        self.register_substructure(A, "A")
 
-    @property
-    def _tensors_to_sync(self) -> Tuple[Tensor, ...]:
-        """Tensors that need to be synchronized across devices.
+        self.B: Tensor
+        self.register_tensor(B, "B")
 
-        This is used to support distributed data parallel training.
-
-        Returns:
-            A tuple of tensors that need to be synchronized across devices.
-        """
-        return self.A._tensors_to_sync + (self.B,) + self.C._tensors_to_sync
+        self.C: StructuredMatrix
+        self.register_substructure(C, "C")
 
     @classmethod
     def from_dense(cls, sym_mat: Tensor) -> RecursiveBottomLeftMatrixTemplate:

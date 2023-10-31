@@ -16,6 +16,7 @@ def _extract_patches(
     kernel_size: Union[Tuple[int, int], int],
     stride: Union[Tuple[int, int], int],
     padding: Union[Tuple[int, int], int, str],
+    dilation: Union[Tuple[int, int], int],
     groups: int,
 ) -> Tensor:
     """Extract patches from the input of a 2d-convolution.
@@ -27,6 +28,7 @@ def _extract_patches(
         kernel_size: The convolution's kernel size supplied as 2-tuple or integer.
         stride: The convolution's stride supplied as 2-tuple or integer.
         padding: The convolution's padding supplied as 2-tuple, integer, or string.
+        dilation: The convolution's dilation supplied as 2-tuple or integer.
         groups: The number of channel groups.
 
     Returns:
@@ -40,15 +42,16 @@ def _extract_patches(
     """
     if isinstance(padding, str):  # get padding as integers
         padding_as_int = []
-        # TODO: Convert 1 into `dilation` after supporting dilation
-        for k, s, d in zip(_pair(kernel_size), _pair(stride), _pair(1)):
+        for k, s, d in zip(_pair(kernel_size), _pair(stride), _pair(dilation)):
             p_left, p_right = get_conv_paddings(k, s, padding, d)
             if p_left != p_right:
                 raise NotImplementedError("Unequal padding not supported in unfold.")
             padding_as_int.append(p_left)
         padding = tuple(padding_as_int)
 
-    x_unfold = F.unfold(x, kernel_size, dilation=1, padding=padding, stride=stride)
+    x_unfold = F.unfold(
+        x, kernel_size, dilation=dilation, padding=padding, stride=stride
+    )
     # separate the channel groups
     x_unfold = rearrange(
         x_unfold, "b (g c_in_k1_k2) o1_o2 -> b g c_in_k1_k2 o1_o2", g=groups
@@ -95,16 +98,9 @@ def conv2d_process_input(x: Tensor, layer: Conv2d, kfac_approx: str) -> Tensor:
         `[batch_size, O1 * O2, C_in // groups * K1 * K2 (+ 1)]` for `"reduce"` and
         `[batch_size * O1 * O2, C_in // groups * K1 * K2 (+ 1)]` for `"expand"`.
         The `+1` is active if the layer has a bias.
-
-    Raises:
-        NotImplementedError: If the convolution uses dilation.
     """
-    # TODO Add support for dilation in `_extract_patches`
-    if layer.dilation != (1, 1):
-        raise NotImplementedError("Dilated convolutions are not yet supported.")
-
     x = _extract_patches(
-        x, layer.kernel_size, layer.stride, layer.padding, layer.groups
+        x, layer.kernel_size, layer.stride, layer.padding, layer.dilation, layer.groups
     )
 
     if kfac_approx == "expand":
@@ -151,14 +147,25 @@ def linear_process_input(x: Tensor, layer: Linear, kfac_approx: str) -> Tensor:
 
 
 def process_grad_output(
-    grad_output: Tensor, module: Module, batch_averaged: bool, kfac_approx: str
+    grad_output: Tensor,
+    module: Module,
+    loss_average: Union[None, str],
+    kfac_approx: str,
 ) -> Tensor:
     """Reshape output gradients into matrices and apply scaling.
 
     Args:
         grad_output: The gradient w.r.t. the output of the module.
         module: The module.
-        batch_averaged: Whether the loss is a mean over per-sample losses.
+        loss_average: Whether the loss function is a mean over per-sample
+            losses and if yes, over which dimensions the mean is taken.
+            If `"batch"`, the loss function is a mean over as many terms as
+            the size of the mini-batch. If `"batch+sequence"`, the loss
+            function is a mean over as many terms as the size of the
+            mini-batch times the sequence length, e.g. in the case of
+            language modeling. If `None`, the loss function is a sum. This
+            argument is used to ensure that the preconditioner is scaled
+            consistently with the loss and the gradient. Default: `"batch"`.
         kfac_approx: The KFAC approximation to use for linear weight-sharing
             layers. Possible values are `"expand"` and `"reduce"`.
 
@@ -166,32 +173,43 @@ def process_grad_output(
         The processed output gradient.
 
     Raises:
+        AssertionError: If `loss_average` is not `None`, `"batch"`, or
+            `"batch+sequence"`.
         AssertionError: If `kfac_approx` is neither `"expand"` nor `"reduce"`.
         NotImplementedError: If the module is not supported.
     """
+    assert loss_average in {None, "batch", "batch+sequence"}
     assert kfac_approx in {"expand", "reduce"}
     grad_scaling = 1.0
     if isinstance(module, Conv2d):
         return conv2d_process_grad_output(
-            grad_output, batch_averaged, grad_scaling, kfac_approx
+            grad_output, loss_average, grad_scaling, kfac_approx
         )
     elif isinstance(module, Linear):
         return linear_process_grad_output(
-            grad_output, batch_averaged, grad_scaling, kfac_approx
+            grad_output, loss_average, grad_scaling, kfac_approx
         )
     else:
         raise NotImplementedError(f"Can't process grad_output for {module}.")
 
 
 def conv2d_process_grad_output(
-    g: Tensor, batch_averaged: bool, scaling: float, kfac_approx: str
+    g: Tensor, loss_average: Union[None, str], scaling: float, kfac_approx: str
 ) -> Tensor:
     """Process the output gradient of a convolution before the self-inner product.
 
     Args:
         g: Gradient w.r.t. the output of a convolution. Has shape
             `[batch_size, C_out, O1, O2]`.
-        batch_averaged: Whether to multiply with the batch size.
+        loss_average: Whether the loss function is a mean over per-sample
+            losses and if yes, over which dimensions the mean is taken.
+            If `"batch"`, the loss function is a mean over as many terms as
+            the size of the mini-batch. If `"batch+sequence"`, the loss
+            function is a mean over as many terms as the size of the
+            mini-batch times the sequence length, e.g. in the case of
+            language modeling. If `None`, the loss function is a sum. This
+            argument is used to ensure that the preconditioner is scaled
+            consistently with the loss and the gradient. Default: `"batch"`.
         scaling: An additional scaling that will be applied to the gradient.
         kfac_approx: The KFAC approximation to use. Possible values are
             `"expand"` and `"reduce"`.
@@ -200,11 +218,14 @@ def conv2d_process_grad_output(
         The processed scaled gradient. Has shape `[batch_size, C_out]` for
         `"reduce"` and `[batch_size * O1 * O2, C_out]` for `"expand"`.
     """
-    # The scaling by `sqrt(batch_size)` when `batch_averaged=True` assumes
-    # that we are in the reduce setting, i.e. the number of loss terms equals
-    # the batch size.
-    batch_size = g.shape[0]
-    scaling = scaling * sqrt(batch_size) if batch_averaged else scaling
+    # We have to adjust the scaling to account for the mean reduction of the
+    # loss used for computing the gradients when loss_average is not None.
+    if loss_average is not None:
+        num_loss_terms = g.shape[0]  # batch_size
+        if loss_average == "batch+sequence":
+            num_loss_terms *= g.shape[2:].numel()  # spatial size = O1 * O2
+
+        scaling *= sqrt(num_loss_terms)
 
     if kfac_approx == "expand":
         # KFAC-expand approximation
@@ -217,7 +238,7 @@ def conv2d_process_grad_output(
 
 
 def linear_process_grad_output(
-    g: Tensor, batch_averaged: bool, scaling: float, kfac_approx: str
+    g: Tensor, loss_average: Union[None, str], scaling: float, kfac_approx: str
 ) -> Tensor:
     """Process the output gradient of a linear layer before the self-inner product.
 
@@ -225,7 +246,15 @@ def linear_process_grad_output(
         g: Gradient w.r.t. the output of a linear layer. Has shape
             `[batch_size, ..., d_out]` where `...` is an arbitrary number of
             weight-shared dimensions.
-        batch_averaged: Whether to multiply with the batch size.
+        loss_average: Whether the loss function is a mean over per-sample
+            losses and if yes, over which dimensions the mean is taken.
+            If `"batch"`, the loss function is a mean over as many terms as
+            the size of the mini-batch. If `"batch+sequence"`, the loss
+            function is a mean over as many terms as the size of the
+            mini-batch times the sequence length, e.g. in the case of
+            language modeling. If `None`, the loss function is a sum. This
+            argument is used to ensure that the preconditioner is scaled
+            consistently with the loss and the gradient. Default: `"batch"`.
         scaling: An additional scaling that will be applied to the gradient.
         kfac_approx: The KFAC approximation to use for linear weight-sharing
             layers. Possible values are `"expand"` and `"reduce"`.
@@ -234,6 +263,16 @@ def linear_process_grad_output(
         The processed gradient. Has shape `[batch_size, d_out]` for `"reduce"`
         and `[batch_size * ..., d_out]` for `"expand"`.
     """
+    # We have to adjust the scaling to account for the mean reduction of the
+    # loss used for computing the gradients when loss_average is not None.
+    if loss_average is not None:
+        num_loss_terms = g.shape[0]  # batch_size
+        if loss_average == "batch+sequence":
+            # Size of all weight-sharing dimensions.
+            num_loss_terms *= g.shape[1:-1].numel()
+
+        scaling *= sqrt(num_loss_terms)
+
     if kfac_approx == "expand":
         # KFAC-expand approximation
         g = rearrange(g, "b ... d_out -> (b ...) d_out")
@@ -241,7 +280,4 @@ def linear_process_grad_output(
         # KFAC-reduce approximation
         g = reduce(g, "b ... d_out -> b d_out", "sum")
 
-    # The use of `g.shape[0]` assumes that the setting of the loss, i.e. the
-    # number of loss terms, matches the `kfac_approx` that is used.
-    scaling = scaling * sqrt(g.shape[0]) if batch_averaged else scaling
     return g * scaling

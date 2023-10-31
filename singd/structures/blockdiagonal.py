@@ -1,8 +1,8 @@
-"""Block-diagonal dense matrix implemented in the ``StructuredMatrix`` interface."""
+"""Block-diagonal dense matrix implemented in the `StructuredMatrix` interface."""
 
 from __future__ import annotations
 
-from typing import Tuple, Union
+from typing import Union
 
 import torch
 from einops import rearrange
@@ -14,79 +14,104 @@ from singd.structures.utils import (
     supported_einsum,
     supported_eye,
     supported_matmul,
-    supported_trace,
 )
 
 
 class BlockDiagonalMatrixTemplate(StructuredMatrix):
-    """Template for symmetric block-diagonal dense matrix.
-
-    ``
-    [[A₁, 0,   ..., 0,   0],
-     [0,  A₂,  0,   ..., 0],
-     [0,  0,   ..., 0,   0],
-     [0,  ..., 0,   A_N, 0],
-     [0,  0,   0,   0,   B]]
-    ``
-
-    where
-    - ``A₁, ..., A_N`` are symmetric matrices of size ``block_dim``
-    - ``B`` is a symmetric matrix of size ``last_dim`` if ``block_dim`` does not divide
-      the total matrix dimension.
+    r"""Template class for symmetric block-diagonal dense matrix.
 
     Note:
         This is a template class. To define an actual class, inherit from this class,
-        then specify the ``BLOCK_DIM`` class attribute.
+        then specify the `BLOCK_DIM` class attribute. See the example below.
+
+    Block-diagonal matrices have the following structure:
+
+    \(
+    \begin{pmatrix}
+    \mathbf{A}_1 & \mathbf{0} & \cdots & \cdots & \mathbf{0} \\
+    \mathbf{0} & \mathbf{A}_2 & \mathbf{0} & \cdots & \mathbf{0} \\
+    \vdots & \ddots & \ddots & \ddots & \vdots \\
+    \mathbf{0} & \cdots & \mathbf{0} & \mathbf{A}_N & \mathbf{0} & \\
+    \mathbf{0} & \cdots & \cdots & \mathbf{0} & \mathbf{B}
+    \end{pmatrix}
+    \in \mathbb{R}^{(N D + D') \times (N D + D')}
+    \)
+
+    where
+
+    - \(\mathbf{A}_n = \mathbf{A}_n^\top \in \mathbb{R}^{D \times D}\) are symmetric
+        matrices containing the diagonal blocks of block dimension \(D\).
+    - \(\mathbf{B} = \mathbf{B}^\top \in \mathbb{R}^{D' \times D'}\) is a symmetric
+        matrix containing the last block of dimension \(D' < D\), which can be empty
+        if \(D\) divides the matrix dimension.
 
     Attributes:
-        BLOCK_DIM: The dimension of a diagonal block.
+        BLOCK_DIM: The dimension of a diagonal block (\(D\)).
+
+    Examples:
+        >>> from torch import ones
+        >>>
+        >>> class Block2DiagonalMatrix(BlockDiagonalMatrixTemplate):
+        ...     '''Class to represent block-diagonal matrices with 2x2 blocks.'''
+        ...     BLOCK_DIM = 2
+        >>>
+        >>> # A block-diagonal matrix of total dimension 7x7
+        >>> blocks, last = ones(3, 2, 2), 2 * ones(1, 1)
+        >>> mat = Block2DiagonalMatrix(blocks, last)
+        >>> mat.to_dense()
+        tensor([[1., 1., 0., 0., 0., 0., 0.],
+                [1., 1., 0., 0., 0., 0., 0.],
+                [0., 0., 1., 1., 0., 0., 0.],
+                [0., 0., 1., 1., 0., 0., 0.],
+                [0., 0., 0., 0., 1., 1., 0.],
+                [0., 0., 0., 0., 1., 1., 0.],
+                [0., 0., 0., 0., 0., 0., 2.]])
     """
 
     BLOCK_DIM: int
 
     def __init__(self, blocks: Tensor, last: Tensor) -> None:
-        """Store the matrix internally.
+        r"""Store the matrix internally.
 
         Args:
-            blocks: The diagonal blocks ``A₁, A₂, ..., A_N`` of the matrix, supplied
-                as a tensor of shape ``[N, BLOCK_DIM, BLOCK_DIM]``. If there are no
-                blocks, has shape ``[0, BLOCK_DIM, BLOCK_DIM]``.
-            last: The last block if ``BLOCK_DIM`` which contains the remaining matrix
-                if ``BLOCK_DIM`` does not divide the matrix dimension.
-                Has shape ``[last_dim, last_dim]`` where ``last_dim`` may be zero.
+            blocks: The diagonal blocks
+                \(\{\mathbf{A}_n = \mathbf{A}_n^\top\}_{n = 1}^N\),
+                supplied as a tensor of shape `[N, BLOCK_DIM, BLOCK_DIM]`. If there are
+                no blocks, this argument has shape `[0, BLOCK_DIM, BLOCK_DIM]`.
+            last: The last block \(\mathbf{B} = \mathbf{B}^\top\) which contains the
+                remaining matrix if `BLOCK_DIM` does not divide the matrix dimension.
+                Has shape `[last_dim, last_dim]` where `last_dim` may be zero.
+
+        Note:
+            For performance reasons, symmetry is not checked internally and must
+            be ensured by the caller.
 
         Raises:
             ValueError: If the passed tensors have incorrect shape.
         """
-        if blocks.dim() != 3:
+        super().__init__()
+        if blocks.ndim != 3:
             raise ValueError(
-                f"Diagonal blocks must be 3-dimensional, got {blocks.dim()}."
+                f"Diagonal blocks must be 3-dimensional, got {blocks.ndim}."
             )
         if blocks.shape[1] != blocks.shape[2] != self.BLOCK_DIM:
             raise ValueError(
                 f"Diagonal blocks must be square with dimension {self.BLOCK_DIM},"
                 f" got {blocks.shape[1:]} instead."
             )
-        if last.dim() != 2 or last.shape[0] != last.shape[1]:
+        if last.ndim != 2 or last.shape[0] != last.shape[1]:
             raise ValueError(f"Last block must be square, got {last.shape}.")
         if last.shape[0] >= self.BLOCK_DIM or last.shape[1] >= self.BLOCK_DIM:
             raise ValueError(
                 f"Last block must have dimension at most {self.BLOCK_DIM},"
                 f" got {last.shape} instead."
             )
-        self._blocks = blocks
-        self._last = last
 
-    @property
-    def _tensors_to_sync(self) -> Tuple[Tensor, Tensor]:
-        """Tensors that need to be synchronized across devices.
+        self._blocks: Tensor
+        self.register_tensor(blocks, "_blocks")
 
-        This is used to support distributed data parallel training.
-
-        Returns:
-            A tuple of tensors that need to be synchronized across devices.
-        """
-        return (self._blocks, self._last)
+        self._last: Tensor
+        self.register_tensor(last, "_last")
 
     @classmethod
     def from_dense(cls, mat: Tensor) -> BlockDiagonalMatrixTemplate:
@@ -94,10 +119,10 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
         Args:
             mat: A dense and symmetric square matrix which will be approximated by a
-                ``BlockDiagonalMatrixTemplate``.
+                `BlockDiagonalMatrixTemplate`.
 
         Returns:
-            ``BlockDiagonalMatrixTemplate`` approximating the passed matrix.
+            `BlockDiagonalMatrixTemplate` approximating the passed matrix.
         """
         num_blocks = mat.shape[0] // cls.BLOCK_DIM
 
@@ -142,20 +167,20 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
         Args:
             other: A matrix which will be multiplied onto. Can be represented by a
-                PyTorch tensor or a ``BlockDiagonalMatrix``.
+                PyTorch tensor or a `BlockDiagonalMatrix`.
 
         Returns:
             Result of the multiplication. If a PyTorch tensor was passed as argument,
             the result will be a PyTorch tensor. If a block-diagonal matrix was passed,
-            the result will be returned as a ``BlockDiagonalMatrixTemplate``.
+            the result will be returned as a `BlockDiagonalMatrixTemplate`.
 
         Raises:
-            ValueError: If ``other``'s shape is incompatible.
+            ValueError: If `other`'s shape is incompatible.
         """
         if isinstance(other, Tensor):
             num_blocks, last_dim = self._blocks.shape[0], self._last.shape[0]
             total_dim = num_blocks * self.BLOCK_DIM + last_dim
-            if other.shape[0] != total_dim or other.dim() != 2:
+            if other.shape[0] != total_dim or other.ndim != 2:
                 raise ValueError(
                     f"Expect matrix with {total_dim} rows. Got {other.shape}."
                 )
@@ -216,7 +241,7 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
         return self.__class__(other * self._blocks, other * self._last)
 
     def rmatmat(self, mat: Tensor) -> Tensor:
-        """Multiply ``mat`` with the transpose of the structured matrix.
+        """Multiply `mat` with the transpose of the structured matrix.
 
         Args:
             mat: A matrix which will be multiplied by the transpose of the represented
@@ -232,24 +257,24 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
     ###############################################################################
 
     def from_inner(self, X: Union[Tensor, None] = None) -> BlockDiagonalMatrixTemplate:
-        """Represent the matrix block-diagonal of ``self.T @ X @ X^T @ self``.
+        """Represent the matrix block-diagonal of `self.T @ X @ X^T @ self`.
 
-        Let ``K := self``. We can first re-write ``K.T @ X @ X^T @ K`` into
-        ``S @ S.T`` where ``S = K.T @ X``. Next, note that ``S`` has block structure:
-        Write ``K := blockdiag(K₁, K₂, ...)`` and write ``X`` as a stack of matrices
-        ``X = vstack(X₁, X₂, ...)`` where ``Xᵢ`` is associated with the ``i``th diagonal
-        block. Then ``S = vstack( K₁.T @ X₁, K₂ @ X₂, ...) = vstack(S₁ S₂, ...)`` where
-        we have introduced ``Sᵢ = Kᵢ.T @ Xᵢ``. Consequently, ``S @ S.T`` consists of
-        blocks ``(i, j)`` with structure ``Sᵢ @ Sⱼ.T``. We are only interested in the
+        Let `K := self`. We can first re-write `K.T @ X @ X^T @ K` into
+        `S @ S.T` where `S = K.T @ X`. Next, note that `S` has block structure:
+        Write `K := blockdiag(K₁, K₂, ...)` and write `X` as a stack of matrices
+        `X = vstack(X₁, X₂, ...)` where `Xᵢ` is associated with the `i`th diagonal
+        block. Then `S = vstack( K₁.T @ X₁, K₂ @ X₂, ...) = vstack(S₁ S₂, ...)` where
+        we have introduced `Sᵢ = Kᵢ.T @ Xᵢ`. Consequently, `S @ S.T` consists of
+        blocks `(i, j)` with structure `Sᵢ @ Sⱼ.T`. We are only interested in the
         diagonal blocks. So we need to compute
-        ``Sᵢ @ Sᵢ.T = (Kᵢ.T @ Xᵢ) @ (Kᵢ.T @ Xᵢ).T`` for all ``i``.
+        `Sᵢ @ Sᵢ.T = (Kᵢ.T @ Xᵢ) @ (Kᵢ.T @ Xᵢ).T` for all `i`.
 
         Args:
-            X: Optional arbitrary 2d tensor. If ``None``, ``X = I`` will be used.
+            X: Optional arbitrary 2d tensor. If `None`, `X = I` will be used.
 
         Returns:
-            A ``DiagonalMatrix`` representing matrix block diagonal of
-            ``self.T @ X @ X^T @ self``.
+            A `DiagonalMatrix` representing matrix block diagonal of
+            `self.T @ X @ X^T @ self`.
         """
         if X is None:
             S_blocks, S_last = self._blocks, self._last
@@ -266,13 +291,18 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
         return self.__class__(out_blocks, out_last)
 
-    def trace(self) -> Tensor:
-        """Compute the trace of the represented matrix.
+    def average_trace(self) -> Tensor:
+        """Compute the average trace of the represented matrix.
 
         Returns:
-            The trace of the represented matrix.
+            The average trace of the represented matrix.
         """
-        return supported_einsum("nii->", self._blocks) + supported_trace(self._last)
+        num_blocks, last_dim = self._blocks.shape[0], self._last.shape[0]
+        dim = num_blocks * self.BLOCK_DIM + last_dim
+        return (
+            supported_einsum("nii->", self._blocks / dim)
+            + (self._last.diag() / dim).sum()
+        )
 
     def diag_add_(self, value: float) -> BlockDiagonalMatrixTemplate:
         """In-place add a value to the diagonal of the represented matrix.
@@ -351,12 +381,22 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
 
 class Block30DiagonalMatrix(BlockDiagonalMatrixTemplate):
-    """Block-diagonal matrix with blocks of size 30."""
+    """Block-diagonal matrix with blocks of size 30.
+
+    Note:
+        See the template class `BlockDiagonalMatrixTemplate` for a mathematical
+        description.
+    """
 
     BLOCK_DIM = 30
 
 
 class Block3DiagonalMatrix(BlockDiagonalMatrixTemplate):
-    """Block-diagonal matrix with blocks of size 3."""
+    """Block-diagonal matrix with blocks of size 3.
+
+    Note:
+        See the template class `BlockDiagonalMatrixTemplate` for a mathematical
+        description.
+    """
 
     BLOCK_DIM = 3
