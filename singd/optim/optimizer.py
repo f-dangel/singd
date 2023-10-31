@@ -12,7 +12,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import Optimizer
 from torch.utils.hooks import RemovableHandle
 
-from singd.optim.accumulator import BatchAccumulator
 from singd.optim.utils import process_grad_output, process_input
 from singd.structures.base import StructuredMatrix
 from singd.structures.blockdiagonal import Block30DiagonalMatrix
@@ -240,9 +239,9 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         self.m_Ks: Dict[str, StructuredMatrix] = {}
         self.m_Cs: Dict[str, StructuredMatrix] = {}
 
-        # accumulators for H_K and H_C
-        self.H_Ks: Dict[str, BatchAccumulator] = {}
-        self.H_Cs: Dict[str, BatchAccumulator] = {}
+        # store accumulated H_Ks and H_Cs from one/multiple backward passes
+        self.H_Ks: Dict[str, StructuredMatrix] = {}
+        self.H_Cs: Dict[str, StructuredMatrix] = {}
 
         self._initialize_buffers()
 
@@ -465,8 +464,8 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         module_name = self.module_names[module]
         K, C = self.Ks[module_name], self.Cs[module_name]
         # NOTE: Pop such that they will be freed after
-        H_K: StructuredMatrix = self.H_Ks.pop(module_name).value
-        H_C: StructuredMatrix = self.H_Cs.pop(module_name).value
+        H_K: StructuredMatrix = self.H_Ks.pop(module_name)
+        H_C: StructuredMatrix = self.H_Cs.pop(module_name)
 
         # un-scale `H_C = structure(C.T @ (grad_scale * g) @ (grad_scale * g).T @ C)`
         prev_grad_scale = self._get_grad_scale(self.steps - 1)
@@ -558,7 +557,6 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
 
         # 1) PROCESS INPUTS AND GRAD_OUTPUTS
         a = self.inputs.pop(module_name)
-        batch_size = a.shape[0]
         # Process into matrix according to kfac_approx
         # For convolutions, unfold the input, for modules with bias terms, append a 1
         a = process_input(a, module, kfac_approx)
@@ -589,14 +587,13 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             H_K.all_reduce(op=op)
             H_C.all_reduce(op=op)
 
-        # maybe set up fresh accumulators (they get flushed in `.step`)
-        if module_name not in self.H_Ks:
-            self.H_Ks[module_name] = BatchAccumulator(batch_averaged=batch_averaged)
-        if module_name not in self.H_Cs:
-            self.H_Cs[module_name] = BatchAccumulator(batch_averaged=batch_averaged)
-
-        self.H_Ks[module_name].update(H_K, batch_size)
-        self.H_Cs[module_name].update(H_C, batch_size)
+        # store or update existing quantities (they get flushed in `.step`)
+        self.H_Ks[module_name] = (
+            self.H_Ks[module_name].add_(H_K) if module_name in self.H_Ks else H_K
+        )
+        self.H_Cs[module_name] = (
+            self.H_Cs[module_name].add_(H_C) if module_name in self.H_Cs else H_C
+        )
 
     def _install_hooks(
         self, model: Module

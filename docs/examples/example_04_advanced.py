@@ -35,10 +35,11 @@ manual_seed(0)  # make deterministic
 MAX_STEPS = 100  # quit training after this many steps
 DEV = device("cuda" if cuda.is_available() else "cpu")
 
-BATCH_SIZE = 32
+MICRO_BATCH_SIZE = 6  # [ACC]
+ITERS_TO_ACCUMULATE = 4  # [ACC]
+NUM_PROCS = 2  # [ACC]
 
-MICRO_BATCH_SIZE = 8  # [ACC]
-assert BATCH_SIZE % MICRO_BATCH_SIZE == 0  # [ACC]
+BATCH_SIZE = MICRO_BATCH_SIZE * ITERS_TO_ACCUMULATE * NUM_PROCS
 
 train_dataset = MNIST(
     "./data",
@@ -46,7 +47,9 @@ train_dataset = MNIST(
     download=True,
     transform=Compose([ToTensor(), Normalize(mean=(0.1307,), std=(0.3081,))]),
 )
-train_loader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+train_loader = DataLoader(
+    dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=True
+)
 
 model = Sequential(
     Conv2d(1, 3, kernel_size=5, stride=2),
@@ -154,6 +157,12 @@ for batch_idx, (inputs, target) in enumerate(train_loader):
     for inputs_micro, target_micro in zip(inputs_split, target_split):  # [ACC]
         with autocast(device_type=amp_device_type, dtype=amp_dtype):  # [AMP]
             loss = loss_func(model(inputs_micro), target_micro)
+
+            # [ACC] Each per-datum loss must be scaled relative to the total
+            # number of data points accumulated in a gradient, see
+            # https://pytorch.org/docs/stable/notes/amp_examples.html#working-with-scaled-gradients
+            if loss_func.reduction == "mean":
+                loss *= MICRO_BATCH_SIZE / BATCH_SIZE
 
         # [AMP] Backward passes under ``autocast`` are not recommended, see
         # (https://pytorch.org/docs/stable/amp.html#torch.autocast).
