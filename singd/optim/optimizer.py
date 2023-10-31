@@ -49,6 +49,7 @@ class SINGD(Optimizer):
 https://pytorch.org/docs/stable/generated/torch.optim.Optimizer.state_dict.html) and
             [`.load_state_dict()`](\
 https://pytorch.org/docs/stable/generated/torch.optim.Optimizer.load_state_dict.html)).
+        SUPPORTED_LOSS_AVERAGE: Supported loss averaging schemes.
         _step_supports_amp_scaling: Indicates that `step` handles gradient scaling
             internally if the optimizer is used together with a
             [`torch.cuda.amp.GradScaler`](\
@@ -292,6 +293,8 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             ValueError: If `kfac_approx` for any param group is not
                 `'expand'` or `'reduce'`.
             ValueError: If parameters in a supported layer are in different groups.
+            ValueError: If `loss_average` for any param group is not in
+                self.SUPPORTED_LOSS_AVERAGE.
 
         Returns:
             A dictionary mapping parameter IDs (`.data_ptr()`) to group indices.

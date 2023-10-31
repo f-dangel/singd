@@ -167,6 +167,8 @@ def process_grad_output(
         The processed output gradient.
 
     Raises:
+        AssertionError: If `loss_average` is not `None`, `"batch"`, or
+            `"batch+sequence"`.
         AssertionError: If `kfac_approx` is neither `"expand"` nor `"reduce"`.
         NotImplementedError: If the module is not supported.
     """
@@ -215,7 +217,7 @@ def conv2d_process_grad_output(
     if loss_average is not None:
         num_loss_terms = g.shape[0]  # batch_size
         if loss_average == "batch+sequence":
-            num_loss_terms *= g.shape[2] * g.shape[3]  # spatial size = O1 * O2
+            num_loss_terms *= g.shape[2:].numel()  # spatial size = O1 * O2
 
         scaling *= sqrt(num_loss_terms)
 
