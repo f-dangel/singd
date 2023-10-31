@@ -85,7 +85,7 @@ def test_scaler(grad_scale_schedule: Callable[[int], float]):
         "momentum": 0.9,
         "weight_decay": 1e-2,
         "lr_cov": 1e-2,
-        "batch_averaged": "batch",
+        "loss_average": "batch",
         "T": 1,
         "alpha1": 0.5,
         "structures": ("dense", "dense"),

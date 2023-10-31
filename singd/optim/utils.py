@@ -143,7 +143,7 @@ def linear_process_input(x: Tensor, layer: Linear, kfac_approx: str) -> Tensor:
 def process_grad_output(
     grad_output: Tensor,
     module: Module,
-    batch_averaged: Union[None, str],
+    loss_average: Union[None, str],
     kfac_approx: str,
 ) -> Tensor:
     """Reshape output gradients into matrices and apply scaling.
@@ -151,7 +151,7 @@ def process_grad_output(
     Args:
         grad_output: The gradient w.r.t. the output of the module.
         module: The module.
-        batch_averaged: Whether the loss function is a mean over per-sample
+        loss_average: Whether the loss function is a mean over per-sample
             losses and if yes, over which dimensions the mean is taken.
             If `"batch"`, the loss function is a mean over as many terms as
             the size of the mini-batch. If `"batch+sequence"`, the loss
@@ -170,30 +170,30 @@ def process_grad_output(
         AssertionError: If `kfac_approx` is neither `"expand"` nor `"reduce"`.
         NotImplementedError: If the module is not supported.
     """
-    assert batch_averaged in {None, "batch", "batch+sequence"}
+    assert loss_average in {None, "batch", "batch+sequence"}
     assert kfac_approx in {"expand", "reduce"}
     grad_scaling = 1.0
     if isinstance(module, Conv2d):
         return conv2d_process_grad_output(
-            grad_output, batch_averaged, grad_scaling, kfac_approx
+            grad_output, loss_average, grad_scaling, kfac_approx
         )
     elif isinstance(module, Linear):
         return linear_process_grad_output(
-            grad_output, batch_averaged, grad_scaling, kfac_approx
+            grad_output, loss_average, grad_scaling, kfac_approx
         )
     else:
         raise NotImplementedError(f"Can't process grad_output for {module}.")
 
 
 def conv2d_process_grad_output(
-    g: Tensor, batch_averaged: Union[None, str], scaling: float, kfac_approx: str
+    g: Tensor, loss_average: Union[None, str], scaling: float, kfac_approx: str
 ) -> Tensor:
     """Process the output gradient of a convolution before the self-inner product.
 
     Args:
         g: Gradient w.r.t. the output of a convolution. Has shape
             `[batch_size, C_out, O1, O2]`.
-        batch_averaged: Whether the loss function is a mean over per-sample
+        loss_average: Whether the loss function is a mean over per-sample
             losses and if yes, over which dimensions the mean is taken.
             If `"batch"`, the loss function is a mean over as many terms as
             the size of the mini-batch. If `"batch+sequence"`, the loss
@@ -211,10 +211,10 @@ def conv2d_process_grad_output(
         `"reduce"` and `[batch_size * O1 * O2, C_out]` for `"expand"`.
     """
     # We have to adjust the scaling to account for the mean reduction of the
-    # loss used for computing the gradients when batch_averaged is not None.
-    if batch_averaged is not None:
+    # loss used for computing the gradients when loss_average is not None.
+    if loss_average is not None:
         num_loss_terms = g.shape[0]  # batch_size
-        if batch_averaged == "batch+sequence":
+        if loss_average == "batch+sequence":
             num_loss_terms *= g.shape[2] * g.shape[3]  # spatial size = O1 * O2
 
         scaling *= sqrt(num_loss_terms)
@@ -230,7 +230,7 @@ def conv2d_process_grad_output(
 
 
 def linear_process_grad_output(
-    g: Tensor, batch_averaged: Union[None, str], scaling: float, kfac_approx: str
+    g: Tensor, loss_average: Union[None, str], scaling: float, kfac_approx: str
 ) -> Tensor:
     """Process the output gradient of a linear layer before the self-inner product.
 
@@ -238,7 +238,7 @@ def linear_process_grad_output(
         g: Gradient w.r.t. the output of a linear layer. Has shape
             `[batch_size, ..., d_out]` where `...` is an arbitrary number of
             weight-shared dimensions.
-        batch_averaged: Whether the loss function is a mean over per-sample
+        loss_average: Whether the loss function is a mean over per-sample
             losses and if yes, over which dimensions the mean is taken.
             If `"batch"`, the loss function is a mean over as many terms as
             the size of the mini-batch. If `"batch+sequence"`, the loss
@@ -256,10 +256,10 @@ def linear_process_grad_output(
         and `[batch_size * ..., d_out]` for `"expand"`.
     """
     # We have to adjust the scaling to account for the mean reduction of the
-    # loss used for computing the gradients when batch_averaged is not None.
-    if batch_averaged is not None:
+    # loss used for computing the gradients when loss_average is not None.
+    if loss_average is not None:
         num_loss_terms = g.shape[0]  # batch_size
-        if batch_averaged == "batch+sequence":
+        if loss_average == "batch+sequence":
             # Size of all weight-sharing dimensions.
             num_loss_terms *= g.shape[1:-1].numel()
 

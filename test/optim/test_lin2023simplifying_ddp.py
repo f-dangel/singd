@@ -104,7 +104,7 @@ def test_compare_lin2023simplifying_ddp():  # noqa: C901
         damping=damping,
         alpha1=alpha1_beta2,
         weight_decay=weight_decay,
-        batch_averaged="batch",
+        loss_average="batch",
         T=T,
         lr_cov=lr_cov,
         structures=("dense", "dense"),
