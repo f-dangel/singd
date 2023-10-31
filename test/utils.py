@@ -9,6 +9,9 @@ from singd.optim.optimizer import SINGD
 DEVICE_IDS = ["cpu", "cuda"] if cuda.is_available() else ["cpu"]
 DEVICES = [device(name) for name in DEVICE_IDS]
 
+REDUCTIONS = ["mean", "sum"]
+REDUCTION_IDS = [f"reduction={reduction}" for reduction in REDUCTIONS]
+
 
 def report_nonclose(
     tensor1: Tensor,

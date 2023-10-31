@@ -1,8 +1,9 @@
 """Check micro-batch support (optimizer can be used with gradient accumulation)."""
 
 from copy import deepcopy
-from test.utils import compare_optimizers
+from test.utils import REDUCTION_IDS, REDUCTIONS, compare_optimizers
 
+from pytest import mark, skip
 from torch import manual_seed
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
 from torch.utils.data import DataLoader
@@ -12,17 +13,27 @@ from torchvision.transforms import ToTensor
 from singd.optim.optimizer import SINGD
 
 
-def test_micro_batches():
-    """Compare optimizer on mini-batch with optimizer operating on micro-batches."""
+@mark.parametrize("reduction", REDUCTIONS, ids=REDUCTION_IDS)
+def test_gradient_accumulation(reduction: str):
+    """Compare optimizer on mini-batch with optimizer operating on micro-batches.
+
+    Args:
+        reduction: Reduction used for the loss function.
+    """
+    if reduction == "sum":
+        skip("Need to fix https://github.com/f-dangel/singd/issues/43 first.")
+
     manual_seed(0)
     MAX_STEPS = 30
 
-    mini_batch_size = 32
-    micro_batch_size = 8
+    micro_batch_size = 6
+    iters_to_accumulate = 4
+    num_procs = 2
+    mini_batch_size = micro_batch_size * iters_to_accumulate * num_procs
 
     train_dataset = MNIST("./data", train=True, download=True, transform=ToTensor())
     train_loader = DataLoader(
-        dataset=train_dataset, batch_size=mini_batch_size, shuffle=True
+        dataset=train_dataset, batch_size=mini_batch_size, shuffle=True, drop_last=True
     )
 
     # _mini indicates the mini-batch version
@@ -40,16 +51,17 @@ def test_micro_batches():
     )
     model_micro = deepcopy(model_mini)
 
-    loss_func_mini = CrossEntropyLoss()
+    loss_func_mini = CrossEntropyLoss(reduction=reduction)
     loss_func_micro = deepcopy(loss_func_mini)
 
+    batch_averaged = {"mean": True, "sum": False}[reduction]
     optim_hyperparams = {
         "lr": 5e-4,
         "damping": 1e-4,
         "momentum": 0.9,
         "weight_decay": 1e-2,
         "lr_cov": 1e-2,
-        "batch_averaged": True,
+        "batch_averaged": batch_averaged,
         "T": 1,
         "alpha1": 0.5,
         "structures": ("dense", "dense"),
@@ -76,11 +88,12 @@ def test_micro_batches():
         inputs_split = inputs.split(micro_batch_size)
         target_split = target.split(micro_batch_size)
         for input_micro, target_micro in zip(inputs_split, target_split):
-            loss_func_micro(model_micro(input_micro), target_micro).backward()
-
-        # un-scale the accumulated gradients
-        for p in model_micro.parameters():
-            p.grad *= micro_batch_size / mini_batch_size
+            micro_batch_loss = loss_func_micro(model_micro(input_micro), target_micro)
+            # scale must be w.r.t. to the number of data points in the mini-batch, see
+            # https://pytorch.org/docs/stable/notes/amp_examples.html#working-with-scaled-gradients
+            if loss_func_micro.reduction == "mean":
+                micro_batch_loss *= micro_batch_size / mini_batch_size
+            micro_batch_loss.backward()
         optim_micro.step()
 
         compare_optimizers(optim_mini, optim_micro, rtol=1e-5, atol=5e-7)
