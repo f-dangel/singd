@@ -59,7 +59,6 @@ def test_compare_lin2023simplifying():  # noqa: C901
     momentum = 0.9
     weight_decay = 1e-2
     lr_cov = 1e-2
-    batch_averaged = True
     T = 1
     alpha1_beta2 = 0.5
 
@@ -74,7 +73,7 @@ def test_compare_lin2023simplifying():  # noqa: C901
         TInv=T,
         faster=True,
         lr_cov=lr_cov,
-        batch_averaged=batch_averaged,
+        batch_averaged=True,
     )
 
     def lr_cov_schedule(step: int) -> float:
@@ -101,7 +100,7 @@ def test_compare_lin2023simplifying():  # noqa: C901
         damping=damping,
         alpha1=alpha1_beta2,
         weight_decay=weight_decay,
-        batch_averaged=batch_averaged,
+        loss_average="batch",
         T=T,
         lr_cov=lr_cov_schedule,
         structures=("dense", "dense"),
