@@ -28,8 +28,9 @@ manual_seed(0)  # make deterministic
 # $\mathbf{m}_\mathbf{K}$, while the second entry specifies the structure of
 # $\mathbf{C}$ and its momentum $\mathbf{m}_\mathbf{C}$ (see the [paper](TODO
 # Insert link to arXiv submission) for details). It is even possible to specify
-# structures on a per-layer basis (see [this](TODO Insert link to param groups
-# example) example).
+# structures on a per-layer basis (see
+# [this](https://singd.readthedocs.io/en/latest/generated/gallery/example_03_param_groups/)
+# example).
 #
 # The following structures are available:
 

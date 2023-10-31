@@ -26,7 +26,9 @@ The main feature is a `torch.optim.Optimizer` which works like most PyTorch opti
   data-parallel](https://pytorch.org/tutorials/intermediate/ddp_tutorial.html)
   (DDP) training[^1]
 
-The pre-conditioner matrices support different structures that allow to reduce cost ([overview](TODO Insert link to example)).
+The pre-conditioner matrices support different structures that allow to reduce
+cost
+([overview](https://singd.readthedocs.io/en/latest/generated/gallery/example_05_structures/)).
 
 ## Installation
 
@@ -42,10 +44,21 @@ The pre-conditioner matrices support different structures that allow to reduce c
 
 ## Usage
 
- - [Basic example](TODO Insert link to example)
- - Examples for [supported features](TODO Insert link to gallery)
- - [Advanced example](TODO Insert link to example)
- - [Supported structures](TODO Insert link to example)
+ - [Basic
+   example](https://singd.readthedocs.io/en/latest/generated/gallery/example_01_basic/)
+ - Examples for [supported
+   features](https://singd.readthedocs.io/en/latest/generated/gallery/)
+ - [Advanced
+   example](https://singd.readthedocs.io/en/latest/generated/gallery/example_04_advanced/)
+ - [Supported
+   structures](https://singd.readthedocs.io/en/latest/generated/gallery/example_05_structures/)
+
+## Limitations
+
+- `SINGD` does not support graph neural networks (GNN)
+
+- The code has stabilized only recently. Expect things to break and help us
+  improve by filing issues.
 
 ## Citation
 
