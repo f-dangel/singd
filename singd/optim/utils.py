@@ -210,14 +210,14 @@ def conv2d_process_grad_output(
         The processed scaled gradient. Has shape `[batch_size, C_out]` for
         `"reduce"` and `[batch_size * O1 * O2, C_out]` for `"expand"`.
     """
-    batch_size = g.shape[0]
-    spatial_size = g.shape[2] * g.shape[3]
     # We have to adjust the scaling to account for the mean reduction of the
     # loss used for computing the gradients when batch_averaged is not None.
-    num_loss_terms = (
-        batch_size * spatial_size if batch_averaged == "batch+sequence" else batch_size
-    )
-    scaling = scaling * sqrt(num_loss_terms) if batch_averaged else scaling
+    if batch_averaged is not None:
+        num_loss_terms = g.shape[0]  # batch_size
+        if batch_averaged == "batch+sequence":
+            num_loss_terms *= g.shape[2] * g.shape[3]  # spatial size = O1 * O2
+
+        scaling *= sqrt(num_loss_terms)
 
     if kfac_approx == "expand":
         # KFAC-expand approximation
@@ -255,16 +255,15 @@ def linear_process_grad_output(
         The processed gradient. Has shape `[batch_size, d_out]` for `"reduce"`
         and `[batch_size * ..., d_out]` for `"expand"`.
     """
-    batch_size = g.shape[0]
-    weight_shared_dims_size = g.shape[1:-1].numel()
     # We have to adjust the scaling to account for the mean reduction of the
     # loss used for computing the gradients when batch_averaged is not None.
-    num_loss_terms = (
-        batch_size * weight_shared_dims_size
-        if batch_averaged == "batch+sequence"
-        else batch_size
-    )
-    scaling = scaling * sqrt(num_loss_terms) if batch_averaged else scaling
+    if batch_averaged is not None:
+        num_loss_terms = g.shape[0]  # batch_size
+        if batch_averaged == "batch+sequence":
+            # Size of all weight-sharing dimensions.
+            num_loss_terms *= g.shape[1:-1].numel()
+
+        scaling *= sqrt(num_loss_terms)
 
     if kfac_approx == "expand":
         # KFAC-expand approximation
