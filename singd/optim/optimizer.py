@@ -70,6 +70,11 @@ https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html).
         "triutoeplitz": TriuToeplitzMatrix,
     }
     SUPPORTED_MODULES: Tuple[Type[Module], ...] = (Linear, Conv2d)
+    SUPPORTED_LOSS_AVERAGE: Tuple[Union[None, str], ...] = (
+        None,
+        "batch",
+        "batch+sequence",
+    )
     _step_supports_amp_scaling = True  # do not modify this name (PyTorch convention)!
 
     def __init__(
@@ -306,13 +311,12 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
                     "kfac_approx has to be set to either 'expand' or 'reduce', "
                     f"but was set to {group['kfac_approx']}."
                 )
-            if group["batch_averaged"] is not None:
-                if group["batch_averaged"] not in ["batch", "batch+sequence"]:
-                    raise ValueError(
-                        "batch_averaged has to be set to either None, 'batch', "
-                        "or 'batch+sequence', but was set to "
-                        f"{group['batch_averaged']}."
-                    )
+            if group["batch_averaged"] not in self.SUPPORTED_LOSS_AVERAGE:
+                raise ValueError(
+                    "batch_averaged has to be set to one out of "
+                    f"{self.SUPPORTED_LOSS_AVERAGE}, but was set to "
+                    f"{group['batch_averaged']}."
+                )
 
         # Find out which parameter is in which group
         param_to_group_idx = {}
