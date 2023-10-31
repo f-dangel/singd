@@ -2,7 +2,7 @@
 
 from test.optim.utils import Transpose, jacobians_naive
 from test.utils import DEVICE_IDS, DEVICES
-from typing import Callable, List, Tuple
+from typing import Callable, List, Tuple, Union
 
 from einops import rearrange, reduce
 from pytest import mark
@@ -88,15 +88,13 @@ MODELS = {
 
 @mark.parametrize("model", MODELS.items(), ids=MODELS.keys())
 @mark.parametrize("setting", ["expand", "reduce"])
-@mark.parametrize(
-    "batch_averaged", [True, False], ids=["batch_averaged", "not_averaged"]
-)
+@mark.parametrize("averaged", [True, False], ids=["batch_averaged", "not_averaged"])
 @mark.parametrize("bias", [True, False], ids=["bias", "no_bias"])
 @mark.parametrize("device", DEVICES, ids=DEVICE_IDS)
 def test_kfac(
     model: Tuple[str, Callable],
     setting: str,
-    batch_averaged: bool,
+    averaged: bool,
     bias: bool,
     device: device,
 ):
@@ -109,7 +107,7 @@ def test_kfac(
         model: Tuple of model name and function takes `bias` as input and
             returns the model.
         setting: KFAC approximation setting. Either `"expand"` or `"reduce"`.
-        batch_averaged: Whether to average over the batch dimension.
+        averaged: Whether the loss uses a mean reduction.
         bias: Whether to use a bias term.
         device: Device to run the test on.
 
@@ -122,8 +120,14 @@ def test_kfac(
     # Setup model and inputs x.
     model_name, model_fn = model
 
-    if model_name == "conv2d" and setting == "expand" and batch_averaged:
-        return  # TODO This case will work when issue #31 is fixed.
+    # Set appropriate batch_averaged argument based on averaged and setting.
+    if averaged:
+        if setting == "expand":
+            batch_averaged = "batch+sequence"
+        else:
+            batch_averaged = "batch"
+    else:
+        batch_averaged = None
 
     if model_name == "conv2d":
         model: Module = model_fn(setting, bias)
@@ -211,14 +215,22 @@ class WeightShareModel(Sequential):
 class KFACMSE:
     """Class for computing the KFAC approximation with the MSE loss."""
 
-    def __init__(self, model: Module, batch_averaged: bool, setting: str):
+    def __init__(self, model: Module, batch_averaged: Union[None, str], setting: str):
         """Initialize the KFAC approximation class.
 
         Installs forward and backward hooks to the model.
 
         Args:
             model: The model.
-            batch_averaged: Whether the loss is a mean over per-sample losses.
+            batch_averaged: Whether the loss function is a mean over per-sample
+                losses and if yes, over which dimensions the mean is taken.
+                If `"batch"`, the loss function is a mean over as many terms as
+                the size of the mini-batch. If `"batch+sequence"`, the loss
+                function is a mean over as many terms as the size of the
+                mini-batch times the sequence length, e.g. in the case of
+                language modeling. If `None`, the loss function is a sum. This
+                arugment is used to ensure that the preconditioner is scaled
+                consistently with the loss and the gradient. Default: `"batch"`.
             setting: KFAC approximation setting. Possible values are `'expand'`
                 and `'reduce'`.
         """

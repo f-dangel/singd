@@ -82,7 +82,7 @@ https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html).
         alpha1: float = 0.5,  # α₁ in the paper
         weight_decay: float = 0.0,  # γ in the paper
         T: int = 10,  # T in the paper
-        batch_averaged: bool = True,
+        batch_averaged: Union[None, str] = "batch",
         lr_cov: Union[float, Callable[[int], float]] = 1e-2,  # β₁ in the paper
         structures: Tuple[str, str] = ("dense", "dense"),
         kfac_approx: str = "expand",
@@ -123,7 +123,14 @@ https://pytorch.org/docs/stable/optim.html#per-parameter-options).
                 Default: `0.0`.
             T: Pre-conditioner update frequency. Default: `10`.
             batch_averaged: Whether the loss function is a mean over per-sample
-                losses. Default is `True`. If `False `, the loss function is a sum.
+                losses and if yes, over which dimensions the mean is taken.
+                If `"batch"`, the loss function is a mean over as many terms as
+                the size of the mini-batch. If `"batch+sequence"`, the loss
+                function is a mean over as many terms as the size of the
+                mini-batch times the sequence length, e.g. in the case of
+                language modeling. If `None`, the loss function is a sum. This
+                arugment is used to ensure that the preconditioner is scaled
+                consistently with the loss and the gradient. Default: `"batch"`.
             lr_cov: (β₁ in the paper) Learning rate for the updates of the pre-
                 conditioner momenta \\(\\mathbf{m}_\\mathbf{K}\\) and
                 \\(\\mathbf{m}_\\mathbf{C}\\). Default is `1e-2`. Also allows for a
@@ -299,6 +306,13 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
                     "kfac_approx has to be set to either 'expand' or 'reduce', "
                     f"but was set to {group['kfac_approx']}."
                 )
+            if group["batch_averaged"] is not None:
+                if group["batch_averaged"] not in ["batch", "batch+sequence"]:
+                    raise ValueError(
+                        "batch_averaged has to be set to either None, 'batch', "
+                        "or 'batch+sequence', but was set to "
+                        f"{group['batch_averaged']}."
+                    )
 
         # Find out which parameter is in which group
         param_to_group_idx = {}
@@ -585,10 +599,11 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             H_C.all_reduce(op=op)
 
         # maybe set up fresh accumulators (they get flushed in `.step`)
+        averaged = batch_averaged is not None
         if module_name not in self.H_Ks:
-            self.H_Ks[module_name] = BatchAccumulator(batch_averaged=batch_averaged)
+            self.H_Ks[module_name] = BatchAccumulator(averaged=averaged)
         if module_name not in self.H_Cs:
-            self.H_Cs[module_name] = BatchAccumulator(batch_averaged=batch_averaged)
+            self.H_Cs[module_name] = BatchAccumulator(averaged=averaged)
 
         self.H_Ks[module_name].update(H_K, batch_size)
         self.H_Cs[module_name].update(H_C, batch_size)

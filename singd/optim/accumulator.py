@@ -11,15 +11,15 @@ class BatchAccumulator:
     The quantity's class must support multiplication with a scalar and addition.
     """
 
-    def __init__(self, batch_averaged: bool = True):
+    def __init__(self, averaged: bool = True):
         """Initialize the accumulator.
 
         Args:
-            batch_averaged: Whether the quantity is averaged over the batch.
+            averaged: Whether the quantity is averaged over the batch.
                 If ``False``, assumes sum. Default: ``True``.
         """
         self.value = None
-        self.batch_averaged = batch_averaged
+        self.averaged = averaged
         self.batch_size_total = 0
 
     def update(self, other: Any, batch_size: int):
@@ -33,7 +33,7 @@ class BatchAccumulator:
             self.value = other
             self.batch_size_total = batch_size
         else:
-            if self.batch_averaged:
+            if self.averaged:
                 scale = self.batch_size_total / (self.batch_size_total + batch_size)
                 self.value = self.value * scale + other * (1 - scale)
             else:

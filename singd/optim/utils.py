@@ -141,14 +141,25 @@ def linear_process_input(x: Tensor, layer: Linear, kfac_approx: str) -> Tensor:
 
 
 def process_grad_output(
-    grad_output: Tensor, module: Module, batch_averaged: bool, kfac_approx: str
+    grad_output: Tensor,
+    module: Module,
+    batch_averaged: Union[None, str],
+    kfac_approx: str,
 ) -> Tensor:
     """Reshape output gradients into matrices and apply scaling.
 
     Args:
         grad_output: The gradient w.r.t. the output of the module.
         module: The module.
-        batch_averaged: Whether the loss is a mean over per-sample losses.
+        batch_averaged: Whether the loss function is a mean over per-sample
+            losses and if yes, over which dimensions the mean is taken.
+            If `"batch"`, the loss function is a mean over as many terms as
+            the size of the mini-batch. If `"batch+sequence"`, the loss
+            function is a mean over as many terms as the size of the
+            mini-batch times the sequence length, e.g. in the case of
+            language modeling. If `None`, the loss function is a sum. This
+            arugment is used to ensure that the preconditioner is scaled
+            consistently with the loss and the gradient. Default: `"batch"`.
         kfac_approx: The KFAC approximation to use for linear weight-sharing
             layers. Possible values are `"expand"` and `"reduce"`.
 
@@ -159,6 +170,7 @@ def process_grad_output(
         AssertionError: If `kfac_approx` is neither `"expand"` nor `"reduce"`.
         NotImplementedError: If the module is not supported.
     """
+    assert batch_averaged in {None, "batch", "batch+sequence"}
     assert kfac_approx in {"expand", "reduce"}
     grad_scaling = 1.0
     if isinstance(module, Conv2d):
@@ -174,14 +186,22 @@ def process_grad_output(
 
 
 def conv2d_process_grad_output(
-    g: Tensor, batch_averaged: bool, scaling: float, kfac_approx: str
+    g: Tensor, batch_averaged: Union[None, str], scaling: float, kfac_approx: str
 ) -> Tensor:
     """Process the output gradient of a convolution before the self-inner product.
 
     Args:
         g: Gradient w.r.t. the output of a convolution. Has shape
             `[batch_size, C_out, O1, O2]`.
-        batch_averaged: Whether to multiply with the batch size.
+        batch_averaged: Whether the loss function is a mean over per-sample
+            losses and if yes, over which dimensions the mean is taken.
+            If `"batch"`, the loss function is a mean over as many terms as
+            the size of the mini-batch. If `"batch+sequence"`, the loss
+            function is a mean over as many terms as the size of the
+            mini-batch times the sequence length, e.g. in the case of
+            language modeling. If `None`, the loss function is a sum. This
+            arugment is used to ensure that the preconditioner is scaled
+            consistently with the loss and the gradient. Default: `"batch"`.
         scaling: An additional scaling that will be applied to the gradient.
         kfac_approx: The KFAC approximation to use. Possible values are
             `"expand"` and `"reduce"`.
@@ -190,11 +210,14 @@ def conv2d_process_grad_output(
         The processed scaled gradient. Has shape `[batch_size, C_out]` for
         `"reduce"` and `[batch_size * O1 * O2, C_out]` for `"expand"`.
     """
-    # The scaling by `sqrt(batch_size)` when `batch_averaged=True` assumes
-    # that we are in the reduce setting, i.e. the number of loss terms equals
-    # the batch size.
     batch_size = g.shape[0]
-    scaling = scaling * sqrt(batch_size) if batch_averaged else scaling
+    spatial_size = g.shape[2] * g.shape[3]
+    # We have to adjust the scaling to account for the mean reduction of the
+    # loss used for computing the gradients when batch_averaged is not None.
+    num_loss_terms = (
+        batch_size * spatial_size if batch_averaged == "batch+sequence" else batch_size
+    )
+    scaling = scaling * sqrt(num_loss_terms) if batch_averaged else scaling
 
     if kfac_approx == "expand":
         # KFAC-expand approximation
@@ -207,7 +230,7 @@ def conv2d_process_grad_output(
 
 
 def linear_process_grad_output(
-    g: Tensor, batch_averaged: bool, scaling: float, kfac_approx: str
+    g: Tensor, batch_averaged: Union[None, str], scaling: float, kfac_approx: str
 ) -> Tensor:
     """Process the output gradient of a linear layer before the self-inner product.
 
@@ -215,7 +238,15 @@ def linear_process_grad_output(
         g: Gradient w.r.t. the output of a linear layer. Has shape
             `[batch_size, ..., d_out]` where `...` is an arbitrary number of
             weight-shared dimensions.
-        batch_averaged: Whether to multiply with the batch size.
+        batch_averaged: Whether the loss function is a mean over per-sample
+            losses and if yes, over which dimensions the mean is taken.
+            If `"batch"`, the loss function is a mean over as many terms as
+            the size of the mini-batch. If `"batch+sequence"`, the loss
+            function is a mean over as many terms as the size of the
+            mini-batch times the sequence length, e.g. in the case of
+            language modeling. If `None`, the loss function is a sum. This
+            arugment is used to ensure that the preconditioner is scaled
+            consistently with the loss and the gradient. Default: `"batch"`.
         scaling: An additional scaling that will be applied to the gradient.
         kfac_approx: The KFAC approximation to use for linear weight-sharing
             layers. Possible values are `"expand"` and `"reduce"`.
@@ -224,6 +255,17 @@ def linear_process_grad_output(
         The processed gradient. Has shape `[batch_size, d_out]` for `"reduce"`
         and `[batch_size * ..., d_out]` for `"expand"`.
     """
+    batch_size = g.shape[0]
+    weight_shared_dims_size = g[0, ..., 0].numel()
+    # We have to adjust the scaling to account for the mean reduction of the
+    # loss used for computing the gradients when batch_averaged is not None.
+    num_loss_terms = (
+        batch_size * weight_shared_dims_size
+        if batch_averaged == "batch+sequence"
+        else batch_size
+    )
+    scaling = scaling * sqrt(num_loss_terms) if batch_averaged else scaling
+
     if kfac_approx == "expand":
         # KFAC-expand approximation
         g = rearrange(g, "b ... d_out -> (b ...) d_out")
@@ -231,7 +273,4 @@ def linear_process_grad_output(
         # KFAC-reduce approximation
         g = reduce(g, "b ... d_out -> b d_out", "sum")
 
-    # The use of `g.shape[0]` assumes that the setting of the loss, i.e. the
-    # number of loss terms, matches the `kfac_approx` that is used.
-    scaling = scaling * sqrt(g.shape[0]) if batch_averaged else scaling
     return g * scaling
