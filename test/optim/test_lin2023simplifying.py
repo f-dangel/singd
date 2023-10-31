@@ -3,7 +3,9 @@
 import sys
 from copy import deepcopy
 from os import path
+from test.utils import REDUCTION_IDS, REDUCTIONS
 
+from pytest import mark
 from torch import allclose, manual_seed
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
 from torch.utils.data import DataLoader
@@ -13,8 +15,13 @@ from torchvision.transforms import ToTensor
 from singd.optim.optimizer import SINGD
 
 
-def test_compare_lin2023simplifying():  # noqa: C901
-    """Compare our implementation with the original one on MNIST."""
+@mark.parametrize("reduction", REDUCTIONS, ids=REDUCTION_IDS)
+def test_compare_lin2023simplifying(reduction: str):  # noqa: C901
+    """Compare our implementation with the original one on MNIST.
+
+    Args:
+        reduction: Reduction used for the loss function.
+    """
     manual_seed(0)
     MAX_STEPS = 30
 
@@ -51,7 +58,7 @@ def test_compare_lin2023simplifying():  # noqa: C901
     )
     model_ours = deepcopy(model_original)
 
-    loss_func_original = CrossEntropyLoss()
+    loss_func_original = CrossEntropyLoss(reduction=reduction)
     loss_func_ours = deepcopy(loss_func_original)
 
     lr = 5e-4
@@ -59,7 +66,7 @@ def test_compare_lin2023simplifying():  # noqa: C901
     momentum = 0.9
     weight_decay = 1e-2
     lr_cov = 1e-2
-    batch_averaged = True
+    batch_averaged = {"mean": True, "sum": False}[reduction]
     T = 1
     alpha1_beta2 = 0.5
 
