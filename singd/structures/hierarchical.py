@@ -14,7 +14,6 @@ from singd.structures.utils import (
     supported_einsum,
     supported_eye,
     supported_matmul,
-    supported_trace,
 )
 
 
@@ -347,13 +346,19 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
 
         return self.__class__(A_new, B_new, C_new, D_new, E_new)
 
-    def trace(self) -> Tensor:
-        """Compute the trace of the represented matrix.
+    def average_trace(self) -> Tensor:
+        """Compute the average trace of the represented matrix.
 
         Returns:
-            The trace of the represented matrix.
+            The average trace of the represented matrix.
         """
-        return supported_trace(self.A) + self.C.sum() + supported_trace(self.E)
+        dim_A, dim_C, dim_E = self.A.shape[0], self.C.shape[0], self.E.shape[0]
+        dim = dim_A + dim_C + dim_E
+        return (
+            (self.A.diag() / dim).sum()
+            + (self.C / dim).sum()
+            + (self.E.diag() / dim).sum()
+        )
 
     def diag_add_(self, value: float) -> HierarchicalMatrixTemplate:
         """In-place add a value to the diagonal of the represented matrix.

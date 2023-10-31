@@ -159,13 +159,13 @@ class DiagonalMatrix(StructuredMatrix):
         """
         return DiagonalMatrix(self._mat_diag**2 * XXT.diag())
 
-    def trace(self) -> Tensor:
-        """Compute the trace of the represented matrix.
+    def average_trace(self) -> Tensor:
+        """Compute the average trace of the represented matrix.
 
         Returns:
-            The trace of the represented matrix.
+            The average trace of the represented matrix.
         """
-        return self._mat_diag.sum()
+        return self._mat_diag.mean()
 
     def diag_add_(self, value: float) -> DiagonalMatrix:
         """In-place add a value to the diagonal of the represented matrix.

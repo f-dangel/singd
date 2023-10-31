@@ -35,16 +35,6 @@ def test_cpu_bfloat16_eye_unsupported():
         eye(2, dtype=bfloat16, device=cpu)
 
 
-def test_cpu_half_precision_trace_unsupported():
-    """Test whether ``trace`` is unsupported in half precision on CPU."""
-    cpu = device("cpu")
-
-    for dtype in [float16, bfloat16]:
-        mat = zeros((2, 2), device=cpu).to(dtype)
-        with raises(RuntimeError):
-            mat.trace()
-
-
 def test_cpu_float16_einsum_unsupported():
     """Test whether ``einsum`` is unsupported in ``float16`` on CPU."""
     cpu = device("cpu")

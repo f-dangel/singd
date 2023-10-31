@@ -51,7 +51,7 @@ def supported_matmul(*matrices: Tensor) -> Tensor:
     dev = devices.pop()
 
     # Use the first matrix's data type as the result's data type.
-    # The matrices may have different data types if ``autocast`` was used.
+    # The matrices may have different data types if `autocast` was used.
     dtype = matrices[0].dtype
 
     # @ not supported on CPU for float16 (bfloat16 is supported)
@@ -65,11 +65,11 @@ def supported_matmul(*matrices: Tensor) -> Tensor:
 
 
 def supported_eye(n: int, **kwargs: Any) -> Tensor:
-    """Same as PyTorch's ``eye``, but uses higher precision if unsupported.
+    """Same as PyTorch's `eye`, but uses higher precision if unsupported.
 
     Args:
         n: The number of rows.
-        kwargs: Keyword arguments to ``torch.eye``.
+        kwargs: Keyword arguments to `torch.eye`.
 
     Returns:
         A 2-D tensor with ones on the diagonal and zeros elsewhere.
@@ -86,35 +86,18 @@ def supported_eye(n: int, **kwargs: Any) -> Tensor:
         return eye(n, **kwargs, dtype=dtype)
 
 
-def supported_trace(input: Tensor) -> Tensor:
-    """Same as PyTorch's ``trace``, but uses higher precision if unsupported.
-
-    Args:
-        input: The input tensor.
-
-    Returns:
-        The sum of the tensor's diagonal elements.
-    """
-    # eye not supported on CPU for half precision
-    if is_half_precision(input.dtype) and str(input.device) == "cpu":
-        original = input.dtype
-        return input.to(float32).trace().to(original)
-    else:
-        return input.trace()
-
-
 def supported_einsum(equation, *operands: Tensor) -> Tensor:
-    """Compute an ``einsum`` with the same or higher numerical precision.
+    """Compute an `einsum` with the same or higher numerical precision.
 
-    If the ``einsum`` is not supported on the hardware,
+    If the `einsum` is not supported on the hardware,
     carry out the multiplication in single precision.
 
     Args:
-        equation: The ``einsum`` equation.
-        operands: The operands to the ``einsum``.
+        equation: The `einsum` equation.
+        operands: The operands to the `einsum`.
 
     Returns:
-        The result of the ``einsum`` in the original precision.
+        The result of the `einsum` in the original precision.
 
     Raises:
         RuntimeError: If the operands are not on the same device.
@@ -125,7 +108,7 @@ def supported_einsum(equation, *operands: Tensor) -> Tensor:
     dev = devices.pop()
 
     # Use the first tensor's data type as the result's data type.
-    # The tensors may have different data types if ``autocast`` was used.
+    # The tensors may have different data types if `autocast` was used.
     dtype = operands[0].dtype
 
     # @ not supported on CPU for float16 (bfloat16 is supported)
@@ -140,14 +123,14 @@ def supported_einsum(equation, *operands: Tensor) -> Tensor:
 def all_traces(mat: Tensor) -> Tensor:
     """Compute the traces of a matrix across all diagonals.
 
-    A matrix of shape ``[N, M]`` has ``N + M - 1`` diagonals.
+    A matrix of shape `[N, M]` has `N + M - 1` diagonals.
 
     Args:
-        mat: A matrix of shape ``[N, M]``.
+        mat: A matrix of shape `[N, M]`.
 
     Returns:
-        A tensor of shape ``[N + M - 1]`` containing the traces of the matrix. Element
-        ``[N - 1]`` contains the main diagonal's trace. Elements to the left contain
+        A tensor of shape `[N + M - 1]` containing the traces of the matrix. Element
+        `[N - 1]` contains the main diagonal's trace. Elements to the left contain
         the traces of the negative off-diagonals, and elements to the right contain the
         traces of the positive off-diagonals.
     """
@@ -169,19 +152,19 @@ def all_traces(mat: Tensor) -> Tensor:
 def supported_conv1d(
     input: Tensor, weight: Tensor, padding: int = 0, groups: int = 1
 ) -> Tensor:
-    """Same as PyTorch's ``conv1d``, but uses higher precision if unsupported.
+    """Same as PyTorch's `conv1d`, but uses higher precision if unsupported.
 
     For now, we don't support bias and non-default hyper-parameters.
 
     Args:
-        input: The input of the convolution. Has shape ``[N, C_in, I_1]``.
-        weight: The kernel of the convolution. Has shape ``[C_out, C_in // G, K_1]``.
-        padding: The amount of padding on both sides of the input. Default: ``0``.
-        groups: The number of groups ``G``. Default: ``1``.
+        input: The input of the convolution. Has shape `[N, C_in, I_1]`.
+        weight: The kernel of the convolution. Has shape `[C_out, C_in // G, K_1]`.
+        padding: The amount of padding on both sides of the input. Default: `0`.
+        groups: The number of groups `G`. Default: `1`.
 
     Returns:
-        The output of the convolution in the same precision as ``input``.
-        Has shape ``[N, C_out, O_1]``, where ``O_1 = I_1 - K_1 + 1``.
+        The output of the convolution in the same precision as `input`.
+        Has shape `[N, C_out, O_1]`, where `O_1 = I_1 - K_1 + 1`.
 
     Raises:
         RuntimeError: If input and kernel are not on the same device.
@@ -192,7 +175,7 @@ def supported_conv1d(
     dev = devices.pop()
 
     # Use the input's data type as the result's data type.
-    # Input and kernel may have different data types if ``autocast`` was used.
+    # Input and kernel may have different data types if `autocast` was used.
     dtype = input.dtype
 
     # 'slow_conv2d_cpu' not implemented for 'Half' (bfloat16 is supported)
@@ -207,17 +190,17 @@ def supported_conv1d(
 def toeplitz_matmul(coeffs: Tensor, mat: Tensor) -> Tensor:
     """Compute the product of a Toeplitz matrix and a matrix.
 
-    Let ``N`` denote the expanded Toeplitz matrix dimension.
+    Let `N` denote the expanded Toeplitz matrix dimension.
 
     Args:
-        coeffs: A tensor of shape ``[2 * N - 1]`` containing the elements on the
+        coeffs: A tensor of shape `[2 * N - 1]` containing the elements on the
             Toeplitz matrix's diagonals, starting from most negative (bottom left)
             to top right, that is the central element contains the value of the
             Toeplitz matrix's main diagonal.
-        mat: A matrix of shape ``[N, M]``.
+        mat: A matrix of shape `[N, M]`.
 
     Returns:
-        The product of the Toeplitz matrix and the matrix. Has shape ``[N, M]``.
+        The product of the Toeplitz matrix and the matrix. Has shape `[N, M]`.
 
     Raises:
         RuntimeError: If the specified tensors have incorrect shape.
@@ -244,7 +227,7 @@ def diag_add_(mat: Tensor, value: float) -> Tensor:
     """In-place add a value to the main diagonal of a matrix.
 
     Args:
-        mat: A square matrix of shape ``[N, N]``.
+        mat: A square matrix of shape `[N, N]`.
         value: The value to add to the main diagonal.
 
     Raises:
@@ -270,7 +253,7 @@ def lowest_precision(*dtypes: torch.dtype) -> torch.dtype:
         *dtypes: The data types to compare.
 
     Returns:
-        The data type of lowest precision (``float16 < bfloat16 < float32``).
+        The data type of lowest precision (`float16 < bfloat16 < float32`).
 
     Raises:
         NotImplementedError: If any of the specified data types is not supported.
