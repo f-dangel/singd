@@ -49,6 +49,7 @@ class SINGD(Optimizer):
 https://pytorch.org/docs/stable/generated/torch.optim.Optimizer.state_dict.html) and
             [`.load_state_dict()`](\
 https://pytorch.org/docs/stable/generated/torch.optim.Optimizer.load_state_dict.html)).
+        SUPPORTED_LOSS_AVERAGE: Supported loss averaging schemes.
         _step_supports_amp_scaling: Indicates that `step` handles gradient scaling
             internally if the optimizer is used together with a
             [`torch.cuda.amp.GradScaler`](\
@@ -69,6 +70,11 @@ https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html).
         "triutoeplitz": TriuToeplitzMatrix,
     }
     SUPPORTED_MODULES: Tuple[Type[Module], ...] = (Linear, Conv2d)
+    SUPPORTED_LOSS_AVERAGE: Tuple[Union[None, str], ...] = (
+        None,
+        "batch",
+        "batch+sequence",
+    )
     _step_supports_amp_scaling = True  # do not modify this name (PyTorch convention)!
 
     def __init__(
@@ -81,7 +87,7 @@ https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html).
         alpha1: float = 0.5,  # α₁ in the paper
         weight_decay: float = 0.0,  # γ in the paper
         T: int = 10,  # T in the paper
-        batch_averaged: bool = True,
+        loss_average: Union[None, str] = "batch",
         lr_cov: Union[float, Callable[[int], float]] = 1e-2,  # β₁ in the paper
         structures: Tuple[str, str] = ("dense", "dense"),
         kfac_approx: str = "expand",
@@ -121,8 +127,15 @@ https://pytorch.org/docs/stable/optim.html#per-parameter-options).
             weight_decay: (\\(\\gamma\\) in the paper) Weight decay on the parameters.
                 Default: `0.0`.
             T: Pre-conditioner update frequency. Default: `10`.
-            batch_averaged: Whether the loss function is a mean over per-sample
-                losses. Default is `True`. If `False `, the loss function is a sum.
+            loss_average: Whether the loss function is a mean over per-sample
+                losses and if yes, over which dimensions the mean is taken.
+                If `"batch"`, the loss function is a mean over as many terms as
+                the size of the mini-batch. If `"batch+sequence"`, the loss
+                function is a mean over as many terms as the size of the
+                mini-batch times the sequence length, e.g. in the case of
+                language modeling. If `None`, the loss function is a sum. This
+                argument is used to ensure that the preconditioner is scaled
+                consistently with the loss and the gradient. Default: `"batch"`.
             lr_cov: (β₁ in the paper) Learning rate for the updates of the pre-
                 conditioner momenta \\(\\mathbf{m}_\\mathbf{K}\\) and
                 \\(\\mathbf{m}_\\mathbf{C}\\). Default is `1e-2`. Also allows for a
@@ -205,7 +218,7 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             alpha1=alpha1,
             weight_decay=weight_decay,
             T=T,
-            batch_averaged=batch_averaged,
+            loss_average=loss_average,
             lr_cov=lr_cov,
             structures=structures,
             kfac_approx=kfac_approx,
@@ -280,6 +293,8 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             ValueError: If `kfac_approx` for any param group is not
                 `'expand'` or `'reduce'`.
             ValueError: If parameters in a supported layer are in different groups.
+            ValueError: If `loss_average` for any param group is not in
+                self.SUPPORTED_LOSS_AVERAGE.
 
         Returns:
             A dictionary mapping parameter IDs (`.data_ptr()`) to group indices.
@@ -297,6 +312,12 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
                 raise ValueError(
                     "kfac_approx has to be set to either 'expand' or 'reduce', "
                     f"but was set to {group['kfac_approx']}."
+                )
+            if group["loss_average"] not in self.SUPPORTED_LOSS_AVERAGE:
+                raise ValueError(
+                    "loss_average has to be set to one out of "
+                    f"{self.SUPPORTED_LOSS_AVERAGE}, but was set to "
+                    f"{group['loss_average']}."
                 )
 
         # Find out which parameter is in which group
@@ -551,7 +572,7 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         if self.steps % T != 0:
             return
 
-        batch_averaged = self._get_param_group_entry(module, "batch_averaged")
+        loss_average = self._get_param_group_entry(module, "loss_average")
         kfac_approx = self._get_param_group_entry(module, "kfac_approx")
         module_name = self.module_names[module]
 
@@ -563,7 +584,7 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
 
         g = grad_output[0].data
         # Process into matrix according to kfac_approx, add scaling from batch average
-        g = process_grad_output(g, module, batch_averaged, kfac_approx)
+        g = process_grad_output(g, module, loss_average, kfac_approx)
 
         # 2) Update H_K, H_C
         K, C = self.Ks[module_name], self.Cs[module_name]
@@ -583,7 +604,7 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         # If DDP is used.
         if dist.is_initialized():
             # all-reduce across devices (computes average by default).
-            op = dist.ReduceOp.AVG if batch_averaged else dist.ReduceOp.SUM
+            op = dist.ReduceOp.AVG if loss_average else dist.ReduceOp.SUM
             H_K.all_reduce(op=op)
             H_C.all_reduce(op=op)
 
@@ -672,8 +693,8 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         # If DDP is used.
         if dist.is_initialized():
             # all-reduce across devices.
-            batch_averaged = self._get_param_group_entry(module, "batch_averaged")
-            op = dist.ReduceOp.AVG if batch_averaged else dist.ReduceOp.SUM
+            loss_average = self._get_param_group_entry(module, "loss_average")
+            op = dist.ReduceOp.AVG if loss_average else dist.ReduceOp.SUM
             dist.all_reduce(nat_grad, op=op)
 
         # 3) UN-CONCATENATE, UN-RESHAPE, AND COPY THE NATURAL GRADIENT TO `.GRAD`

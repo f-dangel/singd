@@ -2,7 +2,7 @@
 
 from test.optim.utils import Transpose, jacobians_naive
 from test.utils import DEVICE_IDS, DEVICES
-from typing import Callable, List, Tuple
+from typing import Callable, List, Tuple, Union
 
 from einops import rearrange, reduce
 from pytest import mark
@@ -88,15 +88,13 @@ MODELS = {
 
 @mark.parametrize("model", MODELS.items(), ids=MODELS.keys())
 @mark.parametrize("setting", ["expand", "reduce"])
-@mark.parametrize(
-    "batch_averaged", [True, False], ids=["batch_averaged", "not_averaged"]
-)
+@mark.parametrize("averaged", [True, False], ids=["loss_average", "not_averaged"])
 @mark.parametrize("bias", [True, False], ids=["bias", "no_bias"])
 @mark.parametrize("device", DEVICES, ids=DEVICE_IDS)
 def test_kfac(
     model: Tuple[str, Callable],
     setting: str,
-    batch_averaged: bool,
+    averaged: bool,
     bias: bool,
     device: device,
 ):
@@ -109,7 +107,7 @@ def test_kfac(
         model: Tuple of model name and function takes `bias` as input and
             returns the model.
         setting: KFAC approximation setting. Either `"expand"` or `"reduce"`.
-        batch_averaged: Whether to average over the batch dimension.
+        averaged: Whether the loss uses a mean reduction.
         bias: Whether to use a bias term.
         device: Device to run the test on.
 
@@ -122,8 +120,14 @@ def test_kfac(
     # Setup model and inputs x.
     model_name, model_fn = model
 
-    if model_name == "conv2d" and setting == "expand" and batch_averaged:
-        return  # TODO This case will work when issue #31 is fixed.
+    # Set appropriate loss_average argument based on averaged and setting.
+    if averaged:
+        if setting == "expand":
+            loss_average = "batch+sequence"
+        else:
+            loss_average = "batch"
+    else:
+        loss_average = None
 
     if model_name == "conv2d":
         model: Module = model_fn(setting, bias)
@@ -150,11 +154,11 @@ def test_kfac(
     # Exact Fisher/GGN.
     exact_F = Js.T @ Js  # regression
     assert exact_F.shape == (num_params, num_params)
-    if batch_averaged:
+    if loss_average:
         exact_F /= n_loss_terms
 
     # K-FAC Fisher/GGN.
-    kfac = KFACMSE(model, batch_averaged, setting)
+    kfac = KFACMSE(model, loss_average, setting)
     kfac.forward_and_backward(x)
     F = kfac.get_full_kfac_matrix()
     assert F.shape == (num_params, num_params)
@@ -211,19 +215,27 @@ class WeightShareModel(Sequential):
 class KFACMSE:
     """Class for computing the KFAC approximation with the MSE loss."""
 
-    def __init__(self, model: Module, batch_averaged: bool, setting: str):
+    def __init__(self, model: Module, loss_average: Union[None, str], setting: str):
         """Initialize the KFAC approximation class.
 
         Installs forward and backward hooks to the model.
 
         Args:
             model: The model.
-            batch_averaged: Whether the loss is a mean over per-sample losses.
+            loss_average: Whether the loss function is a mean over per-sample
+                losses and if yes, over which dimensions the mean is taken.
+                If `"batch"`, the loss function is a mean over as many terms as
+                the size of the mini-batch. If `"batch+sequence"`, the loss
+                function is a mean over as many terms as the size of the
+                mini-batch times the sequence length, e.g. in the case of
+                language modeling. If `None`, the loss function is a sum. This
+                argument is used to ensure that the preconditioner is scaled
+                consistently with the loss and the gradient. Default: `"batch"`.
             setting: KFAC approximation setting. Possible values are `'expand'`
                 and `'reduce'`.
         """
         self.model = model
-        self.batch_averaged = batch_averaged
+        self.loss_average = loss_average
         self.setting = setting
 
         # Install forward and backward hooks.
@@ -252,7 +264,7 @@ class KFACMSE:
         for i in range(n_dims):
             logits_i = logits[:, i]
             # Mean or sum reduction over `n_loss_terms`.
-            loss = logits_i.mean() if self.batch_averaged else logits_i.sum()
+            loss = logits_i.mean() if self.loss_average else logits_i.sum()
             loss.backward(retain_graph=i < n_dims - 1)
 
     def get_kfac_blocks(self) -> List[Tensor]:
@@ -346,7 +358,7 @@ class KFACMSE:
         """
         g = grad_output[0].data.detach()
         g = process_grad_output(
-            g, module, batch_averaged=self.batch_averaged, kfac_approx=self.setting
+            g, module, loss_average=self.loss_average, kfac_approx=self.setting
         )
         if hasattr(module, "kfac_g"):
             module.kfac_g.append(g)

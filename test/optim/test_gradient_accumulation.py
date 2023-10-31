@@ -54,14 +54,14 @@ def test_gradient_accumulation(reduction: str):
     loss_func_mini = CrossEntropyLoss(reduction=reduction)
     loss_func_micro = deepcopy(loss_func_mini)
 
-    batch_averaged = {"mean": True, "sum": False}[reduction]
+    loss_average = {"mean": "batch", "sum": None}[reduction]
     optim_hyperparams = {
         "lr": 5e-4,
         "damping": 1e-4,
         "momentum": 0.9,
         "weight_decay": 1e-2,
         "lr_cov": 1e-2,
-        "batch_averaged": batch_averaged,
+        "loss_average": loss_average,
         "T": 1,
         "alpha1": 0.5,
         "structures": ("dense", "dense"),
