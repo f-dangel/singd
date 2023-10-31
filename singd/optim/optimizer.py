@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
 from warnings import simplefilter, warn
 
 import torch.distributed as dist
-from torch import Tensor, cat, dtype, is_grad_enabled, zeros_like
+from torch import Tensor, cat, device, dtype, is_grad_enabled, zeros_like
 from torch.nn import Conv2d, Linear, Module, Parameter
 from torch.nn.parallel import DataParallel as DP
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -363,6 +363,26 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
 
         return trainable
 
+    def _get_preconditioner_dtypes_and_device(
+        self, module: Module
+    ) -> Tuple[Tuple[dtype, dtype], device]:
+        """Get the data types and device of the preconditioner matrices.
+
+        Args:
+            module: The layer whose preconditioner data types and device will be
+                returned.
+
+        Returns:
+            A tuple containing the data types of both preconditioner matrices, and
+            their device.
+        """
+        dtype = self._get_param_group_entry(module, "preconditioner_dtype")
+        dtype_K = dtype[0] if dtype[0] is not None else module.weight.dtype
+        dtype_C = dtype[1] if dtype[1] is not None else module.weight.dtype
+        dev = module.weight.device
+
+        return (dtype_K, dtype_C), dev
+
     def _initialize_buffers(self):
         """Initialize buffers for `K, C, m_K, m_C`.
 
@@ -373,24 +393,20 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         """
         for module, name in self.module_names.items():
             dim_K, dim_C = self.preconditioner_dims(module)
-
-            dtype = self._get_param_group_entry(module, "preconditioner_dtype")
-            dtype_K = dtype[0] if dtype[0] is not None else module.weight.dtype
-            dtype_C = dtype[1] if dtype[1] is not None else module.weight.dtype
-            device = module.weight.device
+            (dtype_K, dtype_C), dev = self._get_preconditioner_dtypes_and_device(module)
 
             # use the structure specified for the parameter group
             structures = self._get_param_group_entry(module, "structures")
             K_cls = self.SUPPORTED_STRUCTURES[structures[0]]
             C_cls = self.SUPPORTED_STRUCTURES[structures[1]]
 
-            self.Ks[name] = K_cls.eye(dim_K, dtype=dtype_K, device=device)
-            self.Cs[name] = C_cls.eye(dim_C, dtype=dtype_C, device=device)
+            self.Ks[name] = K_cls.eye(dim_K, dtype=dtype_K, device=dev)
+            self.Cs[name] = C_cls.eye(dim_C, dtype=dtype_C, device=dev)
 
             alpha1 = self._get_param_group_entry(module, "alpha1")
             if alpha1 != 0.0:
-                self.m_Ks[name] = K_cls.zeros(dim_K, dtype=dtype_K, device=device)
-                self.m_Cs[name] = C_cls.zeros(dim_C, dtype=dtype_C, device=device)
+                self.m_Ks[name] = K_cls.zeros(dim_K, dtype=dtype_K, device=dev)
+                self.m_Cs[name] = C_cls.zeros(dim_C, dtype=dtype_C, device=dev)
 
     @staticmethod
     def preconditioner_dims(module: Module) -> Tuple[int, int]:
@@ -459,13 +475,11 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             # In total we have to divide by `grad_scale ** 2`. The `H_C` computed
             # in the backward pass was already divided by `prev_grad_scale` to avoid
             # overflows. Here, we apply the remaining un-scaling
-            H_C *= prev_grad_scale / grad_scale**2
+            H_C.mul_(prev_grad_scale / grad_scale**2)
 
         # 1) COMPUTE UPDATE
         K_tK = K.from_inner()
         C_tC = C.from_inner()
-
-        p, d = self.preconditioner_dims(module)
 
         # hyper-parameters for parameter group of module
         kfac_like = self._get_param_group_entry(module, "kfac_like")
@@ -478,34 +492,31 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         # in `m_K, m_C`
         scale = 0.5 * (1.0 - alpha1 if normalize_lr_cov else 1.0)
 
-        # step for m_K
-        if kfac_like:
-            first_term = H_K
-            second_term = K_tK * damping
-        else:
-            # scaling before taking the trace is numerically more stable
-            first_term = H_K * (H_C * (1.0 / d)).trace()
-            c_squared = damping * (C_tC * (1.0 / d)).trace()
-            second_term = K_tK * c_squared
+        dim_K, dim_C = self.preconditioner_dims(module)
+        (dtype_K, dtype_C), dev = self._get_preconditioner_dtypes_and_device(module)
 
-        new_m_K = (first_term + second_term).diag_add_(-1.0) * scale
+        # step for m_K
+        new_m_K = K.zeros(dim_K, dtype=dtype_K, device=dev)
+        new_m_K.add_(H_K, alpha=1.0 if kfac_like else (H_C * (1.0 / dim_C)).trace())
+        new_m_K.add_(
+            K_tK,
+            alpha=damping if kfac_like else damping * (C_tC * (1.0 / dim_C)).trace(),
+        )
+        new_m_K.diag_add_(-1.0).mul_(scale)
 
         # step for m_C
-        if kfac_like:
-            first_term = H_C
-            second_term = C_tC * damping
-        else:
-            # scaling before taking the trace is numerically more stable
-            first_term = H_C * (H_K * (1.0 / p)).trace()
-            kappa_squared = damping * (K_tK * (1.0 / p)).trace()
-            second_term = C_tC * kappa_squared
-
-        new_m_C = (first_term + second_term).diag_add_(-1.0) * scale
+        new_m_C = C.zeros(dim_C, dtype=dtype_C, device=dev)
+        new_m_C.add_(H_C, alpha=1.0 if kfac_like else (H_K * (1.0 / dim_K)).trace())
+        new_m_C.add_(
+            C_tC,
+            alpha=damping if kfac_like else damping * (K_tK * (1.0 / dim_K)).trace(),
+        )
+        new_m_C.diag_add_(-1.0).mul_(scale)
 
         # 2) APPLY UPDATE
         if alpha1 != 0.0:
-            new_m_C += self.m_Cs[module_name] * alpha1
-            new_m_K += self.m_Ks[module_name] * alpha1
+            new_m_C.add_(self.m_Cs[module_name], alpha=alpha1)
+            new_m_K.add_(self.m_Ks[module_name], alpha=alpha1)
             self.m_Cs[module_name] = new_m_C
             self.m_Ks[module_name] = new_m_K
 
@@ -525,8 +536,8 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             beta1_K /= max(1.0, new_m_K.infinity_vector_norm())
             beta1_C /= max(1.0, new_m_C.infinity_vector_norm())
 
-        self.Ks[module_name] = K - (K @ new_m_K) * beta1_K
-        self.Cs[module_name] = C - (C @ new_m_C) * beta1_C
+        self.Ks[module_name].add_(K @ new_m_K, alpha=-beta1_K)
+        self.Cs[module_name].add_(C @ new_m_C, alpha=-beta1_C)
 
     def _accumulate_H_terms(
         self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]
