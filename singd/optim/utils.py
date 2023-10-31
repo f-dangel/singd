@@ -256,7 +256,7 @@ def linear_process_grad_output(
         and `[batch_size * ..., d_out]` for `"expand"`.
     """
     batch_size = g.shape[0]
-    weight_shared_dims_size = g[0, ..., 0].numel()
+    weight_shared_dims_size = g.shape[1:-1].numel()
     # We have to adjust the scaling to account for the mean reduction of the
     # loss used for computing the gradients when batch_averaged is not None.
     num_loss_terms = (
