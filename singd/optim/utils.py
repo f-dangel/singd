@@ -158,7 +158,7 @@ def process_grad_output(
             function is a mean over as many terms as the size of the
             mini-batch times the sequence length, e.g. in the case of
             language modeling. If `None`, the loss function is a sum. This
-            arugment is used to ensure that the preconditioner is scaled
+            argument is used to ensure that the preconditioner is scaled
             consistently with the loss and the gradient. Default: `"batch"`.
         kfac_approx: The KFAC approximation to use for linear weight-sharing
             layers. Possible values are `"expand"` and `"reduce"`.
@@ -200,7 +200,7 @@ def conv2d_process_grad_output(
             function is a mean over as many terms as the size of the
             mini-batch times the sequence length, e.g. in the case of
             language modeling. If `None`, the loss function is a sum. This
-            arugment is used to ensure that the preconditioner is scaled
+            argument is used to ensure that the preconditioner is scaled
             consistently with the loss and the gradient. Default: `"batch"`.
         scaling: An additional scaling that will be applied to the gradient.
         kfac_approx: The KFAC approximation to use. Possible values are
@@ -245,7 +245,7 @@ def linear_process_grad_output(
             function is a mean over as many terms as the size of the
             mini-batch times the sequence length, e.g. in the case of
             language modeling. If `None`, the loss function is a sum. This
-            arugment is used to ensure that the preconditioner is scaled
+            argument is used to ensure that the preconditioner is scaled
             consistently with the loss and the gradient. Default: `"batch"`.
         scaling: An additional scaling that will be applied to the gradient.
         kfac_approx: The KFAC approximation to use for linear weight-sharing

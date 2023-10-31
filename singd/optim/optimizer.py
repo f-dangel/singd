@@ -129,7 +129,7 @@ https://pytorch.org/docs/stable/optim.html#per-parameter-options).
                 function is a mean over as many terms as the size of the
                 mini-batch times the sequence length, e.g. in the case of
                 language modeling. If `None`, the loss function is a sum. This
-                arugment is used to ensure that the preconditioner is scaled
+                argument is used to ensure that the preconditioner is scaled
                 consistently with the loss and the gradient. Default: `"batch"`.
             lr_cov: (β₁ in the paper) Learning rate for the updates of the pre-
                 conditioner momenta \\(\\mathbf{m}_\\mathbf{K}\\) and

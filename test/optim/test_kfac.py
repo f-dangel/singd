@@ -229,7 +229,7 @@ class KFACMSE:
                 function is a mean over as many terms as the size of the
                 mini-batch times the sequence length, e.g. in the case of
                 language modeling. If `None`, the loss function is a sum. This
-                arugment is used to ensure that the preconditioner is scaled
+                argument is used to ensure that the preconditioner is scaled
                 consistently with the loss and the gradient. Default: `"batch"`.
             setting: KFAC approximation setting. Possible values are `'expand'`
                 and `'reduce'`.
