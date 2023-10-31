@@ -10,12 +10,7 @@ import torch
 import torch.distributed as dist
 from torch import Tensor, zeros
 
-from singd.structures.utils import (
-    diag_add_,
-    supported_eye,
-    supported_matmul,
-    supported_trace,
-)
+from singd.structures.utils import diag_add_, supported_eye, supported_matmul
 
 
 class StructuredMatrix(ABC):
@@ -304,14 +299,14 @@ class StructuredMatrix(ABC):
         dense = self.to_dense()
         return self.from_dense(supported_matmul(dense.T, XXT, dense))
 
-    def trace(self) -> Tensor:
-        """Compute the trace of the represented matrix.
+    def average_trace(self) -> Tensor:
+        """Compute the average trace of the represented matrix.
 
         Returns:
-            The trace of the represented matrix.
+            The average trace of the represented matrix.
         """
         self._warn_naive_implementation("trace")
-        return supported_trace(self.to_dense())
+        return self.to_dense().diag().mean()
 
     def diag_add_(self, value: float) -> StructuredMatrix:
         """In-place add a value to the diagonal of the represented matrix.

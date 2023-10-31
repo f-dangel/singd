@@ -14,7 +14,6 @@ from singd.structures.utils import (
     supported_einsum,
     supported_eye,
     supported_matmul,
-    supported_trace,
 )
 
 
@@ -292,13 +291,18 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
         return self.__class__(out_blocks, out_last)
 
-    def trace(self) -> Tensor:
-        """Compute the trace of the represented matrix.
+    def average_trace(self) -> Tensor:
+        """Compute the average trace of the represented matrix.
 
         Returns:
-            The trace of the represented matrix.
+            The average trace of the represented matrix.
         """
-        return supported_einsum("nii->", self._blocks) + supported_trace(self._last)
+        num_blocks, last_dim = self._blocks.shape[0], self._last.shape[0]
+        dim = num_blocks * self.BLOCK_DIM + last_dim
+        return (
+            supported_einsum("nii->", self._blocks / dim)
+            + (self._last.diag() / dim).sum()
+        )
 
     def diag_add_(self, value: float) -> BlockDiagonalMatrixTemplate:
         """In-place add a value to the diagonal of the represented matrix.

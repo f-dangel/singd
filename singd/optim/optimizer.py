@@ -497,20 +497,14 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
 
         # step for m_K
         new_m_K = K.zeros(dim_K, dtype=dtype_K, device=dev)
-        new_m_K.add_(H_K, alpha=1.0 if kfac_like else (H_C * (1.0 / dim_C)).trace())
-        new_m_K.add_(
-            K_tK,
-            alpha=damping if kfac_like else damping * (C_tC * (1.0 / dim_C)).trace(),
-        )
+        new_m_K.add_(H_K, alpha=1.0 if kfac_like else H_C.average_trace())
+        new_m_K.add_(K_tK, alpha=damping * (1.0 if kfac_like else C_tC.average_trace()))
         new_m_K.diag_add_(-1.0).mul_(scale)
 
         # step for m_C
         new_m_C = C.zeros(dim_C, dtype=dtype_C, device=dev)
-        new_m_C.add_(H_C, alpha=1.0 if kfac_like else (H_K * (1.0 / dim_K)).trace())
-        new_m_C.add_(
-            C_tC,
-            alpha=damping if kfac_like else damping * (K_tK * (1.0 / dim_K)).trace(),
-        )
+        new_m_C.add_(H_C, alpha=1.0 if kfac_like else H_K.average_trace())
+        new_m_C.add_(C_tC, alpha=damping * (1.0 if kfac_like else K_tK.average_trace()))
         new_m_C.diag_add_(-1.0).mul_(scale)
 
         # 2) APPLY UPDATE
