@@ -4,16 +4,18 @@ from math import sqrt
 from typing import Tuple, Union
 
 import torch.nn.functional as F
+from einconv.utils import get_conv_paddings
 from einops import rearrange, reduce
 from torch import Tensor, cat
 from torch.nn import Conv2d, Linear, Module
+from torch.nn.modules.utils import _pair
 
 
 def _extract_patches(
     x: Tensor,
     kernel_size: Union[Tuple[int, int], int],
     stride: Union[Tuple[int, int], int],
-    padding: Union[Tuple[int, int], int],
+    padding: Union[Tuple[int, int], int, str],
     dilation: Union[Tuple[int, int], int],
     groups: int,
 ) -> Tensor:
@@ -25,7 +27,7 @@ def _extract_patches(
         x: Input to a 2d-convolution. Has shape `[batch_size, C_in, I1, I2]`.
         kernel_size: The convolution's kernel size supplied as 2-tuple or integer.
         stride: The convolution's stride supplied as 2-tuple or integer.
-        padding: The convolution's padding supplied as 2-tuple or integer.
+        padding: The convolution's padding supplied as 2-tuple, integer, or string.
         dilation: The convolution's dilation supplied as 2-tuple or integer.
         groups: The number of channel groups.
 
@@ -33,7 +35,20 @@ def _extract_patches(
         A tensor of shape `[batch_size, O1 * O2, C_in // groups * K1 * K2]` where
         each column `[b, o1_o2, :]` contains the flattened patch of sample `b` used
         for output location `(o1, o2)`, averaged over channel groups.
+
+    Raises:
+        NotImplementedError: If `padding` is a string that would lead to unequal
+            padding along a dimension.
     """
+    if isinstance(padding, str):  # get padding as integers
+        padding_as_int = []
+        for k, s, d in zip(_pair(kernel_size), _pair(stride), _pair(dilation)):
+            p_left, p_right = get_conv_paddings(k, s, padding, d)
+            if p_left != p_right:
+                raise NotImplementedError("Unequal padding not supported in unfold.")
+            padding_as_int.append(p_left)
+        padding = tuple(padding_as_int)
+
     x_unfold = F.unfold(
         x, kernel_size, dilation=dilation, padding=padding, stride=stride
     )
@@ -83,16 +98,7 @@ def conv2d_process_input(x: Tensor, layer: Conv2d, kfac_approx: str) -> Tensor:
         `[batch_size, O1 * O2, C_in // groups * K1 * K2 (+ 1)]` for `"reduce"` and
         `[batch_size * O1 * O2, C_in // groups * K1 * K2 (+ 1)]` for `"expand"`.
         The `+1` is active if the layer has a bias.
-
-    Raises:
-        NotImplementedError: If the convolution uses string-valued padding.
     """
-    # TODO Add support for string-valued padding in `_extract_patches`
-    if isinstance(layer.padding, str):
-        raise NotImplementedError(
-            "String-valued padding is not yet supported (only 2-tuples)."
-        )
-
     x = _extract_patches(
         x, layer.kernel_size, layer.stride, layer.padding, layer.dilation, layer.groups
     )
