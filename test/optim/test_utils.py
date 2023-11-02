@@ -55,7 +55,7 @@ def test_extract_average_patches(case: Dict[str, Any]):
     report_nonclose(averaged_patches, truth, rtol=1e-5, atol=1e-7)
 
 
-MEMORY_CONSUMPTION_CASES = [
+PERFORMANCE_CASES = [
     {
         "batch_size": 128,
         "in_channels": 10,
@@ -68,13 +68,13 @@ MEMORY_CONSUMPTION_CASES = [
         "seed": 0,
     }
 ]
-MEMORY_CONSUMPTION_CASE_IDS = [
+PERFORMANCE_CASE_IDS = [
     "_".join([f"{k}={v}".replace(" ", "") for k, v in case.items()])
-    for case in MEMORY_CONSUMPTION_CASES
+    for case in PERFORMANCE_CASES
 ]
 
 
-@mark.parametrize("case", MEMORY_CONSUMPTION_CASES, ids=MEMORY_CONSUMPTION_CASE_IDS)
+@mark.parametrize("case", PERFORMANCE_CASES, ids=PERFORMANCE_CASE_IDS)
 def test_performance_extract_average_patches(case: Dict[str, Any]):
     """Compare performance of averaged patches vs averaged output of patches.
 
