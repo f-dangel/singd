@@ -100,8 +100,8 @@ def test_kfac(
 ):
     """Test KFAC using (deep) linear models with weight sharing and the MSE loss.
 
-    See [Eschenhagen et al., 2023](TODO Insert arXiv link) for more details on
-    the conditions for KFAC being exact.
+    See [Eschenhagen et al., 2023](https://arxiv.org/abs/2311.00636) for more
+    details on the conditions for KFAC-expand and KFAC-reduce being exact.
 
     Args:
         model: Tuple of model name and function takes `bias` as input and
