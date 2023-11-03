@@ -848,7 +848,6 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         "m_Cs",
         "H_Ks",
         "H_Cs",
-        "inputs",
     ]
 
     def state_dict(self) -> Dict[str, Any]:
