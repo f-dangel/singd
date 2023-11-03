@@ -101,8 +101,9 @@ def _extract_averaged_patches(
 
     # compute index pattern tensors, average output dimension
     patterns = []
+    input_sizes = x.shape[-2:]
     for i, k, s, p, d in zip(
-        x.shape[-2:],
+        input_sizes,
         _pair(kernel_size),
         _pair(stride),
         (padding, padding) if isinstance(padding, str) else _pair(padding),
