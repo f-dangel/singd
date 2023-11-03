@@ -4,8 +4,9 @@ from math import sqrt
 from typing import Tuple, Union
 
 import torch.nn.functional as F
+from einconv import index_pattern
 from einconv.utils import get_conv_paddings
-from einops import rearrange, reduce
+from einops import einsum, rearrange, reduce
 from torch import Tensor, cat
 from torch.nn import Conv2d, Linear, Module
 from torch.nn.modules.utils import _pair
@@ -59,6 +60,65 @@ def _extract_patches(
     return rearrange(x_unfold, "b c_in_k1_k2 o1_o2 -> b o1_o2 c_in_k1_k2")
 
 
+def _extract_averaged_patches(
+    x: Tensor,
+    kernel_size: Union[Tuple[int, int], int],
+    stride: Union[Tuple[int, int], int],
+    padding: Union[Tuple[int, int], int, str],
+    dilation: Union[Tuple[int, int], int],
+    groups: int,
+) -> Tensor:
+    """Extract averaged patches from the input of a 2d-convolution.
+
+    The patches are averaged over channel groups and output locations.
+
+    Uses the tensor network formulation of convolution from
+    [Dangel, 2023](https://arxiv.org/abs/2307.02275).
+
+    Args:
+        x: Input to a 2d-convolution. Has shape `[batch_size, C_in, I1, I2]`.
+        kernel_size: The convolution's kernel size supplied as 2-tuple or integer.
+        stride: The convolution's stride supplied as 2-tuple or integer.
+        padding: The convolution's padding supplied as 2-tuple, integer, or string.
+        dilation: The convolution's dilation supplied as 2-tuple or integer.
+        groups: The number of channel groups.
+
+    Returns:
+        A tensor of shape `[batch_size, C_in // groups * K1 * K2]` where each column
+        `[b, :]` contains the flattened patch of sample `b` averaged over all output
+        locations and channel groups.
+    """
+    # average channel groups
+    x = rearrange(x, "b (g c_in) i1 i2 -> b g c_in i1 i2", g=groups)
+    x = reduce(x, "b g c_in i1 i2 -> b c_in i1 i2", "mean")
+
+    # TODO For convolutions with special structure, we don't even need to compute
+    # the index pattern tensors, or can resort to contracting only slices thereof.
+    # In order for this to work `einconv`'s TN simplification mechanism must first
+    # be refactored to work purely symbolically. Once this is done, it will be
+    # possible to do the below even more efficiently (memory and run time) for
+    # structured convolutions.
+
+    # compute index pattern tensors, average output dimension
+    patterns = []
+    input_sizes = x.shape[-2:]
+    for i, k, s, p, d in zip(
+        input_sizes,
+        _pair(kernel_size),
+        _pair(stride),
+        (padding, padding) if isinstance(padding, str) else _pair(padding),
+        _pair(dilation),
+    ):
+        pi = index_pattern(
+            i, k, stride=s, padding=p, dilation=d, dtype=x.dtype, device=x.device
+        )
+        pi = reduce(pi, "k o i -> k i", "mean")
+        patterns.append(pi)
+
+    x = einsum(x, *patterns, "b c_in i1 i2, k1 i1, k2 i2 -> b c_in k1 k2")
+    return rearrange(x, "b c_in k1 k2 -> b (c_in k1 k2)")
+
+
 def process_input(x: Tensor, module: Module, kfac_approx: str) -> Tensor:
     """Unfold the input for convolutions, append ones if biases are present.
 
@@ -95,20 +155,19 @@ def conv2d_process_input(x: Tensor, layer: Conv2d, kfac_approx: str) -> Tensor:
 
     Returns:
         The processed input. Has shape
-        `[batch_size, O1 * O2, C_in // groups * K1 * K2 (+ 1)]` for `"reduce"` and
+        `[batch_size, C_in // groups * K1 * K2 (+ 1)]` for `"reduce"` and
         `[batch_size * O1 * O2, C_in // groups * K1 * K2 (+ 1)]` for `"expand"`.
         The `+1` is active if the layer has a bias.
     """
-    x = _extract_patches(
+    patch_extractor_fn = (
+        _extract_patches if kfac_approx == "expand" else _extract_averaged_patches
+    )
+    x = patch_extractor_fn(
         x, layer.kernel_size, layer.stride, layer.padding, layer.dilation, layer.groups
     )
 
     if kfac_approx == "expand":
-        # KFAC-expand approximation
         x = rearrange(x, "b o1_o2 c_in_k1_k2 -> (b o1_o2) c_in_k1_k2")
-    else:
-        # KFAC-reduce approximation
-        x = reduce(x, "b o1_o2 c_in_k1_k2 -> b c_in_k1_k2", "mean")
 
     if layer.bias is not None:
         x = cat([x, x.new_ones(x.shape[0], 1)], dim=1)
