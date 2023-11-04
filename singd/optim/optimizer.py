@@ -497,11 +497,7 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         # overflows. So we apply the remaining un-scaling. For increased
         # numerical stability we do not scale `H_C` directly but instead
         # include the un-scaling in the update of `m_K` and `m_C`.
-        grad_unscaling = (
-            prev_grad_scale / grad_scale**2
-            if grad_scale != 1.0 or prev_grad_scale != 1.0
-            else 1.0
-        )
+        grad_unscaling = prev_grad_scale / grad_scale**2
 
         # 1) COMPUTE UPDATE
         K_tK = K.from_inner()
