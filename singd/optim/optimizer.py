@@ -1,5 +1,6 @@
 """Implements structured inverse-free KFAC."""
 
+from functools import partial
 from math import sqrt
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Type, Union
 from warnings import simplefilter, warn
@@ -553,25 +554,47 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         self.Ks[module_name].add_(K @ new_m_K, alpha=-beta1_K)
         self.Cs[module_name].add_(C @ new_m_C, alpha=-beta1_C)
 
-    def _accumulate_H_terms(
-        self, module: Module, grad_input: Tuple[Tensor], grad_output: Tuple[Tensor]
+    def _register_tensor_hook_on_output_to_accumulate_H_terms(
+        self, module: Module, inputs: Tuple[Tensor], output: Tensor
     ):
+        """Register a tensor hook on the module's output that accumulates the H terms.
+
+        This function can be used as a `forward_hook`.
+
+        Only installs the hook for steps matching the specified update frequency.
+
+        Note:
+            The easier way to compute `H_K` and `H_C` would be via a full backward hook
+            on the module itself which performs the computation. However, this approach
+            breaks down if the output of a layer feeds into an activation with
+            `inplace=True` (see https://github.com/pytorch/pytorch/issues/61519). Hence
+            we use the workaround
+            https://github.com/pytorch/pytorch/issues/61519#issuecomment-883524237, and
+            install a module hook which installs a tensor hook on the module's output
+            tensor, which performs the accumulation of `H_K` and `H_C`.
+
+        Args:
+            module: Layer onto whose output a tensor hook to compute `H_K` and `H_C`
+                will be installed.
+            inputs: The layer's input tensors.
+            output: The layer's output tensor.
+        """
+        T = self._get_param_group_entry(module, "T")
+        if self.steps % T == 0:
+            tensor_hook = partial(self._accumulate_H_terms, module)
+            output.register_hook(tensor_hook)
+
+    def _accumulate_H_terms(self, module: Module, grad_output: Tensor):
         """Accumulate the current mini-batch's contribution to `H_K, H_C` for a layer.
 
         Updates the `H_K, H_C` buffers for the module.
 
-        Only updates for steps matched by the specified update frequency.
         Requires that the layer inputs have been stored in `self.inputs`.
 
         Args:
             module: Layer whose pre-conditioner is updated.
-            grad_input: Gradients w.r.t. the input.
-            grad_output: Gradients w.r.t. the output.
+            grad_output: The gradient w.r.t. the output.
         """
-        T = self._get_param_group_entry(module, "T")
-        if self.steps % T != 0:
-            return
-
         loss_average = self._get_param_group_entry(module, "loss_average")
         kfac_approx = self._get_param_group_entry(module, "kfac_approx")
         module_name = self.module_names[module]
@@ -582,7 +605,7 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         # For convolutions, unfold the input, for modules with bias terms, append a 1
         a = process_input(a, module, kfac_approx)
 
-        g = grad_output[0].data
+        g = grad_output.data
         # Process into matrix according to kfac_approx, add scaling from batch average
         g = process_grad_output(g, module, loss_average, kfac_approx)
 
@@ -642,7 +665,9 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             handles.extend(
                 (
                     module.register_forward_pre_hook(self._save_input),
-                    module.register_full_backward_hook(self._accumulate_H_terms),
+                    module.register_forward_hook(
+                        self._register_tensor_hook_on_output_to_accumulate_H_terms
+                    ),
                 )
             )
         return module_names, handles
