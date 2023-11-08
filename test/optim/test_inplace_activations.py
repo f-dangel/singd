@@ -13,7 +13,7 @@ from torchvision.transforms import ToTensor
 from singd.optim.optimizer import SINGD
 
 
-@mark.parametrize("inplace", [True, False], ids=["inplace=True", "inplce=False"])
+@mark.parametrize("inplace", [True, False], ids=["inplace=True", "inplace=False"])
 def test_hooks_support_inplace_activations(inplace: bool):
     """Test that SINGD's hooks support in in-place activations.
 
@@ -52,7 +52,7 @@ def test_compare_training_using_inplace_activations(reduction: str):
 
     # _inplace indicates that the trained net has in-place activations
 
-    # NOTE All parameters of this net are supported by SINGD, no optimizer is involved
+    # NOTE All parameters of this net are supported by SINGD
     model = Sequential(
         Conv2d(1, 3, kernel_size=5, stride=2),
         ReLU(),

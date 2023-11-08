@@ -559,7 +559,7 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
     ):
         """Register a tensor hook on the module's output that accumulates the H terms.
 
-        This function can be used as a `full_backward_hook`.
+        This function can be used as a `forward_hook`.
 
         Only installs the hook for steps matching the specified update frequency.
 
