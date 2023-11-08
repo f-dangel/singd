@@ -115,15 +115,8 @@ def compare_optimizers(  # noqa: C901
     rtol_hook = rtol_hook if rtol_hook is not None else rtol
 
     if check_hook_quantities:
-        assert set(optim1.inputs.keys()) == set(optim2.inputs.keys())
         assert set(optim1.H_Ks.keys()) == set(optim2.H_Ks.keys())
         assert set(optim1.H_Cs.keys()) == set(optim2.H_Cs.keys())
-
-        for name in optim1.inputs:
-            inputs1, inputs2 = optim1.inputs[name], optim2.inputs[name]
-            report_nonclose(
-                inputs1, inputs2, atol=atol_hook, rtol=rtol_hook, name="inputs"
-            )
 
         for name in optim1.H_Ks:
             H_K1 = optim1.H_Ks[name].value.to_dense()
