@@ -55,7 +55,9 @@ cost
 
 ## Limitations
 
-- `SINGD` does not support graph neural networks (GNN)
+- `SINGD` does not support graph neural networks (GNN).
+
+- `SINGD` currently does not support gradient clipping.
 
 - The code has stabilized only recently. Expect things to break and help us
   improve by filing issues.

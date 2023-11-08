@@ -543,7 +543,7 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
     ):
         """Register a tensor hook on the module's output that accumulates the H terms.
 
-        This function can be used as a `full_backward_hook`.
+        This function can be used as a `forward_hook`.
 
         Only installs the hook for steps matching the specified update frequency.
 
@@ -574,8 +574,6 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         """Accumulate the current mini-batch's contribution to `H_K, H_C` for a layer.
 
         Updates the `H_K, H_C` buffers for the module.
-
-        Requires that the layer inputs have been stored in `self.inputs`.
 
         Args:
             module: Layer whose pre-conditioner is updated.
