@@ -473,14 +473,16 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         H_K: StructuredMatrix = self.H_Ks.pop(module_name)
         H_C: StructuredMatrix = self.H_Cs.pop(module_name)
 
-        # un-scale `H_C = structure(C.T @ (grad_scale * g) @ (grad_scale * g).T @ C)`
+        # Define `grad_unscaling` to later un-scale
+        # `H_C = structure(C.T @ (grad_scale * g) @ (grad_scale * g).T @ C)`.
         prev_grad_scale = self._get_grad_scale(self.steps - 1)
         grad_scale = self._get_grad_scale(self.steps)
-        if grad_scale != 1.0 or prev_grad_scale != 1.0:
-            # In total we have to divide by `grad_scale ** 2`. The `H_C` computed
-            # in the backward pass was already divided by `prev_grad_scale` to avoid
-            # overflows. Here, we apply the remaining un-scaling
-            H_C.mul_(prev_grad_scale / grad_scale**2)
+        # In total we have to divide by `grad_scale ** 2`. The `H_C` computed
+        # in the backward pass was already divided by `prev_grad_scale` to avoid
+        # overflows. So we apply the remaining un-scaling. For increased
+        # numerical stability we do not scale `H_C` directly but instead
+        # include the un-scaling in the update of `m_K` and `m_C`.
+        grad_unscaling = prev_grad_scale / grad_scale**2
 
         # 1) COMPUTE UPDATE
         K_tK = K.from_inner()
@@ -502,13 +504,18 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
 
         # step for m_K
         new_m_K = K.zeros(dim_K, dtype=dtype_K, device=dev)
-        new_m_K.add_(H_K, alpha=1.0 if kfac_like else H_C.average_trace())
+        new_m_K.add_(
+            H_K, alpha=1.0 if kfac_like else grad_unscaling * H_C.average_trace()
+        )
         new_m_K.add_(K_tK, alpha=damping * (1.0 if kfac_like else C_tC.average_trace()))
         new_m_K.diag_add_(-1.0).mul_(scale)
 
         # step for m_C
         new_m_C = C.zeros(dim_C, dtype=dtype_C, device=dev)
-        new_m_C.add_(H_C, alpha=1.0 if kfac_like else H_K.average_trace())
+        new_m_C.add_(
+            H_C,
+            alpha=grad_unscaling if kfac_like else grad_unscaling * H_K.average_trace(),
+        )
         new_m_C.add_(C_tC, alpha=damping * (1.0 if kfac_like else K_tK.average_trace()))
         new_m_C.diag_add_(-1.0).mul_(scale)
 
