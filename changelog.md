@@ -27,7 +27,7 @@ regarding numerical stability in half precision.
 New features:
 
 - Support `Conv2d` layers with `dilation != 1`
-  ([PR](https://github.com/f-dangel/singd/pull/51)
+  ([PR](https://github.com/f-dangel/singd/pull/51))
 - Support neural networks with inplace activation functions
   ([PR](https://github.com/f-dangel/singd/pull/63))
 
