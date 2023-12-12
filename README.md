@@ -2,7 +2,7 @@
 
 This package contains the official PyTorch implementation of our
 **memory-efficient and numerically stable KFAC** variant, termed SINGD
-([paper](TODO Insert arXiv link)).
+([paper](http://arxiv.org/abs/2312.05705)).
 
 The main feature is a `torch.optim.Optimizer` which works like most PyTorch optimizers and is compatible with:
 
