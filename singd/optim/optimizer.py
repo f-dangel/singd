@@ -26,7 +26,7 @@ from singd.structures.triutoeplitz import TriuToeplitzMatrix
 class SINGD(Optimizer):
     """Structured inverse-free natural gradient descent.
 
-    The algorithm is introduced in [this paper](TODO Insert arXiv link) and
+    The algorithm is introduced in [this paper](http://arxiv.org/abs/2312.05705) and
     extends the inverse-free KFAC algorithm from [Lin et al. (ICML
     2023)](https://arxiv.org/abs/2302.09738) with structured pre-conditioner
     matrices.
@@ -104,8 +104,8 @@ https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html).
     ):  # noqa: D301
         """Structured inverse-free natural gradient descent optimizer.
 
-        Uses the empirical Fisher. See the [paper](TODO Insert arXiv link) for the
-        notation.
+        Uses the empirical Fisher. See the [paper](http://arxiv.org/abs/2312.05705) for
+        the notation.
 
         Args:
             model: The neural network whose parameters (or a subset thereof) will be
