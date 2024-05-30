@@ -350,7 +350,7 @@ class StructuredMatrix(ABC):
         Returns:
             The Frobenius norm of the represented matrix.
         """
-        self._warn_naive_implementation("trace")
+        self._warn_naive_implementation("frobenius_norm")
         return matrix_norm(self.to_dense())
 
     ###############################################################################
