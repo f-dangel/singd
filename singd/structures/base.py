@@ -205,7 +205,8 @@ class StructuredMatrix(ABC):
             A dense PyTorch tensor resulting from the multiplication.
         """
         self._warn_naive_implementation("rmatmat")
-        return self.to_dense().T @ mat
+        dense = self.to_dense()
+        return dense.T @ mat.to(dense.dtype)
 
     @classmethod
     def _warn_naive_implementation(cls, fn_name: str):
