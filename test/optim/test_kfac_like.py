@@ -1,6 +1,5 @@
 """Integration test: Train on MNIST using KFAC-like updates."""
 
-
 from torch import manual_seed
 from torch.nn import Conv2d, CrossEntropyLoss, Flatten, Linear, ReLU, Sequential
 from torch.utils.data import DataLoader
