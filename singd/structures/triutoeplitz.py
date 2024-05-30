@@ -6,15 +6,10 @@ from typing import Union
 
 import torch
 from torch import Tensor, arange, cat, triu_indices, zeros
-from torch.nn.functional import pad
+from torch.nn.functional import conv1d, pad
 
 from singd.structures.base import StructuredMatrix
-from singd.structures.utils import (
-    all_traces,
-    lowest_precision,
-    supported_conv1d,
-    toeplitz_matmul,
-)
+from singd.structures.utils import all_traces, lowest_precision, toeplitz_matmul
 
 
 class TriuToeplitzMatrix(StructuredMatrix):
@@ -147,7 +142,7 @@ class TriuToeplitzMatrix(StructuredMatrix):
             # need to create fake channel dimensions
             conv_input = pad(other._upper_diags, (dim - 1, 0)).unsqueeze(0)
             conv_weight = row.flip(0).unsqueeze(0).unsqueeze(0)
-            mat_row = supported_conv1d(conv_input, conv_weight).squeeze(0)
+            mat_row = conv1d(conv_input, conv_weight).squeeze(0)
             return TriuToeplitzMatrix(mat_row)
 
     def rmatmat(self, mat: Tensor) -> Tensor:

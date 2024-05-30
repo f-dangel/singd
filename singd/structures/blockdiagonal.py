@@ -6,15 +6,10 @@ from typing import Union
 
 import torch
 from einops import rearrange
-from torch import Tensor, arange, cat, zeros
+from torch import Tensor, arange, cat, einsum, zeros
 
 from singd.structures.base import StructuredMatrix
-from singd.structures.utils import (
-    lowest_precision,
-    supported_einsum,
-    supported_eye,
-    supported_matmul,
-)
+from singd.structures.utils import lowest_precision, supported_eye
 
 
 class BlockDiagonalMatrixTemplate(StructuredMatrix):
@@ -194,7 +189,7 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
             other_blocks = rearrange(
                 other_blocks, "(block row) col -> block row col", **dims
             )
-            result_blocks = supported_einsum(
+            result_blocks = einsum(
                 "nij,njk->nik",
                 self._blocks.to(compute_dtype),
                 other_blocks.to(compute_dtype),
@@ -205,15 +200,15 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
             out_dtype = self._last.dtype
             compute_dtype = lowest_precision(self._last.dtype, other_last.dtype)
-            result_last = supported_matmul(
-                self._last.to(compute_dtype), other_last.to(compute_dtype)
+            result_last = (
+                self._last.to(compute_dtype) @ other_last.to(compute_dtype)
             ).to(out_dtype)
 
             return cat([result_blocks, result_last])
 
         else:
-            out_blocks = supported_einsum("nij,njk->nik", self._blocks, other._blocks)
-            out_last = supported_matmul(self._last, other._last)
+            out_blocks = einsum("nij,njk->nik", self._blocks, other._blocks)
+            out_last = self._last @ other._last
             return self.__class__(out_blocks, out_last)
 
     def __add__(
@@ -286,8 +281,8 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
             dims = {"block": num_blocks, "row": self.BLOCK_DIM}
             S_blocks = rearrange(S_blocks, "(block row) col -> block row col", **dims)
 
-        out_blocks = supported_einsum("nij,nkj->nik", S_blocks, S_blocks)
-        out_last = supported_matmul(S_last, S_last.T)
+        out_blocks = einsum("nij,nkj->nik", S_blocks, S_blocks)
+        out_last = S_last @ S_last.T
 
         return self.__class__(out_blocks, out_last)
 
@@ -299,10 +294,7 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
         """
         num_blocks, last_dim = self._blocks.shape[0], self._last.shape[0]
         dim = num_blocks * self.BLOCK_DIM + last_dim
-        return (
-            supported_einsum("nii->", self._blocks / dim)
-            + (self._last.diag() / dim).sum()
-        )
+        return einsum("nii->", self._blocks / dim) + (self._last.diag() / dim).sum()
 
     def diag_add_(self, value: float) -> BlockDiagonalMatrixTemplate:
         """In-place add a value to the diagonal of the represented matrix.

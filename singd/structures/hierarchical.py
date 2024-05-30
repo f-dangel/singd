@@ -5,16 +5,10 @@ from __future__ import annotations
 from typing import Tuple, Union
 
 import torch
-from torch import Tensor, arange, cat, ones, zeros
+from torch import Tensor, arange, cat, einsum, ones, zeros
 
 from singd.structures.base import StructuredMatrix
-from singd.structures.utils import (
-    diag_add_,
-    lowest_precision,
-    supported_einsum,
-    supported_eye,
-    supported_matmul,
-)
+from singd.structures.utils import diag_add_, lowest_precision, supported_eye
 
 
 class HierarchicalMatrixTemplate(StructuredMatrix):
@@ -209,34 +203,25 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
                 [self.K1, self.diag_dim, self.K2]
             )
 
-            top = (
-                supported_matmul(self.A, other_top)
-                + supported_matmul(B_C, other_middle)
-                + supported_matmul(B_E, other_bottom)
-            )
-            middle = supported_einsum("i,ij->ij", self.C, other_middle)
-            bottom = supported_matmul(self.D, other_middle) + supported_matmul(
-                self.E, other_bottom
-            )
+            top = self.A @ other_top + B_C @ other_middle + B_E @ other_bottom
+            middle = einsum("i,ij->ij", self.C, other_middle)
+            bottom = self.D @ other_middle + self.E @ other_bottom
 
             return cat([top, middle, bottom], dim=0)
 
         else:
-            A_new = supported_matmul(self.A, other.A)
+            A_new = self.A @ other.A
             C_new = self.C * other.C
-            E_new = supported_matmul(self.E, other.E)
-            D_new = supported_einsum("ij,j->ij", self.D, other.C) + supported_matmul(
-                self.E, other.D
-            )
+            E_new = self.E @ other.E
+            D_new = einsum("ij,j->ij", self.D, other.C) + self.E @ other.D
 
             B_C_other, B_E_other = other.B.split([other.diag_dim, other.K2], dim=1)
             B_new = cat(
                 [
-                    supported_matmul(self.A, B_C_other)
-                    + supported_einsum("ij,j->ij", B_C, other.C)
-                    + supported_matmul(B_E, other.D),
-                    supported_matmul(self.A, B_E_other)
-                    + supported_matmul(B_E, other.E),
+                    self.A @ B_C_other
+                    + einsum("ij,j->ij", B_C, other.C)
+                    + B_E @ other.D,
+                    self.A @ B_E_other + B_E @ other.E,
                 ],
                 dim=1,
             )
@@ -291,20 +276,18 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
         # parts of B that share columns with C, E
         B_C, B_E = self.B.split([self.diag_dim, self.K2], dim=1)
 
-        top = supported_matmul(self.A.T, mat_top)
+        top = self.A.T @ mat_top
 
         compute_dtype = lowest_precision(self.C.dtype, mat_middle.dtype)
         out_dtype = self.C.dtype
         middle = (
-            supported_matmul(B_C.T, mat_top)
-            + supported_einsum(
+            B_C.T @ mat_top
+            + einsum(
                 "i,ij->ij", self.C.to(compute_dtype), mat_middle.to(compute_dtype)
             ).to(out_dtype)
-            + supported_matmul(self.D.T, mat_bottom)
+            + self.D.T @ mat_bottom
         )
-        bottom = supported_matmul(B_E.T, mat_top) + supported_matmul(
-            self.E.T, mat_bottom
-        )
+        bottom = B_E.T @ mat_top + self.E.T @ mat_bottom
 
         return cat([top, middle, bottom])
 
@@ -323,26 +306,22 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
             `self.T @ X @ X^T @ self`.
         """
         if X is None:
-            A_new = supported_matmul(self.A.T, self.A)
-            B_new = 2 * supported_matmul(self.A.T, self.B)
+            A_new = self.A.T @ self.A
+            B_new = 2 * self.A.T @ self.B
 
             # parts of B that share columns with C, E
             B_C, B_E = self.B.split([self.diag_dim, self.K2], dim=1)
 
             C_new = self.C**2 + (B_C**2).sum(0) + (self.D**2).sum(0)
-            D_new = 2 * (
-                supported_matmul(B_E.T, B_C) + supported_matmul(self.E.T, self.D)
-            )
-            E_new = supported_matmul(self.E.T, self.E) + supported_matmul(B_E.T, B_E)
+            D_new = 2 * (B_E.T @ B_C + self.E.T @ self.D)
+            E_new = self.E.T @ self.E + B_E.T @ B_E
         else:
             S_A, S_C, S_E = self.rmatmat(X).split([self.K1, self.diag_dim, self.K2])
-            A_new = supported_matmul(S_A, S_A.T)
-            B_new = 2 * cat(
-                [supported_matmul(S_A, S_C.T), supported_matmul(S_A, S_E.T)], dim=1
-            )
+            A_new = S_A @ S_A.T
+            B_new = 2 * cat([S_A @ S_C.T, S_A @ S_E.T], dim=1)
             C_new = (S_C**2).sum(1)
-            D_new = 2 * supported_matmul(S_E, S_C.T)
-            E_new = supported_matmul(S_E, S_E.T)
+            D_new = 2 * S_E @ S_C.T
+            E_new = S_E @ S_E.T
 
         return self.__class__(A_new, B_new, C_new, D_new, E_new)
 

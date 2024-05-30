@@ -591,13 +591,16 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         kfac_approx = self._get_param_group_entry(module, "kfac_approx")
         module_name = self.module_names[module]
 
+        # load inputs and gradients to the same precision as the pre-conditioner
+        (dtype_K, dtype_C), _ = self._get_preconditioner_dtypes_and_device(module)
+
         # 1) PROCESS INPUTS AND GRAD_OUTPUTS
-        a = inputs[0].data
+        a = inputs[0].data.to(dtype_K)
         # Process into matrix according to kfac_approx
         # For convolutions, unfold the input, for modules with bias terms, append a 1
         a = process_input(a, module, kfac_approx)
 
-        g = grad_output.data
+        g = grad_output.data.to(dtype_C)
         # Process into matrix according to kfac_approx, add scaling from batch average
         g = process_grad_output(g, module, loss_average, kfac_approx)
 
@@ -694,14 +697,20 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         # 2) COMPUTE THE NATURAL GRADIENT IN CONCATENATED MATRIX FORM
         module_name = self.module_names[module]
 
+        # load the gradient to the pre-conditioner precision while multiplying
+        dtype_K, dtype_C = self._get_param_group_entry(module, "preconditioner_dtype")
+
         # We need to compute `W @ K @ K^T` where `W` is the weight gradient
         # `K` supports `K @ ...` and `K^T @ ...`. Hence, we rewrite into
         # `W @ K @ K^T = ( K @ (K^T @ W^T) )^T`.
         K = self.Ks[module_name]
-        nat_grad = (K @ K.rmatmat(grad_mat.T)).T
+        nat_grad = (K @ K.rmatmat(grad_mat.T.to(dtype_K))).T
 
         C = self.Cs[module_name]
-        nat_grad = C @ (C.rmatmat(nat_grad))
+        nat_grad = C @ (C.rmatmat(nat_grad.to(dtype_C)))
+
+        # load the pre-conditioned gradient back to the original precision
+        nat_grad = nat_grad.to(grad_mat.dtype)
 
         # If DDP is used.
         if dist.is_initialized():
