@@ -30,40 +30,6 @@ def is_half_precision(dtype: torch.dtype) -> bool:
     return dtype in [float16, bfloat16]
 
 
-def supported_matmul(*matrices: Tensor) -> Tensor:
-    """Multiply matrices with the same or higher numerical precision.
-
-    If the matrix multiplication is not supported on the hardware,
-    carry out the multiplication in single precision.
-
-    Args:
-        matrices: The matrices to multiply.
-
-    Returns:
-        The result of the matrix chain multiplication in the original precision.
-
-    Raises:
-        RuntimeError: If the matrices are not on the same device.
-    """
-    devices = {m.device for m in matrices}
-    if len(devices) > 1:
-        raise RuntimeError("Matrices must be on the same device.")
-    dev = devices.pop()
-
-    # Use the first matrix's data type as the result's data type.
-    # The matrices may have different data types if `autocast` was used.
-    dtype = matrices[0].dtype
-
-    # @ not supported on CPU for float16 (bfloat16 is supported)
-    convert = dtype == float16 and str(dev) == "cpu"
-
-    result = matrices[0].to(float32) if convert else matrices[0]
-    for mat in matrices[1:]:
-        result = result @ mat.to(result.dtype)
-
-    return result.to(dtype) if convert else result
-
-
 def supported_eye(n: int, **kwargs: Any) -> Tensor:
     """Same as PyTorch's `eye`, but uses higher precision if unsupported.
 

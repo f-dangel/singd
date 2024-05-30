@@ -10,7 +10,7 @@ import torch
 import torch.distributed as dist
 from torch import Tensor, zeros
 
-from singd.structures.utils import diag_add_, supported_eye, supported_matmul
+from singd.structures.utils import diag_add_, supported_eye
 
 
 class StructuredMatrix(ABC):
@@ -99,10 +99,10 @@ class StructuredMatrix(ABC):
 
         dense = self.to_dense()
         if isinstance(other, Tensor):
-            return supported_matmul(dense, other)
+            return dense @ other
 
         other_dense = other.to_dense()
-        return self.from_dense(supported_matmul(dense, other_dense))
+        return self.from_dense(dense @ other_dense)
 
     @classmethod
     @abstractmethod
@@ -205,7 +205,7 @@ class StructuredMatrix(ABC):
             A dense PyTorch tensor resulting from the multiplication.
         """
         self._warn_naive_implementation("rmatmat")
-        return supported_matmul(self.to_dense().T, mat)
+        return self.to_dense().T @ mat
 
     @classmethod
     def _warn_naive_implementation(cls, fn_name: str):
@@ -280,7 +280,7 @@ class StructuredMatrix(ABC):
         """
         self._warn_naive_implementation("from_inner")
         S_dense = self.to_dense().T if X is None else self.rmatmat(X)
-        return self.from_dense(supported_matmul(S_dense, S_dense.T))
+        return self.from_dense(S_dense @ S_dense.T)
 
     # NOTE This operation should be removed long-term as implementing IF-KFAC
     # with `from_inner` is more efficient. For now, it will exist as it makes
@@ -297,7 +297,7 @@ class StructuredMatrix(ABC):
         """
         self._warn_naive_implementation("from_inner2")
         dense = self.to_dense()
-        return self.from_dense(supported_matmul(dense.T, XXT, dense))
+        return self.from_dense(dense.T @ XXT @ dense)
 
     def average_trace(self) -> Tensor:
         """Compute the average trace of the represented matrix.

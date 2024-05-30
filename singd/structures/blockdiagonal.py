@@ -9,12 +9,7 @@ from einops import rearrange
 from torch import Tensor, arange, cat, zeros
 
 from singd.structures.base import StructuredMatrix
-from singd.structures.utils import (
-    lowest_precision,
-    supported_einsum,
-    supported_eye,
-    supported_matmul,
-)
+from singd.structures.utils import lowest_precision, supported_einsum, supported_eye
 
 
 class BlockDiagonalMatrixTemplate(StructuredMatrix):
@@ -205,15 +200,15 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
             out_dtype = self._last.dtype
             compute_dtype = lowest_precision(self._last.dtype, other_last.dtype)
-            result_last = supported_matmul(
-                self._last.to(compute_dtype), other_last.to(compute_dtype)
+            result_last = (
+                self._last.to(compute_dtype) @ other_last.to(compute_dtype)
             ).to(out_dtype)
 
             return cat([result_blocks, result_last])
 
         else:
             out_blocks = supported_einsum("nij,njk->nik", self._blocks, other._blocks)
-            out_last = supported_matmul(self._last, other._last)
+            out_last = self._last @ other._last
             return self.__class__(out_blocks, out_last)
 
     def __add__(
@@ -287,7 +282,7 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
             S_blocks = rearrange(S_blocks, "(block row) col -> block row col", **dims)
 
         out_blocks = supported_einsum("nij,nkj->nik", S_blocks, S_blocks)
-        out_last = supported_matmul(S_last, S_last.T)
+        out_last = S_last @ S_last.T
 
         return self.__class__(out_blocks, out_last)
 
