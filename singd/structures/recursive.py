@@ -107,6 +107,7 @@ class RecursiveTopRightMatrixTemplate(RecursiveStructuredMatrix):
                 [0., 0., 0., 3., 0.],
                 [0., 0., 0., 0., 3.]])
     """
+
     MAX_DIMS: Tuple[Union[int, float], Union[int, float]]
     CLS_A: Type[StructuredMatrix]
     CLS_C: Type[StructuredMatrix]
@@ -244,6 +245,7 @@ class RecursiveBottomLeftMatrixTemplate(RecursiveStructuredMatrix):
                 [2., 2., 2., 3., 0.],
                 [2., 2., 2., 0., 3.]])
     """
+
     MAX_DIMS: Tuple[Union[int, float], Union[int, float]]
     CLS_A: Type[StructuredMatrix]
     CLS_C: Type[StructuredMatrix]
