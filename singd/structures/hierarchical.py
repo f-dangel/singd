@@ -5,15 +5,10 @@ from __future__ import annotations
 from typing import Tuple, Union
 
 import torch
-from torch import Tensor, arange, cat, ones, zeros
+from torch import Tensor, arange, cat, einsum, ones, zeros
 
 from singd.structures.base import StructuredMatrix
-from singd.structures.utils import (
-    diag_add_,
-    lowest_precision,
-    supported_einsum,
-    supported_eye,
-)
+from singd.structures.utils import diag_add_, lowest_precision, supported_eye
 
 
 class HierarchicalMatrixTemplate(StructuredMatrix):
@@ -209,7 +204,7 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
             )
 
             top = self.A @ other_top + B_C @ other_middle + B_E @ other_bottom
-            middle = supported_einsum("i,ij->ij", self.C, other_middle)
+            middle = einsum("i,ij->ij", self.C, other_middle)
             bottom = self.D @ other_middle + self.E @ other_bottom
 
             return cat([top, middle, bottom], dim=0)
@@ -218,13 +213,13 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
             A_new = self.A @ other.A
             C_new = self.C * other.C
             E_new = self.E @ other.E
-            D_new = supported_einsum("ij,j->ij", self.D, other.C) + self.E @ other.D
+            D_new = einsum("ij,j->ij", self.D, other.C) + self.E @ other.D
 
             B_C_other, B_E_other = other.B.split([other.diag_dim, other.K2], dim=1)
             B_new = cat(
                 [
                     self.A @ B_C_other
-                    + supported_einsum("ij,j->ij", B_C, other.C)
+                    + einsum("ij,j->ij", B_C, other.C)
                     + B_E @ other.D,
                     self.A @ B_E_other + B_E @ other.E,
                 ],
@@ -287,7 +282,7 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
         out_dtype = self.C.dtype
         middle = (
             B_C.T @ mat_top
-            + supported_einsum(
+            + einsum(
                 "i,ij->ij", self.C.to(compute_dtype), mat_middle.to(compute_dtype)
             ).to(out_dtype)
             + self.D.T @ mat_bottom
