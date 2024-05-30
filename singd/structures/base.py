@@ -9,6 +9,7 @@ from warnings import warn
 import torch
 import torch.distributed as dist
 from torch import Tensor, zeros
+from torch.linalg import matrix_norm
 
 from singd.structures.utils import diag_add_, supported_eye, supported_matmul
 
@@ -342,6 +343,15 @@ class StructuredMatrix(ABC):
         """
         # NOTE `.max` can only be called on tensors with non-zero shape
         return max(t.abs().max() for _, t in self.named_tensors() if t.numel() > 0)
+
+    def frobenius_norm(self) -> Tensor:
+        """Compute the Frobenius norm of the represented matrix.
+
+        Returns:
+            The Frobenius norm of the represented matrix.
+        """
+        self._warn_naive_implementation("trace")
+        return matrix_norm(self.to_dense())
 
     ###############################################################################
     #                      Special initialization operations                      #
