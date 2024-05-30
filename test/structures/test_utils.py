@@ -1,5 +1,7 @@
 """Test utility functions of ``singd.structures``."""
 
+from sys import platform
+
 from pytest import raises
 from torch import (
     Tensor,
@@ -26,10 +28,13 @@ def test_cpu_float16_matmul_supported():
     _ = mat1 @ mat2
 
 
-def test_cpu_bfloat16_eye_unsupported():
-    """Test whether ``eye`` is unsupported in ``bfloat16`` on CPU."""
+def test_eye_support():
+    """Test whether ``eye`` is unsupported in ``bfloat16`` on MAC+CPU."""
     cpu = device("cpu")
-    with raises(RuntimeError):
+    if platform == "darwin":
+        with raises(RuntimeError):
+            eye(2, dtype=bfloat16, device=cpu)
+    else:
         eye(2, dtype=bfloat16, device=cpu)
 
 
