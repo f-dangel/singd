@@ -1,5 +1,7 @@
 """Test utility functions of ``singd.structures``."""
 
+from sys import platform
+
 from pytest import raises
 from torch import (
     Tensor,
@@ -18,41 +20,38 @@ from torch.nn.functional import conv1d
 from singd.structures.utils import all_traces, diag_add_
 
 
-def test_cpu_float16_matmul_unsupported():
-    """Test whether ``@`` between two ``float16`` tensors on CPU is unsupported."""
+def test_cpu_float16_matmul_supported():
+    """Test whether ``@`` between two ``float16`` tensors on CPU is supported."""
     cpu = device("cpu")
     mat1 = zeros((2, 2), dtype=float16, device=cpu)
     mat2 = zeros((2, 2), dtype=float16, device=cpu)
-
-    with raises(RuntimeError):
-        _ = mat1 @ mat2
+    _ = mat1 @ mat2
 
 
-def test_cpu_bfloat16_eye_unsupported():
-    """Test whether ``eye`` is unsupported in ``bfloat16`` on CPU."""
+def test_eye_support():
+    """Test whether ``eye`` is unsupported in ``bfloat16`` on MAC+CPU."""
     cpu = device("cpu")
-    with raises(RuntimeError):
+    if platform == "darwin":
+        with raises(RuntimeError):
+            eye(2, dtype=bfloat16, device=cpu)
+    else:
         eye(2, dtype=bfloat16, device=cpu)
 
 
-def test_cpu_float16_einsum_unsupported():
-    """Test whether ``einsum`` is unsupported in ``float16`` on CPU."""
+def test_cpu_float16_einsum_supported():
+    """Test whether ``einsum`` is supported in ``float16`` on CPU."""
     cpu = device("cpu")
     mat1 = zeros((2, 2, 2), dtype=float16, device=cpu)
     mat2 = zeros((2, 2, 2), dtype=float16, device=cpu)
-
-    with raises(RuntimeError):
-        einsum("nij,njk->nik", mat1, mat2)
+    _ = einsum("nij,njk->nik", mat1, mat2)
 
 
-def test_cpu_float16_conv1d_unsupported():
-    """Test whether ``conv1d`` is unsupported in ``float16`` on CPU."""
+def test_cpu_float16_conv1d_supported():
+    """Test whether ``conv1d`` is supported in ``float16`` on CPU."""
     cpu = device("cpu")
     inputs = zeros((2, 2, 2), dtype=float16, device=cpu)
     kernel = zeros((2, 2, 1), dtype=float16, device=cpu)
-
-    with raises(RuntimeError):
-        conv1d(inputs, kernel)
+    _ = conv1d(inputs, kernel)
 
 
 def test_all_traces():

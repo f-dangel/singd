@@ -1,6 +1,5 @@
 """Tests ``singd.optim.optimizer`` functionality."""
 
-
 from test.optim.utils import (
     check_preconditioner_dtypes,
     check_preconditioner_structures,

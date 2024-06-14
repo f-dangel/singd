@@ -14,7 +14,7 @@ from torch import Tensor, device, manual_seed, rand, zeros
 from torch.linalg import vector_norm
 
 from singd.structures.base import StructuredMatrix
-from singd.structures.utils import is_half_precision, supported_eye, supported_matmul
+from singd.structures.utils import is_half_precision, supported_eye
 
 DTYPES = [torch.float32, torch.float16, torch.bfloat16]
 DTYPE_IDS = [str(dt).split(".")[-1] for dt in DTYPES]
@@ -48,13 +48,15 @@ def _test_matmul(
     }
 
     # multiplication with a structured matrix
-    truth = supported_matmul(project(sym_mat1), project(sym_mat2))
+    truth = project(sym_mat1) @ project(sym_mat2)
     report_nonclose(
-        truth, (sym_mat1_structured @ sym_mat2_structured).to_dense(), **tolerances
+        truth,
+        (sym_mat1_structured @ sym_mat2_structured).to_dense(),
+        **tolerances,
     )
 
     # multiplication with a PyTorch tensor
-    truth = supported_matmul(project(sym_mat1), mat2)
+    truth = project(sym_mat1) @ mat2
     report_nonclose(truth, sym_mat1_structured @ mat2, **tolerances)
 
 
@@ -133,7 +135,7 @@ def _test_rmatmat(
         project: A function which converts an arbitrary symmetric dense matrix into a
             dense matrix of the tested structure. Used to establish the ground truth.
     """
-    truth = supported_matmul(project(sym_mat1).T, mat2)
+    truth = project(sym_mat1).T @ mat2
 
     sym_mat1_structured = structured_matrix_cls.from_dense(sym_mat1)
     report_nonclose(
@@ -162,9 +164,10 @@ def _test_from_inner(
         X: An optional matrix which will be passed to the `from_inner` method.
     """
     if X is None:
-        truth = project(supported_matmul(project(sym_mat).T, project(sym_mat)))
+        truth = project(project(sym_mat).T @ project(sym_mat))
     else:
-        truth = project(supported_matmul(project(sym_mat).T, X, X.T, project(sym_mat)))
+        MTX = project(sym_mat).T @ X
+        truth = project(MTX @ MTX.T)
 
     sym_mat_structured = structured_matrix_cls.from_dense(sym_mat)
     report_nonclose(
@@ -192,7 +195,7 @@ def _test_from_inner2(
             dense matrix of the tested structure. Used to establish the ground truth.
         XXT: An symmetric PSD matrix that will be passed to `from_inner2`.
     """
-    truth = project(supported_matmul(project(sym_mat).T, XXT, project(sym_mat)))
+    truth = project(project(sym_mat).T @ XXT @ project(sym_mat))
     sym_mat_structured = structured_matrix_cls.from_dense(sym_mat)
     report_nonclose(
         truth,
@@ -490,7 +493,7 @@ class _TestStructuredMatrix(ABC):
 
             sym_mat = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
             X = rand((dim, 2 * dim), device=dev, dtype=dtype)
-            XXT = supported_matmul(X, X.T)
+            XXT = X @ X.T
             _test_from_inner2(sym_mat, self.STRUCTURED_MATRIX_CLS, self.project, XXT)
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)

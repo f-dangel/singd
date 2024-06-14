@@ -8,7 +8,6 @@ from torch import (
     arange,
     bfloat16,
     device,
-    einsum,
     eye,
     float16,
     float32,
@@ -28,40 +27,6 @@ def is_half_precision(dtype: torch.dtype) -> bool:
         Whether the given dtype is half precision.
     """
     return dtype in [float16, bfloat16]
-
-
-def supported_matmul(*matrices: Tensor) -> Tensor:
-    """Multiply matrices with the same or higher numerical precision.
-
-    If the matrix multiplication is not supported on the hardware,
-    carry out the multiplication in single precision.
-
-    Args:
-        matrices: The matrices to multiply.
-
-    Returns:
-        The result of the matrix chain multiplication in the original precision.
-
-    Raises:
-        RuntimeError: If the matrices are not on the same device.
-    """
-    devices = {m.device for m in matrices}
-    if len(devices) > 1:
-        raise RuntimeError("Matrices must be on the same device.")
-    dev = devices.pop()
-
-    # Use the first matrix's data type as the result's data type.
-    # The matrices may have different data types if `autocast` was used.
-    dtype = matrices[0].dtype
-
-    # @ not supported on CPU for float16 (bfloat16 is supported)
-    convert = dtype == float16 and str(dev) == "cpu"
-
-    result = matrices[0].to(float32) if convert else matrices[0]
-    for mat in matrices[1:]:
-        result = result @ mat.to(result.dtype)
-
-    return result.to(dtype) if convert else result
 
 
 def supported_eye(n: int, **kwargs: Any) -> Tensor:
@@ -84,40 +49,6 @@ def supported_eye(n: int, **kwargs: Any) -> Tensor:
         return eye(n, **kwargs, dtype=float32).to(dtype)
     else:
         return eye(n, **kwargs, dtype=dtype)
-
-
-def supported_einsum(equation, *operands: Tensor) -> Tensor:
-    """Compute an `einsum` with the same or higher numerical precision.
-
-    If the `einsum` is not supported on the hardware,
-    carry out the multiplication in single precision.
-
-    Args:
-        equation: The `einsum` equation.
-        operands: The operands to the `einsum`.
-
-    Returns:
-        The result of the `einsum` in the original precision.
-
-    Raises:
-        RuntimeError: If the operands are not on the same device.
-    """
-    devices = {m.device for m in operands}
-    if len(devices) > 1:
-        raise RuntimeError("Operands must be on the same device.")
-    dev = devices.pop()
-
-    # Use the first tensor's data type as the result's data type.
-    # The tensors may have different data types if `autocast` was used.
-    dtype = operands[0].dtype
-
-    # @ not supported on CPU for float16 (bfloat16 is supported)
-    convert = dtype == float16 and str(dev) == "cpu"
-
-    operands = tuple(m.to(float32) if convert else m for m in operands)
-    result = einsum(equation, *operands)
-
-    return result.to(dtype) if convert else result
 
 
 def all_traces(mat: Tensor) -> Tensor:
@@ -149,44 +80,6 @@ def all_traces(mat: Tensor) -> Tensor:
     return traces
 
 
-def supported_conv1d(
-    input: Tensor, weight: Tensor, padding: int = 0, groups: int = 1
-) -> Tensor:
-    """Same as PyTorch's `conv1d`, but uses higher precision if unsupported.
-
-    For now, we don't support bias and non-default hyper-parameters.
-
-    Args:
-        input: The input of the convolution. Has shape `[N, C_in, I_1]`.
-        weight: The kernel of the convolution. Has shape `[C_out, C_in // G, K_1]`.
-        padding: The amount of padding on both sides of the input. Default: `0`.
-        groups: The number of groups `G`. Default: `1`.
-
-    Returns:
-        The output of the convolution in the same precision as `input`.
-        Has shape `[N, C_out, O_1]`, where `O_1 = I_1 - K_1 + 1`.
-
-    Raises:
-        RuntimeError: If input and kernel are not on the same device.
-    """
-    devices = {input.device, weight.device}
-    if len(devices) > 1:
-        raise RuntimeError("Input and kernel must be on the same device.")
-    dev = devices.pop()
-
-    # Use the input's data type as the result's data type.
-    # Input and kernel may have different data types if `autocast` was used.
-    dtype = input.dtype
-
-    # 'slow_conv2d_cpu' not implemented for 'Half' (bfloat16 is supported)
-    if dtype == float16 and str(dev) == "cpu":
-        return conv1d(
-            input.to(float32), weight.to(float32), padding=padding, groups=groups
-        ).to(dtype)
-    else:
-        return conv1d(input, weight, padding=padding, groups=groups)
-
-
 def toeplitz_matmul(coeffs: Tensor, mat: Tensor) -> Tensor:
     """Compute the product of a Toeplitz matrix and a matrix.
 
@@ -216,9 +109,7 @@ def toeplitz_matmul(coeffs: Tensor, mat: Tensor) -> Tensor:
     # columns act as channels
     conv_input = mat.T
     conv_weight = coeffs.unsqueeze(0).unsqueeze(0).expand(num_cols, -1, -1)
-    conv_result = supported_conv1d(
-        conv_input, conv_weight, padding=padding, groups=num_cols
-    )
+    conv_result = conv1d(conv_input, conv_weight, padding=padding, groups=num_cols)
 
     return conv_result.T
 
