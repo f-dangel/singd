@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Iterator, List, Tuple, Type, Union
 
-from torch import Tensor, block_diag, cat
-from torch.linalg import vector_norm
+from torch import Tensor, block_diag
 
 from singd.structures.base import StructuredMatrix
 
