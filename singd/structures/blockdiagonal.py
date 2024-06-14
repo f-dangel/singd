@@ -7,6 +7,7 @@ from typing import Union
 import torch
 from einops import rearrange
 from torch import Tensor, arange, cat, einsum, zeros
+from torch.linalg import vector_norm
 
 from singd.structures.base import StructuredMatrix
 from singd.structures.utils import lowest_precision, supported_eye
@@ -312,6 +313,16 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
         self._last[idxs, idxs] += value
 
         return self
+
+    def frobenius_norm(self) -> Tensor:
+        """Compute the Frobenius norm of the represented matrix.
+
+        Returns:
+            The Frobenius norm of the represented matrix.
+        """
+        return vector_norm(
+            cat([t.flatten() for _, t in self.named_tensors() if t.numel() > 0])
+        )
 
     ###############################################################################
     #                      Special initialization operations                      #

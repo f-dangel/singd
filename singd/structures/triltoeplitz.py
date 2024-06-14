@@ -6,6 +6,7 @@ from typing import Union
 
 import torch
 from torch import Tensor, arange, cat, zeros
+from torch.linalg import vector_norm
 from torch.nn.functional import conv1d, pad
 
 from singd.structures.base import StructuredMatrix
@@ -190,6 +191,22 @@ class TrilToeplitzMatrix(StructuredMatrix):
         """
         self._lower_diags[0].add_(value)
         return self
+
+    def frobenius_norm(self) -> Tensor:
+        """Compute the Frobenius norm of the represented matrix.
+
+        Returns:
+            The Frobenius norm of the represented matrix.
+        """
+        (dim,) = self._lower_diags.shape
+        multiplicity = arange(
+            dim,
+            0,
+            step=-1,
+            dtype=self._lower_diags.dtype,
+            device=self._lower_diags.device,
+        )
+        return vector_norm(self._lower_diags * multiplicity.sqrt())
 
     ###############################################################################
     #                      Special initialization operations                      #
