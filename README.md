@@ -68,12 +68,14 @@ If you find this code useful for your research, consider citing the paper:
 
 ```bib
 
-@article{lin2023structured,
-  title =        {Structured Inverse-Free Natural Gradient: Memory-Efficient &
-  Numerically-Stable KFAC for Large Neural Nets},
-  author =       {Lin, Wu and Dangel, Felix and Eschenhagen, Runa and Neklyudov,
-  Kirill and Kristiadi, Agustinus and Turner, Richard E and Makhzani, Alireza},
-  year =         2023,
+@inproceedings{lin2024structured,
+  title =        {Structured Inverse-Free Natural Gradient Descent:
+                  Memory-Efficient \& Numerically-Stable {KFAC}},
+  author =       {Wu Lin and Felix Dangel and Runa Eschenhagen and Kirill
+                  Neklyudov and Agustinus Kristiadi and Richard E. Turner and
+                  Alireza Makhzani},
+  booktitle =    {International Conference on Machine Learning (ICML)},
+  year =         2024,
 }
 
 ```
