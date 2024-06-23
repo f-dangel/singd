@@ -6,6 +6,7 @@ from typing import Union
 
 import torch
 from torch import Tensor, einsum, ones, zeros
+from torch.linalg import vector_norm
 
 from singd.structures.base import StructuredMatrix
 
@@ -178,6 +179,14 @@ class DiagonalMatrix(StructuredMatrix):
         """
         self._mat_diag.add_(value)
         return self
+
+    def frobenius_norm(self) -> Tensor:
+        """Compute the Frobenius norm of the represented matrix.
+
+        Returns:
+            The Frobenius norm of the represented matrix.
+        """
+        return vector_norm(self._mat_diag)
 
     ###############################################################################
     #                      Special initialization operations                      #

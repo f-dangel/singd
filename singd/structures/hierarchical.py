@@ -6,6 +6,7 @@ from typing import Tuple, Union
 
 import torch
 from torch import Tensor, arange, cat, einsum, ones, zeros
+from torch.linalg import vector_norm
 
 from singd.structures.base import StructuredMatrix
 from singd.structures.utils import diag_add_, lowest_precision, supported_eye
@@ -352,6 +353,16 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
         self.C.add_(value)
         diag_add_(self.E, value)
         return self
+
+    def frobenius_norm(self) -> Tensor:
+        """Compute the Frobenius norm of the represented matrix.
+
+        Returns:
+            The Frobenius norm of the represented matrix.
+        """
+        return vector_norm(
+            cat([t.flatten() for _, t in self.named_tensors() if t.numel() > 0])
+        )
 
     ###############################################################################
     #                      Special initialization operations                      #

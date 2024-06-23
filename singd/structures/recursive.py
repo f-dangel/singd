@@ -39,18 +39,47 @@ class RecursiveStructuredMatrix(StructuredMatrix):
         setattr(self, name, substructure)
         self._substructure_names.append(name)
 
-    def named_tensors(self) -> Iterator[Tuple[str, Tensor]]:
+    def named_tensors(
+        self, include_substructures: bool = True
+    ) -> Iterator[Tuple[str, Tensor]]:
         """Yield all tensors that represent the matrix and their names.
+
+        Args:
+            include_substructures: If `True`, also include the tensors of the
+                substructures. If `False`, exclude them. Default is `True`.
 
         Yields:
             A tuple of the tensor's name and the tensor itself.
         """
         for name in self._tensor_names:
             yield name, getattr(self, name)
+        if include_substructures:
+            for subname, substructure in self.named_substructures():
+                for name, tensor in substructure.named_tensors():
+                    yield f"{name}.{subname}", tensor
+
+    def named_substructures(self) -> Iterator[Tuple[str, StructuredMatrix]]:
+        """Yield all substructures and their names.
+
+        Yields:
+            A tuple of the substructure's name and the substructure itself.
+        """
         for name in self._substructure_names:
-            substructure = getattr(self, name)
-            for sub_name, tensor in substructure.named_tensors():
-                yield f"{name}.{sub_name}", tensor
+            yield name, getattr(self, name)
+
+    def frobenius_norm(self) -> Tensor:
+        """Compute the Frobenius norm of the represented matrix.
+
+        Returns:
+            The Frobenius norm of the represented matrix.
+        """
+        fro_squared = sum(
+            (t**2).sum() for _, t in self.named_tensors(include_substructures=False)
+        )
+        fro_squared_sub = sum(
+            s.frobenius_norm() ** 2 for _, s in self.named_substructures()
+        )
+        return (fro_squared + fro_squared_sub).sqrt()
 
 
 class RecursiveTopRightMatrixTemplate(RecursiveStructuredMatrix):
