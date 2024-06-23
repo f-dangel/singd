@@ -11,7 +11,7 @@ from imageio.v2 import imread
 from matplotlib import pyplot as plt
 from pytest import mark
 from torch import Tensor, device, manual_seed, rand, zeros
-from torch.linalg import vector_norm
+from torch.linalg import matrix_norm, vector_norm
 
 from singd.structures.base import StructuredMatrix
 from singd.structures.utils import is_half_precision, supported_eye
@@ -584,6 +584,22 @@ class _TestStructuredMatrix(ABC):
             truth = vector_norm(self.project(sym_mat), ord=float("inf"))
             structured = self.STRUCTURED_MATRIX_CLS.from_dense(sym_mat)
             report_nonclose(truth, structured.infinity_vector_norm())
+
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_frobenius_norm(self, dev: device, dtype: torch.dtype):
+        """Test Frobenius norm of a structured matrix.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+        """
+        for dim in self.DIMS:
+            manual_seed(0)
+            sym_mat = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+            truth = matrix_norm(self.project(sym_mat))
+            structured = self.STRUCTURED_MATRIX_CLS.from_dense(sym_mat)
+            report_nonclose(truth, structured.frobenius_norm())
 
     @mark.expensive
     def test_visual(self):
