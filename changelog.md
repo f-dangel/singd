@@ -16,6 +16,32 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+## [0.0.3] - 2024-06-24
+
+This release requires `torch>=2.2.0` and ships internal refactorings to update
+newly supported operations in half precision.
+
+### Added
+
+- Functionality to compute the Frobenius norm of a structured matrix
+  (interface [PR](https://github.com/f-dangel/singd/pull/70),
+  efficient implementation [PR](https://github.com/f-dangel/singd/pull/71))
+
+### Changed
+
+- Update `.bib` entry to ICML 2024
+  ([PR](https://github.com/f-dangel/singd/pull/74))
+
+### Deprecated
+
+- Use `torch>=2.2.0` and update its newly added support for `matmul`, `conv1d`,
+  and `einsum` in half precision on CPU
+  ([PR](https://github.com/f-dangel/singd/pull/72))
+
+### Fixed
+
+No bug fixes
+
 ## [0.0.2] - 2023-12-11
 
 This release adds support for neural networks with in-place activations and also
@@ -57,6 +83,7 @@ No bug fixes
 
 Initial release
 
-[unreleased]: https://github.com/f-dangel/singd/compare/v0.0.2...HEAD
-[0.0.2]: https://github.com/f-dangel/singd/releases/tag/v0.0.2
-[0.0.1]: https://github.com/f-dangel/singd/releases/tag/v0.0.1
+[unreleased]: https://github.com/f-dangel/singd/compare/v0.0.3...HEAD
+[0.0.3]: https://github.com/f-dangel/singd/compare/v0.0.2...v0.0.3
+[0.0.2]: https://github.com/f-dangel/singd/compare/v0.0.1...v0.0.2
+[0.0.1]: https://github.com/f-dangel/singd/compare/5c68fa548ee947c841b3f7e6c31f65eeee079384...v0.0.1
