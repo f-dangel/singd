@@ -8,7 +8,14 @@ from memory_profiler import memory_usage
 from torch import Tensor, cuda, device, manual_seed, rand, randint
 from torch.nn import Conv2d, CrossEntropyLoss, Linear, Module
 from torch.optim import SGD, Optimizer
-from torchvision.models import convnext_base, resnet18, vgg19
+from torchvision.models import (
+    convnext_base,
+    inception_v3,
+    mobilenet_v2,
+    resnet18,
+    resnext101_32x8d,
+    vgg19,
+)
 
 from singd.optim.optimizer import SINGD
 
@@ -26,11 +33,21 @@ def set_up_data(case: str, batch_size: int) -> Tuple[Tensor, Tensor]:
     feature_shape = {
         "vgg19_cifar100": (3, 32, 32),
         "resnet18_cifar100": (3, 32, 32),
+        "vgg19_imagenet": (3, 256, 256),
+        "resnext101_32x8d_imagenet": (3, 256, 256),
+        "resnet18_imagenet": (3, 256, 256),
+        "mobilenet_v2_imagenet": (3, 256, 256),
+        "inception_v3_imagenet": (3, 299, 299),
         "convnext_base_imagenet": (3, 256, 256),
     }[case]
     num_classes = {
         "vgg19_cifar100": 100,
         "resnet18_cifar100": 100,
+        "vgg19_imagenet": 1000,
+        "resnet18_imagenet": 1000,
+        "resnext101_32x8d_imagenet": 1000,
+        "mobilenet_v2_imagenet": 1000,
+        "inception_v3_imagenet": 1000,
         "convnext_base_imagenet": 1000,
     }[case]
 
@@ -52,11 +69,21 @@ def set_up_model(case: str) -> Module:
     model_fn = {
         "resnet18_cifar100": resnet18,
         "vgg19_cifar100": vgg19,
+        "resnet18_imagenet": resnet18,
+        "resnext101_32x8d_imagenet": resnext101_32x8d,
+        "vgg19_imagenet": vgg19,
+        "mobilenet_v2_imagenet": mobilenet_v2,
+        "inception_v3_imagenet": inception_v3,
         "convnext_base_imagenet": convnext_base,
     }[case]
     num_classes = {
         "vgg19_cifar100": 100,
         "resnet18_cifar100": 100,
+        "vgg19_imagenet": 1000,
+        "resnet18_imagenet": 1000,
+        "resnext101_32x8d_imagenet": 1000,
+        "mobilenet_v2_imagenet": 1000,
+        "inception_v3_imagenet": 1000,
         "convnext_base_imagenet": 1000,
     }[case]
     return model_fn(num_classes=num_classes)
@@ -123,7 +150,16 @@ def maybe_synchronize(dev: device):
 if __name__ == "__main__":
     parser = ArgumentParser("Parse parameters for training with SINGD")
 
-    SUPPORTED_CASES = ["resnet18_cifar100", "convnext_base_imagenet", "vgg19_cifar100"]
+    SUPPORTED_CASES = [
+        "resnet18_cifar100",
+        "convnext_base_imagenet",
+        "vgg19_cifar100",
+        "resnet18_imagenet",
+        "vgg19_imagenet",
+        "resnext101_32x8d_imagenet",
+        "mobilenet_v2_imagenet",
+        "inception_v3_imagenet",
+    ]
     SUPPORTED_OPTIMIZERS = ["sgd", "singd", "singd+tn"]
     SUPPORTED_DEVICES = ["cuda", "cpu"]
     SUPPORTED_METRICS = ["time", "peakmem"]
@@ -156,7 +192,7 @@ if __name__ == "__main__":
         help="Metric to measure",
         required=True,
     )
-    parser.add_argument("--batch_size", type=int, help="Batch size", default=128)
+    parser.add_argument("--batch_size", type=int, help="Batch size", default=256)
     parser.add_argument("--seed", type=int, help="Random seed", default=0)
 
     args = parser.parse_args()
@@ -179,7 +215,11 @@ if __name__ == "__main__":
         for optimizer in optimizers:
             optimizer.zero_grad()
 
-        loss = loss_func(model(X), y)
+        output = model(X)
+        if args.case == "inception_v3_imagenet":
+            output = output.logits
+
+        loss = loss_func(output, y)
         loss.backward()
 
         for optimizer in optimizers:
@@ -210,11 +250,11 @@ if __name__ == "__main__":
     elif args.metric == "peakmem":
         if "cuda" in str(DEV):
             f()
-            peakmem_bytes = cuda.max_memory_allocated() / 2**10
+            peakmem_bytes = cuda.max_memory_allocated()
         else:
-            peakmem_bytes = memory_usage(f, interval=1e-4, max_usage=True)
+            peakmem_bytes = memory_usage(f, interval=1e-4, max_usage=True) * 2**20
 
-        print(f"{description} Memory usage: {peakmem_bytes / 2**10 :.2e} GiB")
+        print(f"{description} Memory usage: {peakmem_bytes / 2**30 :.2e} GiB")
 
     else:
         raise NotImplementedError
