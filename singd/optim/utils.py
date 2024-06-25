@@ -67,13 +67,12 @@ def _extract_averaged_patches(
     padding: Union[Tuple[int, int], int, str],
     dilation: Union[Tuple[int, int], int],
     groups: int,
+    use_einconv: bool,
 ) -> Tensor:
     """Extract averaged patches from the input of a 2d-convolution.
 
     The patches are averaged over channel groups and output locations.
 
-    Uses the tensor network formulation of convolution from
-    [Dangel, 2023](https://arxiv.org/abs/2307.02275).
 
     Args:
         x: Input to a 2d-convolution. Has shape `[batch_size, C_in, I1, I2]`.
@@ -82,6 +81,8 @@ def _extract_averaged_patches(
         padding: The convolution's padding supplied as 2-tuple, integer, or string.
         dilation: The convolution's dilation supplied as 2-tuple or integer.
         groups: The number of channel groups.
+        use_einconv: Whether to use the `einconv` library, i.e. the tensor network
+            formulation from [Dangel, 2023](https://arxiv.org/abs/2307.02275).
 
     Returns:
         A tensor of shape `[batch_size, C_in // groups * K1 * K2]` where each column
@@ -92,34 +93,40 @@ def _extract_averaged_patches(
     x = rearrange(x, "b (g c_in) i1 i2 -> b g c_in i1 i2", g=groups)
     x = reduce(x, "b g c_in i1 i2 -> b c_in i1 i2", "mean")
 
-    # TODO For convolutions with special structure, we don't even need to compute
-    # the index pattern tensors, or can resort to contracting only slices thereof.
-    # In order for this to work `einconv`'s TN simplification mechanism must first
-    # be refactored to work purely symbolically. Once this is done, it will be
-    # possible to do the below even more efficiently (memory and run time) for
-    # structured convolutions.
+    if not use_einconv:
+        x = F.unfold(x, kernel_size, dilation=dilation, padding=padding, stride=stride)
+        return reduce(x, "b c_in_k1_k2 o1_o2 -> b c_in_k1_k2", "mean")
+    else:
+        # TODO For convolutions with special structure, we don't even need to compute
+        # the index pattern tensors, or can resort to contracting only slices thereof.
+        # In order for this to work `einconv`'s TN simplification mechanism must first
+        # be refactored to work purely symbolically. Once this is done, it will be
+        # possible to do the below even more efficiently (memory and run time) for
+        # structured convolutions.
 
-    # compute index pattern tensors, average output dimension
-    patterns = []
-    input_sizes = x.shape[-2:]
-    for i, k, s, p, d in zip(
-        input_sizes,
-        _pair(kernel_size),
-        _pair(stride),
-        (padding, padding) if isinstance(padding, str) else _pair(padding),
-        _pair(dilation),
-    ):
-        pi = index_pattern(
-            i, k, stride=s, padding=p, dilation=d, dtype=x.dtype, device=x.device
-        )
-        pi = reduce(pi, "k o i -> k i", "mean")
-        patterns.append(pi)
+        # compute index pattern tensors, average output dimension
+        patterns = []
+        input_sizes = x.shape[-2:]
+        for i, k, s, p, d in zip(
+            input_sizes,
+            _pair(kernel_size),
+            _pair(stride),
+            (padding, padding) if isinstance(padding, str) else _pair(padding),
+            _pair(dilation),
+        ):
+            pi = index_pattern(
+                i, k, stride=s, padding=p, dilation=d, dtype=x.dtype, device=x.device
+            )
+            pi = reduce(pi, "k o i -> k i", "mean")
+            patterns.append(pi)
 
-    x = einsum(x, *patterns, "b c_in i1 i2, k1 i1, k2 i2 -> b c_in k1 k2")
-    return rearrange(x, "b c_in k1 k2 -> b (c_in k1 k2)")
+        x = einsum(x, *patterns, "b c_in i1 i2, k1 i1, k2 i2 -> b c_in k1 k2")
+        return rearrange(x, "b c_in k1 k2 -> b (c_in k1 k2)")
 
 
-def process_input(x: Tensor, module: Module, kfac_approx: str) -> Tensor:
+def process_input(
+    x: Tensor, module: Module, kfac_approx: str, use_einconv: bool
+) -> Tensor:
     """Unfold the input for convolutions, append ones if biases are present.
 
     Args:
@@ -127,6 +134,7 @@ def process_input(x: Tensor, module: Module, kfac_approx: str) -> Tensor:
         module: The module.
         kfac_approx: The KFAC approximation to use for linear weight-sharing
             layers. Possible values are `"expand"` and `"reduce"`.
+        use_einconv: Whether to use a tensor network implementation for convolutions.
 
     Returns:
         The processed input.
@@ -137,14 +145,16 @@ def process_input(x: Tensor, module: Module, kfac_approx: str) -> Tensor:
     """
     assert kfac_approx in {"expand", "reduce"}
     if isinstance(module, Conv2d):
-        return conv2d_process_input(x, module, kfac_approx)
+        return conv2d_process_input(x, module, kfac_approx, use_einconv)
     elif isinstance(module, Linear):
         return linear_process_input(x, module, kfac_approx)
     else:
         raise NotImplementedError(f"Can't process input for {module}.")
 
 
-def conv2d_process_input(x: Tensor, layer: Conv2d, kfac_approx: str) -> Tensor:
+def conv2d_process_input(
+    x: Tensor, layer: Conv2d, kfac_approx: str, use_einconv: bool
+) -> Tensor:
     """Process the input of a convolution before the self-inner product.
 
     Args:
@@ -152,6 +162,7 @@ def conv2d_process_input(x: Tensor, layer: Conv2d, kfac_approx: str) -> Tensor:
         layer: The convolution layer.
         kfac_approx: The KFAC approximation to use. Possible values are
             `"expand"` and `"reduce"`.
+        use_einconv: Whether to use a tensor network implementation for convolutions.
 
     Returns:
         The processed input. Has shape
@@ -159,12 +170,25 @@ def conv2d_process_input(x: Tensor, layer: Conv2d, kfac_approx: str) -> Tensor:
         `[batch_size * O1 * O2, C_in // groups * K1 * K2 (+ 1)]` for `"expand"`.
         The `+1` is active if the layer has a bias.
     """
-    patch_extractor_fn = (
-        _extract_patches if kfac_approx == "expand" else _extract_averaged_patches
-    )
-    x = patch_extractor_fn(
-        x, layer.kernel_size, layer.stride, layer.padding, layer.dilation, layer.groups
-    )
+    if kfac_approx == "expand":
+        x = _extract_patches(
+            x,
+            layer.kernel_size,
+            layer.stride,
+            layer.padding,
+            layer.dilation,
+            layer.groups,
+        )
+    else:
+        x = _extract_averaged_patches(
+            x,
+            layer.kernel_size,
+            layer.stride,
+            layer.padding,
+            layer.dilation,
+            layer.groups,
+            use_einconv,
+        )
 
     if kfac_approx == "expand":
         x = rearrange(x, "b o1_o2 c_in_k1_k2 -> (b o1_o2) c_in_k1_k2")

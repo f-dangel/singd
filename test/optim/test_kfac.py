@@ -86,6 +86,7 @@ MODELS = {
 }
 
 
+@mark.parametrize("use_einconv", [True, False], ids=["einconv", "no_einconv"])
 @mark.parametrize("model", MODELS.items(), ids=MODELS.keys())
 @mark.parametrize("setting", ["expand", "reduce"])
 @mark.parametrize("averaged", [True, False], ids=["loss_average", "not_averaged"])
@@ -97,6 +98,7 @@ def test_kfac(
     averaged: bool,
     bias: bool,
     device: device,
+    use_einconv: bool,
 ):
     """Test KFAC using (deep) linear models with weight sharing and the MSE loss.
 
@@ -110,6 +112,7 @@ def test_kfac(
         averaged: Whether the loss uses a mean reduction.
         bias: Whether to use a bias term.
         device: Device to run the test on.
+        use_einconv: Whether to use the TN implementation for convolutions.
 
     Raises:
         AssertionError: If the KFAC approximation is not exact.
@@ -158,7 +161,7 @@ def test_kfac(
         exact_F /= n_loss_terms
 
     # K-FAC Fisher/GGN.
-    kfac = KFACMSE(model, loss_average, setting)
+    kfac = KFACMSE(model, loss_average, setting, use_einconv)
     kfac.forward_and_backward(x)
     F = kfac.get_full_kfac_matrix()
     assert F.shape == (num_params, num_params)
@@ -215,7 +218,13 @@ class WeightShareModel(Sequential):
 class KFACMSE:
     """Class for computing the KFAC approximation with the MSE loss."""
 
-    def __init__(self, model: Module, loss_average: Union[None, str], setting: str):
+    def __init__(
+        self,
+        model: Module,
+        loss_average: Union[None, str],
+        setting: str,
+        use_einconv: bool,
+    ):
         """Initialize the KFAC approximation class.
 
         Installs forward and backward hooks to the model.
@@ -233,10 +242,12 @@ class KFACMSE:
                 consistently with the loss and the gradient. Default: `"batch"`.
             setting: KFAC approximation setting. Possible values are `'expand'`
                 and `'reduce'`.
+            use_einconv: Whether to use the TN implementation for convolutions.
         """
         self.model = model
         self.loss_average = loss_average
         self.setting = setting
+        self.use_einconv = use_einconv
 
         # Install forward and backward hooks.
         self.hook_handles = self._install_hooks()
@@ -343,7 +354,9 @@ class KFACMSE:
             inputs: Inputs to the layer.
         """
         a = inputs[0].data.detach()
-        a = process_input(a, module, kfac_approx=self.setting)
+        a = process_input(
+            a, module, kfac_approx=self.setting, use_einconv=self.use_einconv
+        )
         module.kfac_a = a
 
     def _set_g(

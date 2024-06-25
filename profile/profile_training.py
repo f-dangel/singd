@@ -85,6 +85,7 @@ def set_up_optimizers(optimizer: str, model: Module) -> List[Optimizer]:
             for p in m.parameters()
             if p.requires_grad
         ]
+        use_einconv = {"singd+tn": True, "singd": False}[optimizer]
         optimizers = [
             SINGD(
                 model,
@@ -93,9 +94,9 @@ def set_up_optimizers(optimizer: str, model: Module) -> List[Optimizer]:
                 structures=("diagonal", "diagonal"),  # use diagonal pre-conditioners
                 kfac_approx="reduce",  # use KFAC-redue
                 normalize_lr_cov=True,  # improves stability
+                use_einconv=use_einconv,
             )
         ]
-
         supported_ids = [p.data_ptr() for p in supported_params]
         if unsupported_params := [
             p
@@ -103,9 +104,6 @@ def set_up_optimizers(optimizer: str, model: Module) -> List[Optimizer]:
             if p.data_ptr() not in supported_ids and p.requires_grad
         ]:
             optimizers.append(SGD(unsupported_params, lr=sgd_lr))
-
-        if optimizer == "singd":
-            raise NotImplementedError
     else:
         raise NotImplementedError
 

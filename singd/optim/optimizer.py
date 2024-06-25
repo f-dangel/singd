@@ -101,6 +101,7 @@ https://pytorch.org/docs/stable/_modules/torch/cuda/amp/grad_scaler.html).
         ),
         init_grad_scale: float = 1.0,
         normalize_lr_cov: bool = False,
+        use_einconv: bool = True,
     ):  # noqa: D301
         """Structured inverse-free natural gradient descent optimizer.
 
@@ -190,6 +191,9 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
                 gradient descent (RGD) on the pre-conditioner factors. Since it uses
                 Riemannian normal coordinates RGD reduces to GD. This allows to apply
                 the idea of normalized gradient descent.)
+            use_einconv: Whether to use the tensor network approach from
+                [Dangel, 2023](https://arxiv.org/pdf/2307.02275) to compute Kronecker
+                factors for convolutions. Default: `True`.
 
         Raises:
             TypeError: If `DataParallel` or `DistributedDataParallel` model wrappers
@@ -234,6 +238,7 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
             )
         super().__init__(params, defaults)
         self.steps = 0
+        self.use_einconv = use_einconv
 
         # for mapping modules to their groups
         self.param_to_group_idx = self._check_param_groups(model)
@@ -598,7 +603,7 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         a = inputs[0].data.to(dtype_K)
         # Process into matrix according to kfac_approx
         # For convolutions, unfold the input, for modules with bias terms, append a 1
-        a = process_input(a, module, kfac_approx)
+        a = process_input(a, module, kfac_approx, self.use_einconv)
 
         g = grad_output.data.to(dtype_C)
         # Process into matrix according to kfac_approx, add scaling from batch average
