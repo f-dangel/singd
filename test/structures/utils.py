@@ -481,6 +481,27 @@ class _TestStructuredMatrix(ABC):
 
     @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
     @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_from_mat_inner(self, dev: device, dtype: torch.dtype):
+        """Test structure extraction from `X @ X.T`.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+        """
+        for dim in self.DIMS:
+            manual_seed(0)
+            X = rand((dim, 2 * dim), device=dev, dtype=dtype)
+
+            truth = self.project(X @ X.T)
+            report_nonclose(
+                truth,
+                self.STRUCTURED_MATRIX_CLS.from_mat_inner(X).to_dense(),
+                rtol=1e-2 if is_half_precision(X.dtype) else 1e-5,
+                atol=1e-6 if is_half_precision(X.dtype) else 1e-7,
+            )
+
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
     def test_from_inner2(self, dev: device, dtype: torch.dtype):
         """Test structure extraction after self-inner product w/ intermediate matrix.
 
