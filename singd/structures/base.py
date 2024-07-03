@@ -281,7 +281,20 @@ class StructuredMatrix(ABC):
         """
         self._warn_naive_implementation("from_inner")
         S_dense = self.to_dense().T if X is None else self.rmatmat(X)
-        return self.from_dense(S_dense @ S_dense.T)
+        return self.from_mat_inner(S_dense)
+
+    @classmethod
+    def from_mat_inner(cls, X: Tensor) -> StructuredMatrix:
+        """Extract the represented structure from `X @ X^T`.
+
+        Args:
+            X: Arbitrary 2d tensor.
+
+        Returns:
+            The structured matrix extracted from `X @ X^T`.
+        """
+        cls._warn_naive_implementation("from_mat_inner")
+        return cls.from_dense(X @ X.T)
 
     # NOTE This operation should be removed long-term as implementing IF-KFAC
     # with `from_inner` is more efficient. For now, it will exist as it makes

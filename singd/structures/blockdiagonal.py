@@ -273,19 +273,35 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
             `self.T @ X @ X^T @ self`.
         """
         if X is None:
-            S_blocks, S_last = self._blocks, self._last
+            out_blocks = einsum("nij,nkj->nik", self._blocks, self._blocks)
+            out_last = self._last @ self._last.T
+            return self.__class__(out_blocks, out_last)
         else:
-            num_blocks, last_dim = self._blocks.shape[0], self._last.shape[0]
-            S_blocks, S_last = self.rmatmat(X).split(
-                [num_blocks * self.BLOCK_DIM, last_dim]
-            )
-            dims = {"block": num_blocks, "row": self.BLOCK_DIM}
-            S_blocks = rearrange(S_blocks, "(block row) col -> block row col", **dims)
+            S = self.rmatmat(X)
+            return self.from_mat_inner(S)
 
-        out_blocks = einsum("nij,nkj->nik", S_blocks, S_blocks)
-        out_last = S_last @ S_last.T
+    @classmethod
+    def from_mat_inner(cls, X: Tensor) -> BlockDiagonalMatrixTemplate:
+        """Extract a structured matrix from `X @ X.T`.
 
-        return self.__class__(out_blocks, out_last)
+        Args:
+            X: Arbitrary 2d tensor.
+
+        Returns:
+            The structured matrix extracted from `X @ X^T`.
+        """
+        dim = X.shape[0]
+        num_blocks = dim // cls.BLOCK_DIM
+        last_dim = dim - num_blocks * cls.BLOCK_DIM
+        dims = {"block": num_blocks, "row": cls.BLOCK_DIM}
+
+        X_blocks, X_last = X.split([num_blocks * cls.BLOCK_DIM, last_dim])
+        X_blocks = rearrange(X_blocks, "(block row) col -> block row col", **dims)
+
+        out_blocks = einsum("nij,nkj->nik", X_blocks, X_blocks)
+        out_last = X_last @ X_last.T
+
+        return cls(out_blocks, out_last)
 
     def average_trace(self) -> Tensor:
         """Compute the average trace of the represented matrix.

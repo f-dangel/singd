@@ -148,6 +148,18 @@ class DiagonalMatrix(StructuredMatrix):
             mat_diag *= (X**2).sum(1)
         return DiagonalMatrix(mat_diag)
 
+    @classmethod
+    def from_mat_inner(cls, X: Tensor) -> DiagonalMatrix:
+        """Extract a structured matrix from `X @ X.T`.
+
+        Args:
+            X: Arbitrary 2d tensor.
+
+        Returns:
+            The structured matrix extracted from `X @ X^T`.
+        """
+        return DiagonalMatrix((X**2).sum(1))
+
     def from_inner2(self, XXT: Tensor) -> StructuredMatrix:
         """Represent the matrix diagonal of ``self.T @ XXT @ self``.
 
