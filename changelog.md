@@ -16,6 +16,18 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+## [0.0.4]
+
+This release adds a new interface function to `SINGD`'s structured matrix
+sub-module. This is a useful addition for our
+[`SIRFShampoo`](https://github.com/f-dangel/sirfshampoo) optimizer. The SINGD
+optimizer is not affected by this feature.
+
+### Added
+
+- Method to extract a structured matrix from `X @ X.T`
+  ([PR](https://github.com/f-dangel/singd/pull/80))
+
 ## [0.0.3] - 2024-06-24
 
 This release requires `torch>=2.2.0` and ships internal refactorings to update
@@ -83,7 +95,8 @@ No bug fixes
 
 Initial release
 
-[unreleased]: https://github.com/f-dangel/singd/compare/v0.0.3...HEAD
+[unreleased]: https://github.com/f-dangel/singd/compare/v0.0.4...HEAD
+[0.0.4]: https://github.com/f-dangel/singd/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/f-dangel/singd/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/f-dangel/singd/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/f-dangel/singd/compare/5c68fa548ee947c841b3f7e6c31f65eeee079384...v0.0.1
