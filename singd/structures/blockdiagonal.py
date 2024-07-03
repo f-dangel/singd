@@ -291,8 +291,7 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
             The structured matrix extracted from `X @ X^T`.
         """
         dim = X.shape[0]
-        num_blocks = dim // cls.BLOCK_DIM
-        last_dim = dim - num_blocks * cls.BLOCK_DIM
+        num_blocks, last_dim = divmod(dim, cls.BLOCK_DIM)
         dims = {"block": num_blocks, "row": cls.BLOCK_DIM}
 
         X_blocks, X_last = X.split([num_blocks * cls.BLOCK_DIM, last_dim])
