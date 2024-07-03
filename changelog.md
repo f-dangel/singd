@@ -16,7 +16,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-## [0.0.4]
+## [0.0.4] - 2024-07-03
 
 This release adds a new interface function to `SINGD`'s structured matrix
 sub-module. This is a useful addition for our
