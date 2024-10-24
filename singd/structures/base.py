@@ -8,7 +8,7 @@ from warnings import warn
 
 import torch
 import torch.distributed as dist
-from torch import Tensor, zeros
+from torch import Size, Tensor, zeros
 from torch.linalg import matrix_norm
 
 from singd.structures.utils import diag_add_, supported_eye
@@ -81,6 +81,16 @@ class StructuredMatrix(ABC):
         """
         for name in self._tensor_names:
             yield name, getattr(self, name)
+
+    @property
+    def shape(self) -> Size:
+        """Return the structured matrix's shape.
+
+        Returns:
+            The shape of the matrix.
+        """
+        self._warn_naive_implementation("shape")
+        return self.to_dense().shape
 
     def __matmul__(
         self, other: Union[StructuredMatrix, Tensor]

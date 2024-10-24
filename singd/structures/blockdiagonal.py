@@ -6,7 +6,7 @@ from typing import Union
 
 import torch
 from einops import rearrange
-from torch import Tensor, arange, cat, einsum, zeros
+from torch import Size, Tensor, arange, cat, einsum, zeros
 from torch.linalg import vector_norm
 
 from singd.structures.base import StructuredMatrix
@@ -108,6 +108,22 @@ class BlockDiagonalMatrixTemplate(StructuredMatrix):
 
         self._last: Tensor
         self.register_tensor(last, "_last")
+
+    @property
+    def shape(self) -> Size:
+        """Return the structured matrix's shape.
+
+        Returns:
+            The shape of the matrix.
+        """
+        num_blocks, _, _ = self._blocks.shape
+        last_rows, last_cols = self._last.shape
+        return Size(
+            (
+                num_blocks * self.BLOCK_DIM + last_rows,
+                num_blocks * self.BLOCK_DIM + last_cols,
+            )
+        )
 
     @classmethod
     def from_dense(cls, mat: Tensor) -> BlockDiagonalMatrixTemplate:

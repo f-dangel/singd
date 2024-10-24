@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Union
 
 import torch
-from torch import Tensor, einsum, ones, zeros
+from torch import Size, Tensor, einsum, ones, zeros
 from torch.linalg import vector_norm
 
 from singd.structures.base import StructuredMatrix
@@ -46,6 +46,15 @@ class DiagonalMatrix(StructuredMatrix):
         super().__init__()
         self._mat_diag: Tensor
         self.register_tensor(mat_diag, "_mat_diag")
+
+    @property
+    def shape(self) -> Size:
+        """Return the structured matrix's shape.
+
+        Returns:
+            The shape of the matrix.
+        """
+        return self._mat_diag.shape + self._mat_diag.shape
 
     def __matmul__(
         self, other: Union[DiagonalMatrix, Tensor]
