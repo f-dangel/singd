@@ -16,6 +16,15 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+## [0.0.5] - 2024-11-04
+
+This release adds a minor improvement of the structured matrix sub-module.
+
+### Added
+
+- `.shape` property of a `StructuredMatrix`
+  ([PR](https://github.com/f-dangel/singd/pull/81))
+
 ## [0.0.4] - 2024-07-03
 
 This release adds a new interface function to `SINGD`'s structured matrix
@@ -95,7 +104,8 @@ No bug fixes
 
 Initial release
 
-[unreleased]: https://github.com/f-dangel/singd/compare/v0.0.4...HEAD
+[unreleased]: https://github.com/f-dangel/singd/compare/v0.0.5...HEAD
+[0.0.5]: https://github.com/f-dangel/singd/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/f-dangel/singd/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/f-dangel/singd/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/f-dangel/singd/compare/v0.0.1...v0.0.2
