@@ -622,6 +622,21 @@ class _TestStructuredMatrix(ABC):
             structured = self.STRUCTURED_MATRIX_CLS.from_dense(sym_mat)
             report_nonclose(truth, structured.frobenius_norm())
 
+    @mark.parametrize("dtype", DTYPES, ids=DTYPE_IDS)
+    @mark.parametrize("dev", DEVICES, ids=DEVICE_IDS)
+    def test_shape(self, dev: device, dtype: torch.dtype):
+        """Test shape of a structured matrix.
+
+        Args:
+            dev: The device on which to run the test.
+            dtype: The data type of the matrices.
+        """
+        for dim in self.DIMS:
+            manual_seed(0)
+            sym_mat = symmetrize(rand((dim, dim), device=dev, dtype=dtype))
+            structured = self.STRUCTURED_MATRIX_CLS.from_dense(sym_mat)
+            assert sym_mat.shape == structured.shape
+
     @mark.expensive
     def test_visual(self):
         """Create pictures and animations of the structure.

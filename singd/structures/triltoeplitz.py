@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Union
 
 import torch
-from torch import Tensor, arange, cat, zeros
+from torch import Size, Tensor, arange, cat, zeros
 from torch.linalg import vector_norm
 from torch.nn.functional import conv1d, pad
 
@@ -54,6 +54,15 @@ class TrilToeplitzMatrix(StructuredMatrix):
         super().__init__()
         self._lower_diags: Tensor
         self.register_tensor(lower_diags, "_lower_diags")
+
+    @property
+    def shape(self) -> Size:
+        """Return the structured matrix's shape.
+
+        Returns:
+            The shape of the matrix.
+        """
+        return self._lower_diags.shape + self._lower_diags.shape
 
     @classmethod
     def from_dense(cls, mat: Tensor) -> TrilToeplitzMatrix:

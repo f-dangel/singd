@@ -499,7 +499,7 @@ https://arxiv.org/abs/1711.05224) to update the pre-conditioner factors. Enablin
         # in `m_K, m_C`
         scale = 0.5 * (1.0 - alpha1 if normalize_lr_cov else 1.0)
 
-        dim_K, dim_C = self.preconditioner_dims(module)
+        (dim_K,), (dim_C,) = set(K.shape), set(C.shape)
         (dtype_K, dtype_C), dev = self._get_preconditioner_dtypes_and_device(module)
 
         # step for m_K

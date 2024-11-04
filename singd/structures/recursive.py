@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterator, List, Tuple, Type, Union
 
-from torch import Tensor, block_diag
+from torch import Size, Tensor, block_diag
 
 from singd.structures.base import StructuredMatrix
 
@@ -164,8 +164,7 @@ class RecursiveTopRightMatrixTemplate(RecursiveStructuredMatrix):
                 f"{self.CLS_C}, respectively. Got {type(A)} and {type(C)}."
             )
 
-        # TODO Add a `dim` property to make this cheaper
-        dim_A, dim_C = A.to_dense().shape[0], C.to_dense().shape[0]
+        (dim_A,), (dim_C,) = set(A.shape), set(C.shape)
         if B.shape != (dim_A, dim_C):
             raise ValueError(f"Shape of `B` ({B.shape}) should be ({(dim_A, dim_C)}).")
 
@@ -183,6 +182,17 @@ class RecursiveTopRightMatrixTemplate(RecursiveStructuredMatrix):
 
         self.C: StructuredMatrix
         self.register_substructure(C, "C")
+
+    @property
+    def shape(self) -> Size:
+        """Return the structured matrix's shape.
+
+        Returns:
+            The shape of the matrix.
+        """
+        A_rows, A_cols = self.A.shape
+        C_rows, C_cols = self.C.shape
+        return Size((A_rows + C_rows, A_cols + C_cols))
 
     @classmethod
     def from_dense(cls, sym_mat: Tensor) -> RecursiveTopRightMatrixTemplate:
@@ -302,8 +312,7 @@ class RecursiveBottomLeftMatrixTemplate(RecursiveStructuredMatrix):
                 f"{self.CLS_C}, respectively. Got {type(A)} and {type(C)}."
             )
 
-        # TODO Add a `dim` property to make this cheaper
-        dim_A, dim_C = A.to_dense().shape[0], C.to_dense().shape[0]
+        (dim_A,), (dim_C,) = set(A.shape), set(C.shape)
         if B.shape != (dim_C, dim_A):
             raise ValueError(f"Shape of `B` ({B.shape}) should be ({(dim_A, dim_C)}).")
 
@@ -321,6 +330,17 @@ class RecursiveBottomLeftMatrixTemplate(RecursiveStructuredMatrix):
 
         self.C: StructuredMatrix
         self.register_substructure(C, "C")
+
+    @property
+    def shape(self) -> Size:
+        """Return the structured matrix's shape.
+
+        Returns:
+            The shape of the matrix.
+        """
+        A_rows, A_cols = self.A.shape
+        C_rows, C_cols = self.C.shape
+        return Size((A_rows + C_rows, A_cols + C_cols))
 
     @classmethod
     def from_dense(cls, sym_mat: Tensor) -> RecursiveBottomLeftMatrixTemplate:

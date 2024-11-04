@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Tuple, Union
 
 import torch
-from torch import Tensor, arange, cat, einsum, ones, zeros
+from torch import Size, Tensor, arange, cat, einsum, ones, zeros
 from torch.linalg import vector_norm
 
 from singd.structures.base import StructuredMatrix
@@ -141,6 +141,15 @@ class HierarchicalMatrixTemplate(StructuredMatrix):
 
         self.E: Tensor
         self.register_tensor(E, "E")
+
+    @property
+    def shape(self) -> Size:
+        """Return the structured matrix's shape.
+
+        Returns:
+            The shape of the matrix.
+        """
+        return Size((self.dim, self.dim))
 
     @classmethod
     def from_dense(cls, sym_mat: Tensor) -> HierarchicalMatrixTemplate:

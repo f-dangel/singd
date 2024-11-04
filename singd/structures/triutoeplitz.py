@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Union
 
 import torch
-from torch import Tensor, arange, cat, triu_indices, zeros
+from torch import Size, Tensor, arange, cat, triu_indices, zeros
 from torch.linalg import vector_norm
 from torch.nn.functional import conv1d, pad
 
@@ -54,6 +54,15 @@ class TriuToeplitzMatrix(StructuredMatrix):
         super().__init__()
         self._upper_diags: Tensor
         self.register_tensor(upper_diags, "_upper_diags")
+
+    @property
+    def shape(self) -> Size:
+        """Return the structured matrix's shape.
+
+        Returns:
+            The shape of the matrix.
+        """
+        return self._upper_diags.shape + self._upper_diags.shape
 
     @classmethod
     def from_dense(cls, mat: Tensor) -> TriuToeplitzMatrix:
