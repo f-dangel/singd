@@ -164,8 +164,7 @@ class RecursiveTopRightMatrixTemplate(RecursiveStructuredMatrix):
                 f"{self.CLS_C}, respectively. Got {type(A)} and {type(C)}."
             )
 
-        # TODO Add a `dim` property to make this cheaper
-        dim_A, dim_C = A.to_dense().shape[0], C.to_dense().shape[0]
+        (dim_A,), (dim_C,) = set(A.shape), set(C.shape)
         if B.shape != (dim_A, dim_C):
             raise ValueError(f"Shape of `B` ({B.shape}) should be ({(dim_A, dim_C)}).")
 
@@ -313,8 +312,7 @@ class RecursiveBottomLeftMatrixTemplate(RecursiveStructuredMatrix):
                 f"{self.CLS_C}, respectively. Got {type(A)} and {type(C)}."
             )
 
-        # TODO Add a `dim` property to make this cheaper
-        dim_A, dim_C = A.to_dense().shape[0], C.to_dense().shape[0]
+        (dim_A,), (dim_C,) = set(A.shape), set(C.shape)
         if B.shape != (dim_C, dim_A):
             raise ValueError(f"Shape of `B` ({B.shape}) should be ({(dim_A, dim_C)}).")
 
